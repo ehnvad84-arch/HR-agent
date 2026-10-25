@@ -1,0 +1,53 @@
+"""HTTP-приложение. В фиче core — только обратный вызов OAuth hh; рабочее место — фича workplace."""
+from __future__ import annotations
+
+import logging
+from typing import Annotated
+
+import httpx
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+
+from . import db, hh
+from .clock import SYSTEM, Clock
+from .config import get_config
+from .http import client
+
+log = logging.getLogger(__name__)
+app = FastAPI(title="Агент подбора", docs_url=None, redoc_url=None, openapi_url=None)
+
+
+def get_conn_factory() -> db.ConnFactory:
+    return db.tx
+
+
+def get_hh_http() -> httpx.Client:
+    return client(get_config().hh_user_agent)
+
+
+def get_clock() -> Clock:
+    return SYSTEM
+
+
+@app.get("/api/oauth/hh/callback", response_class=HTMLResponse)
+def hh_callback(code: str, state: str,
+                conn_factory: Annotated[db.ConnFactory, Depends(get_conn_factory)],
+                http: Annotated[httpx.Client, Depends(get_hh_http)],
+                clock: Annotated[Clock, Depends(get_clock)]):
+    now = clock.now()
+    try:
+        with conn_factory() as conn:
+            hh.consume_state(conn, state, now)
+    except hh.StateError:
+        raise HTTPException(400, "Ссылка недействительна: получите новую командой hr.cli hh-auth") from None
+    try:
+        tokens = hh.exchange_code(http, code)
+        employer = hh.check_employer(http, tokens["access_token"])
+    except hh.EmployerMismatch:
+        raise HTTPException(403, "Учётная запись не относится к работодателю компании") from None
+    except (httpx.HTTPError, KeyError, ValueError):
+        log.warning("hh не обменял код авторизации")
+        raise HTTPException(502, "hh не подтвердил авторизацию, попробуйте ещё раз") from None
+    with conn_factory() as conn:
+        hh.store_tokens(conn, tokens, employer, now)
+    return "<!doctype html><meta charset=utf-8><title>hh подключён</title><p>hh подключён. Окно можно закрыть.</p>"

@@ -7,8 +7,8 @@
 <!-- Перезаписывается в конце каждой сессии и итерации. Здесь всё, что нужно следующей сессии с чистым контекстом. -->
 
 - Этап: 2 — разработка
-- Последнее сделанное: T11 — alerts.evaluate по формуле 3.3
-- Следующий шаг: T12
+- Последнее сделанное: T12 — OAuth hh, токены зашифрованы, callback, hr.cli hh-auth
+- Следующий шаг: T13
 - Важно знать:
   - В ветке лежит черновой код `server/hr/*.py` и `server/migrations/001_mvp.sql`, написанный до плана. Это материал, а не готовая работа. Расхождения со спекой — ниже, в журнале 2026-10-25.
   - Для тестов нужен PostgreSQL 16 с pgvector и pg_trgm. Docker на машине разработчика без прав. Сборка из исходников (gcc 15 → `CFLAGS=-std=gnu17`) лежит в scratchpad-сессии и не переживёт её; в T1 описать в AGENTS.md, как поднять базу.
@@ -33,3 +33,4 @@
 - 2026-10-25 · T9 · rescore_profile пачками по 200: все person (включая dropped и кандидатов) + наблюдения без карточки в пределах retention_until (по решению человека); ProfileNotApproved; card_for_observation вынесен из process · коммит T9
 - 2026-10-25 · T10 · llm.complete (OpenAI-совместимый, повтор без response_format на 400, текст ответа не в исключениях), prompts/explain_score.md с версией по sha256, explain.validate (формат, ≤1500, без ссылок и разметки, число у слова «балл» = посчитанному), explain_pending: модель вне транзакции, оптимистичная запись, стоп после 3 отказов; в модель только структурные поля · коммит T10
 - 2026-10-25 · T11 · alerts: new_high_score, event_on_pool (и «веду особо»), score_grew по коду профиля из decision_log, donor_company по любому профилю отделов donor_alert_departments; отложенный и кандидат — без сигналов; дедуп по человеку и коду профиля; события помечаются processed · коммит T11
+- 2026-10-25 · T12 · crypto (Fernet, SECRETS_KEY), hh: auth_link со state (в базе хеш, 10 мин), consume_state, exchange_code, check_employer по /me, store_tokens, access_token с обновлением после истечения под FOR UPDATE; main.py с GET /api/oauth/hh/callback (400/403/502), часы — зависимость; cli gen-key, hh-auth. Отклонение: hh-selftest перенесён в T13 — ему нужен поиск резюме · коммит T12
