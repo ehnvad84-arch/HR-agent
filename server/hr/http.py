@@ -25,11 +25,12 @@ class RateLimiter:
         self.last: dict[str, float] = {}
         self.lock = threading.Lock()
 
-    def wait(self, source: str) -> None:
+    def wait(self, source: str, interval: float | None = None) -> None:
+        """interval — свой интервал для этого ключа, например поиск GitHub: раз в 2 секунды."""
         with self.lock:
             prev = self.last.get(source)
             if prev is not None:
-                self.clock.sleep(self.interval - (self.clock.monotonic() - prev))
+                self.clock.sleep((interval or self.interval) - (self.clock.monotonic() - prev))
             self.last[source] = self.clock.monotonic()
 
 
