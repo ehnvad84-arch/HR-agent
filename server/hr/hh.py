@@ -14,9 +14,11 @@ import httpx
 import psycopg
 
 from . import crypto
+from .clock import Clock
 from .config import get_config
-from .db import one, run
-from .jobs import JobNotConfigured
+from .db import ConnFactory, one, run, setting
+from .http import PageBudget, RateLimiter
+from .jobs import JobBlocked, JobNotConfigured
 
 STATE_TTL = timedelta(minutes=10)
 AUTH_NEEDED = "нет токена hh, пройдите авторизацию: python -m hr.cli hh-auth"
@@ -107,3 +109,73 @@ def access_token(conn: psycopg.Connection, http: httpx.Client, now: datetime, fo
         raise JobNotConfigured("токен hh не обновился — пройдите авторизацию: python -m hr.cli hh-auth") from None
     store_tokens(conn, data, row["account_id"] if row else None, now)
     return data["access_token"]
+
+
+# ------------------------------------------------------------------ запросы к API
+
+class BudgetExhausted(Exception):
+    """Бюджет страниц прогона исчерпан — прогон завершается с пометкой."""
+
+
+RETRY_DELAYS = (5, 15)
+
+
+class Api:
+    """GET к api.hh.ru: лимит 1 запрос/с, бюджет страниц, токен с обновлением, остановка на капче."""
+
+    def __init__(self, conn_factory: ConnFactory, http: httpx.Client, clock: Clock, limiter: RateLimiter,
+                 budget: PageBudget):
+        self.cf, self.http, self.clock, self.limiter, self.budget = conn_factory, http, clock, limiter, budget
+
+    def _token(self, force: bool = False) -> str:
+        with self.cf() as conn:
+            return access_token(conn, self.http, self.clock.now(), force_refresh=force)
+
+    def get(self, path: str, params: dict | None = None) -> dict:
+        token = self._token()
+        refreshed = False
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            if not self.budget.take():
+                raise BudgetExhausted
+            self.limiter.wait("hh")
+            r = self.http.get(f"{get_config().hh_api}{path}", params=params,
+                              headers={"Authorization": f"Bearer {token}"})
+            if r.status_code == 401 and not refreshed:
+                token, refreshed = self._token(force=True), True
+                continue
+            if r.status_code == 429 or (r.status_code == 403 and "captcha" in r.text.lower()):
+                raise JobBlocked("hh просит пройти проверку на робота или ограничил частоту — обход остановлен")
+            if r.status_code == 403:
+                raise JobNotConfigured("hh: нет доступа к базе резюме у этой учётной записи")
+            if r.status_code >= 500 and attempt < len(RETRY_DELAYS):
+                self.clock.sleep(RETRY_DELAYS[attempt])
+                continue
+            r.raise_for_status()
+            return r.json()
+        r.raise_for_status()
+        return r.json()
+
+
+def search_params(conn: psycopg.Connection, profile: dict) -> dict:
+    kws = [k for k in (profile.get("keywords") or [])[:6] if k]
+    text = profile["title"]
+    if kws:
+        text += " OR " + " OR ".join(f'"{k}"' if " " in k else k for k in kws)
+    params: dict = {"text": text, "per_page": 50, "order_by": "publication_time"}
+    geo = profile.get("geo") or "krasnodar"
+    if geo == "remote_ru":
+        params |= {"area": str(setting(conn, "hh_area_relocation", 113)), "schedule": "remote"}
+    else:
+        params["area"] = str(setting(conn, "hh_area", 53))
+        if geo == "relocation_ru":
+            params["relocation"] = "living_or_relocation"
+    return params
+
+
+def selftest(conn: psycopg.Connection, http: httpx.Client, now: datetime) -> dict:
+    """Проверка из ТЗ 5.2, шаг 4: сколько резюме видно по тестовому запросу."""
+    token = access_token(conn, http, now)
+    r = http.get(f"{get_config().hh_api}/resumes", params={"text": "инженер", "area": "53", "per_page": 1},
+                 headers={"Authorization": f"Bearer {token}"})
+    r.raise_for_status()
+    return {"found": r.json().get("found")}

@@ -1,0 +1,105 @@
+"""Задачи сбора резюме: hh (официальное API). Сбора со страниц нет (раздел 7 ТЗ, never.md)."""
+from __future__ import annotations
+
+import logging
+
+import httpx
+
+from . import hh, pipeline
+from .clock import SYSTEM, Clock
+from .config import get_config
+from .db import ConnFactory, j, one, run, setting, val
+from .http import PageBudget, RateLimiter, client
+from .jobs import JobBlocked, JobNotConfigured, JobStats
+from .normalize import normalize
+
+log = logging.getLogger(__name__)
+
+_limiter = RateLimiter()
+
+
+def _queue(conn_factory: ConnFactory, source_id: int, profile_id: int | None, params: dict) -> int:
+    with conn_factory() as conn:
+        return val(conn, """INSERT INTO crawl_queue (source_id, role_profile_id, params, state, attempts)
+                            VALUES (%s, %s, %s, 'running', 1) RETURNING id""", (source_id, profile_id, j(params)))
+
+
+def _finish(conn_factory: ConnFactory, qid: int, ok: bool, error: str | None = None) -> None:
+    with conn_factory() as conn:
+        run(conn, "UPDATE crawl_queue SET state = %s, last_error = %s, finished_at = now() WHERE id = %s",
+            ("done" if ok else "error", error, qid))
+
+
+class _HHItems:
+    """Приём одного элемента выдачи с экономным запросом полного резюме (S32)."""
+
+    def __init__(self, conn_factory, api: hh.Api, src: dict, profiles: list[dict], stats: JobStats,
+                 full_left: int, clock: Clock):
+        self.cf, self.api, self.src, self.profiles, self.stats = conn_factory, api, src, profiles, stats
+        self.full_left, self.clock = full_left, clock
+
+    def handle(self, item: dict) -> None:
+        self.stats.seen += 1
+        with self.cf() as conn:
+            old = one(conn, "SELECT raw, person_id FROM observation WHERE source_id = %s AND external_id = %s",
+                      (self.src["id"], str(item["id"])))
+            # выдача поиска без навыков: накладываем её на сохранённое полное резюме, чтобы не было ложных изменений
+            merged = {**old["raw"], **item} if old else item
+            updated = not old or old["raw"].get("updated_at") != item.get("updated_at")
+            want = updated and (bool(old and old["person_id"]) or
+                                pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles) is not None)
+        raw = merged
+        if want and self.full_left > 0:
+            full = self.api.get(f"/resumes/{item['id']}")
+            self.full_left -= 1
+            raw = {**merged, **full}
+        with self.cf() as conn:
+            r = pipeline.process(conn, self.src, normalize("hh", raw), raw, self.clock.now())
+        self.stats.new += int(r.new)
+        self.stats.changed += int(r.changed)
+        self.stats.persons += int(r.person_created)
+        self.stats.alerts += r.alerts
+
+
+def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
+               limiter: RateLimiter | None = None, **_) -> JobStats:
+    clock = clock or SYSTEM
+    http = http or client(get_config().hh_user_agent)
+    stats = JobStats()
+    with conn_factory() as conn:
+        src = one(conn, "SELECT * FROM source WHERE code = 'hh'")
+        if not src or not src["is_active"]:
+            raise JobNotConfigured("источник hh выключен или не заведён")
+        profiles = pipeline.current_profiles(conn)
+        budget = PageBudget(int(setting(conn, "crawl_max_pages", 2000)), stats)
+        per_profile = int(setting(conn, "crawl_per_profile_pages", 5))
+        full_left = int(setting(conn, "hh_full_resume_per_run", 200))
+        params = {p["id"]: hh.search_params(conn, p) for p in profiles}
+    api = hh.Api(conn_factory, http, clock, limiter or _limiter, budget)
+    items = _HHItems(conn_factory, api, src, profiles, stats, full_left, clock)
+    for pr in profiles:
+        qid = _queue(conn_factory, src["id"], pr["id"], params[pr["id"]])
+        try:
+            for page in range(per_profile):
+                data = api.get("/resumes", {**params[pr["id"]], "page": page})
+                for item in data.get("items", []):
+                    try:
+                        items.handle(item)
+                    except (hh.BudgetExhausted, JobBlocked, JobNotConfigured):
+                        raise
+                    except Exception:  # noqa: BLE001 — одно битое резюме не роняет обход
+                        log.exception("резюме hh не принято")
+                        stats.errors += 1
+                if page + 1 >= int(data.get("pages", 0)):
+                    break
+            _finish(conn_factory, qid, True)
+        except hh.BudgetExhausted:
+            _finish(conn_factory, qid, True, stats.note)
+            break
+        except (JobBlocked, JobNotConfigured) as e:
+            _finish(conn_factory, qid, False, str(e))
+            raise
+        except httpx.HTTPError as e:
+            _finish(conn_factory, qid, False, f"hh не ответил: {type(e).__name__}")
+            stats.errors += 1
+    return stats

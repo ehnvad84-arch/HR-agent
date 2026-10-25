@@ -6,6 +6,8 @@ import sys
 
 from . import crypto, db, hh
 from .clock import SYSTEM
+from .config import get_config
+from .http import client
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -14,6 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("migrate", help="накатить схему и миграции")
     sub.add_parser("gen-key", help="сгенерировать SECRETS_KEY для .env")
     sub.add_parser("hh-auth", help="одноразовая ссылка авторизации hh (действует 10 минут)")
+    sub.add_parser("hh-selftest", help="проверить доступ к базе резюме hh")
     args = parser.parse_args(argv)
 
     if args.cmd == "migrate":
@@ -24,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "hh-auth":
         with db.tx() as conn:
             print("Откройте под менеджером работодателя:\n" + hh.auth_link(conn, SYSTEM.now()))
+    elif args.cmd == "hh-selftest":
+        with db.tx() as conn:
+            res = hh.selftest(conn, client(get_config().hh_user_agent), SYSTEM.now())
+        print(f"hh отвечает: по запросу «инженер» в Краснодаре видно резюме: {res['found']}")
     return 0
 
 
