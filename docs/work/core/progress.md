@@ -7,8 +7,8 @@
 <!-- Перезаписывается в конце каждой сессии и итерации. Здесь всё, что нужно следующей сессии с чистым контекстом. -->
 
 - Этап: 2 — разработка
-- Последнее сделанное: T8 — сшивка: ник, взвешенное сходство, вопрос merge_persons
-- Следующий шаг: T9
+- Последнее сделанное: T9 — rescore_profile: все люди и наблюдения без карточки
+- Следующий шаг: T10
 - Важно знать:
   - В ветке лежит черновой код `server/hr/*.py` и `server/migrations/001_mvp.sql`, написанный до плана. Это материал, а не готовая работа. Расхождения со спекой — ниже, в журнале 2026-10-25.
   - Для тестов нужен PostgreSQL 16 с pgvector и pg_trgm. Docker на машине разработчика без прав. Сборка из исходников (gcc 15 → `CFLAGS=-std=gnu17`) лежит в scratchpad-сессии и не переживёт её; в T1 описать в AGENTS.md, как поднять базу.
@@ -30,3 +30,4 @@
 - 2026-10-25 · T6 · pipeline: upsert_observation (время из часов, а не now() транзакции), obs_version с диффом, events_from_diff по шести видам; ключевые слова для skill_added передаются параметром · коммит T6
 - 2026-10-25 · T7 · pipeline.process: порог по всем действующим профилям, person с ярлыком и name_variants, событие new, rescore_person пишет match с model=template; tests/factories.py · коммит T7
 - 2026-10-25 · T8 · stitch_candidates (ник 1,0; 0,5·работодатели + 0,25·должность + 0,15·город + 0,1·стаж), attach с FOR UPDATE и слиянием name_variants/nicknames, ask_merge → person_merge_candidate + action_queue · коммит T8
+- 2026-10-25 · T9 · rescore_profile пачками по 200: все person (включая dropped и кандидатов) + наблюдения без карточки в пределах retention_until (по решению человека); ProfileNotApproved; card_for_observation вынесен из process · коммит T9

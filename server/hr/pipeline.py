@@ -13,9 +13,10 @@ from decimal import Decimal
 import psycopg
 
 from . import scoring
-from .db import j, one, rows, run, setting, val
+from .db import ConnFactory, j, one, rows, run, setting, val
+from .jobs import JobStats
 from .names import name_variants
-from .normalize import Norm, label_of
+from .normalize import Norm, label_of, normalize
 
 # Поля наблюдения, которые сравниваются между версиями
 TRACKED = ("title", "city", "employer_current", "employers", "skills", "exp_years", "avg_tenure_months",
@@ -287,6 +288,37 @@ def passes_threshold(conn: psycopg.Connection, n: Norm, profiles: list[dict]) ->
     return best if best >= int(setting(conn, "watch_threshold", 60)) else None
 
 
+def card_for_observation(conn: psycopg.Connection, res: ProcessResult, source_code: str, n: Norm,
+                         now: datetime, profiles: list[dict]) -> bool:
+    """Наблюдение без карточки: порог → сшивка → своя карточка или привязка. False — ниже порога."""
+    best = passes_threshold(conn, n, profiles) if profiles else None
+    if best is None:
+        return False
+    cands = stitch_candidates(conn, n, res.observation_id)
+    auto = float(setting(conn, "merge_auto_similarity", 0.92))
+    ask = float(setting(conn, "merge_ask_similarity", 0.6))
+    if cands and cands[0][1] >= auto:
+        res.person_id = cands[0][0]
+        attach(conn, res.person_id, res.observation_id, n)
+        res.events = [("resume_updated", {"new_source": source_code, "similarity": cands[0][1]})]
+        return True
+    res.person_id = create_person(conn, n, now)
+    res.person_created = True
+    run(conn, "UPDATE observation SET person_id = %s WHERE id = %s", (res.person_id, res.observation_id))
+    res.events = [("new", {"source": source_code, "score": best})]
+    if cands and cands[0][1] >= ask:
+        ask_merge(conn, res.person_id, *cands[0])
+        res.merge_question = True
+    return True
+
+
+def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profiles: list[dict]) -> ProcessResult:
+    for kind, detail in res.events:
+        add_event(conn, res.observation_id, res.person_id, kind, detail, now)
+    res.scores = rescore_person(conn, res.person_id, profiles)
+    return res
+
+
 def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: datetime) -> ProcessResult:
     """Приём одного резюме: от записи до оценок. Вызывается внутри транзакции резюме."""
     obs = upsert_observation(conn, source, n, raw, now)
@@ -295,30 +327,61 @@ def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: dat
         return res
     profiles = current_profiles(conn)
     if obs.person_id is None:
-        best = passes_threshold(conn, n, profiles) if profiles else None
-        if best is None:
+        if not card_for_observation(conn, res, source["code"], n, now, profiles):
             return res              # «увидел, но мимо»: наблюдение лежит до следующего изменения
-        cands = stitch_candidates(conn, n, obs.id)
-        auto = float(setting(conn, "merge_auto_similarity", 0.92))
-        ask = float(setting(conn, "merge_ask_similarity", 0.6))
-        if cands and cands[0][1] >= auto:
-            res.person_id = cands[0][0]
-            attach(conn, res.person_id, obs.id, n)
-            res.events = [("resume_updated", {"new_source": source["code"], "similarity": cands[0][1]})]
-        else:
-            res.person_id = create_person(conn, n, now)
-            res.person_created = True
-            run(conn, "UPDATE observation SET person_id = %s WHERE id = %s", (res.person_id, obs.id))
-            res.events = [("new", {"source": source["code"], "score": best})]
-            if cands and cands[0][1] >= ask:
-                ask_merge(conn, res.person_id, *cands[0])
-                res.merge_question = True
     else:
         keywords = {k for pr in profiles for k in pr["keywords"] or []}
         res.events = events_from_diff(obs.diff, keywords) if obs.changed else [("resume_updated", {"reappeared": True})]
         run(conn, "UPDATE person SET label = %s, city = coalesce(%s, city) WHERE id = %s",
             (label_of(n), n.city, res.person_id))
-    for kind, detail in res.events:
-        add_event(conn, obs.id, res.person_id, kind, detail, now)
-    res.scores = rescore_person(conn, res.person_id, profiles)
-    return res
+    return _finish(conn, res, now, profiles)
+
+
+# ------------------------------------------------------------------ переоценка по новой версии
+
+class ProfileNotApproved(ValueError):
+    pass
+
+
+BATCH = 200
+
+
+def rescore_profile(conn_factory: ConnFactory, role_profile_id: int, now: datetime | None = None) -> JobStats:
+    """Переоценка по утверждённой версии: все люди, включая «не наш» и кандидатов, и наблюдения
+    без карточки в пределах срока хранения (S20). Пачками, каждая в своей транзакции."""
+    now = now or datetime.now(UTC)
+    stats = JobStats()
+    with conn_factory() as conn:
+        pr = one(conn, """SELECT rp.*, d.code AS dept_code FROM role_profile rp
+                          JOIN department d ON d.id = rp.department_id WHERE rp.id = %s""", (role_profile_id,))
+        if not pr or pr["approved_by"] is None or pr["approved_at"] is None:
+            raise ProfileNotApproved(f"версия профиля {role_profile_id} не утверждена")
+    last = 0
+    while True:
+        with conn_factory() as conn:
+            ids = [r["id"] for r in rows(conn, "SELECT id FROM person WHERE id > %s ORDER BY id LIMIT %s",
+                                         (last, BATCH))]
+            for pid in ids:
+                rescore_person(conn, pid, [pr])
+        if not ids:
+            break
+        stats.seen += len(ids)
+        last = ids[-1]
+    last = 0
+    while True:
+        with conn_factory() as conn:
+            obs = rows(conn, """SELECT o.id, o.raw, s.code FROM observation o JOIN source s ON s.id = o.source_id
+                                WHERE o.person_id IS NULL AND o.id > %s AND NOT o.is_gone
+                                  AND (o.retention_until IS NULL OR o.retention_until >= %s::date)
+                                ORDER BY o.id LIMIT %s""", (last, now, BATCH))
+            profiles = current_profiles(conn)
+            for o in obs:
+                res = ProcessResult(o["id"], False, False)
+                if card_for_observation(conn, res, o["code"], normalize(o["code"], o["raw"]), now, profiles):
+                    _finish(conn, res, now, profiles)
+                    stats.persons += int(res.person_created)
+        if not obs:
+            break
+        stats.skipped += len(obs)
+        last = obs[-1]["id"]
+    return stats
