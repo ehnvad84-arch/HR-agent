@@ -110,8 +110,7 @@ def _disappear(conn_factory: ConnFactory, obs_id: int, now) -> None:
     with conn_factory() as conn:
         o = one(conn, "UPDATE observation SET is_gone = true WHERE id = %s RETURNING person_id", (obs_id,))
         if o and o["person_id"]:
-            eid = pipeline.add_event(conn, obs_id, o["person_id"], "disappeared", {}, now)
-            run(conn, "UPDATE obs_event SET processed = true WHERE id = %s", (eid,))
+            pipeline.add_event(conn, obs_id, o["person_id"], "disappeared", {}, now)   # сигнал — задачей alerts
 
 
 def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
