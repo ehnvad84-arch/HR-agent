@@ -1,0 +1,1897 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Подбор — рабочее место рекрутера</title>
+<style>
+/* ============================ оформление в духе iOS ============================ */
+:root{
+  --bg:#f2f2f7; --bg2:#ffffff; --card:#ffffff; --card2:#f7f7fa;
+  --ink:#1c1c1e; --ink2:#3a3a3c; --muted:#8e8e93; --sep:rgba(60,60,67,.24);
+  --green:#34c759; --green-tint:rgba(52,199,89,.14);
+  --blue:#007aff; --blue-tint:rgba(0,122,255,.12);
+  --orange:#ff9500; --orange-tint:rgba(255,149,0,.14);
+  --red:#ff3b30; --red-tint:rgba(255,59,48,.12);
+  --violet:#af52de; --violet-tint:rgba(175,82,222,.14);
+  --r:16px; --rs:12px;
+  --shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 24px -16px rgba(0,0,0,.25);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --bg2:#0e0e10; --card:#1c1c1e; --card2:#2c2c2e;
+    --ink:#f2f2f7; --ink2:#d1d1d6; --muted:#8e8e93; --sep:rgba(84,84,88,.6);
+    --green:#30d158; --green-tint:rgba(48,209,88,.16);
+    --blue:#0a84ff; --blue-tint:rgba(10,132,255,.18);
+    --orange:#ff9f0a; --orange-tint:rgba(255,159,10,.18);
+    --red:#ff453a; --red-tint:rgba(255,69,58,.18);
+    --violet:#bf5af2; --violet-tint:rgba(191,90,242,.18);
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --bg2:#0e0e10; --card:#1c1c1e; --card2:#2c2c2e;
+  --ink:#f2f2f7; --ink2:#d1d1d6; --muted:#8e8e93; --sep:rgba(84,84,88,.6);
+  --green:#30d158; --green-tint:rgba(48,209,88,.16); --blue:#0a84ff; --blue-tint:rgba(10,132,255,.18);
+  --orange:#ff9f0a; --orange-tint:rgba(255,159,10,.18); --red:#ff453a; --red-tint:rgba(255,69,58,.18);
+  --violet:#bf5af2; --violet-tint:rgba(191,90,242,.18); --shadow:none;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font:16px/1.45 -apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  letter-spacing:-.01em;-webkit-font-smoothing:antialiased}
+
+/* --------------------------------- шапка --------------------------------- */
+.nav{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 82%, transparent);
+  backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--sep)}
+.navin{max-width:1180px;margin:0 auto;padding:10px 20px 0}
+.navtop{display:flex;align-items:center;gap:12px}
+.mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(160deg,var(--green),#28a745);
+  color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;flex:none}
+.h1{font-size:26px;font-weight:700;letter-spacing:-.03em;margin:0}
+.navtop .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
+.ava{width:30px;height:30px;border-radius:50%;background:var(--green-tint);color:var(--green);
+  display:grid;place-items:center;font-size:12px;font-weight:700}
+.seg{display:flex;gap:2px;margin:10px 0 10px;padding:2px;background:var(--card2);border-radius:11px;
+  overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{font:inherit;font-size:14px;font-weight:500;border:0;background:transparent;color:var(--ink2);
+  padding:7px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:.18s}
+.seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg .badge{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--muted)}
+
+main{max-width:1180px;margin:0 auto;padding:18px 20px 90px}
+.note{background:var(--orange-tint);color:var(--ink);border-radius:var(--r);padding:11px 15px;
+  font-size:14px;margin-bottom:18px}
+.sechead{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);
+  margin:24px 6px 8px}
+.sechead:first-child{margin-top:0}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* --------------------------------- карточки --------------------------------- */
+.card{background:var(--card);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+.card.inset{background:var(--card2);box-shadow:none}
+.row{display:flex;gap:14px;align-items:flex-start}
+.grow{flex:1 1 300px;min-width:0}
+.t1{font-size:17px;font-weight:650;letter-spacing:-.02em}
+.t2{font-size:14.5px;color:var(--muted);margin-top:2px}
+.badge-score{flex:none;width:58px;height:58px;border-radius:15px;display:grid;place-items:center;
+  background:var(--green-tint);color:var(--green);text-align:center}
+.badge-score b{display:block;font-size:20px;font-weight:700;line-height:1.05}
+.badge-score span{font-size:10px;color:var(--muted)}
+.badge-score.mid{background:var(--orange-tint);color:var(--orange)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chip{font-size:12.5px;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--ink2)}
+.chip.g{background:var(--green-tint);color:var(--green)}
+.chip.b{background:var(--blue-tint);color:var(--blue)}
+.chip.o{background:var(--orange-tint);color:var(--orange)}
+.chip.r{background:var(--red-tint);color:var(--red)}
+.chip.v{background:var(--violet-tint);color:var(--violet)}
+
+/* --------------------------------- кнопки --------------------------------- */
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button.b{font:inherit;font-size:14.5px;font-weight:550;padding:8px 16px;border-radius:999px;border:0;
+  background:var(--card2);color:var(--ink);cursor:pointer;transition:.15s}
+button.b:hover{filter:brightness(1.06)}
+button.b:active{transform:scale(.97)}
+button.b.fill{background:var(--green);color:#fff}
+button.b.blue{background:var(--blue);color:#fff}
+button.b.tint{background:var(--green-tint);color:var(--green)}
+button.b.danger{background:var(--red-tint);color:var(--red)}
+button.b:disabled{opacity:.4;cursor:default}
+.link{color:var(--blue);cursor:pointer}
+
+/* --------------------------------- списки --------------------------------- */
+.list{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.li{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:.5px solid var(--sep);cursor:pointer}
+.li:last-child{border-bottom:0}
+.li:hover{background:var(--card2)}
+.li .chev{margin-left:auto;color:var(--muted);font-size:18px}
+.li .sub{font-size:13.5px;color:var(--muted)}
+
+/* --------------------------------- таблица --------------------------------- */
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.search{flex:1 1 260px;font:inherit;font-size:15px;padding:10px 14px;border:0;border-radius:11px;
+  background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tablewrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);overflow:auto}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+th,td{text-align:left;padding:10px 14px;border-bottom:.5px solid var(--sep)}
+thead th{position:sticky;top:0;z-index:2;background:var(--card);font-size:12.5px;color:var(--muted);
+  font-weight:600;cursor:pointer;white-space:nowrap;user-select:none}
+thead th .dir{opacity:.4;font-size:11px}
+thead th.sorted{color:var(--green)}
+thead th.sorted .dir{opacity:1}
+thead tr.filters th{top:40px;padding:6px 10px;cursor:default}
+thead tr.filters input,thead tr.filters select{width:100%;font:inherit;font-size:13px;padding:6px 9px;
+  border:0;border-radius:9px;background:var(--card2);color:var(--ink)}
+tbody tr:hover{background:var(--card2)}
+td.name{font-weight:600}
+td.name .link{color:var(--ink)}
+td.name .link:hover{color:var(--blue)}
+.pill{font-size:12.5px;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--muted);white-space:nowrap}
+.pill.obs{background:var(--blue-tint);color:var(--blue)}
+.pill.watch{background:var(--violet-tint);color:var(--violet)}
+.pill.cand{background:var(--green-tint);color:var(--green)}
+.num{font-variant-numeric:tabular-nums;font-weight:600}
+
+/* --------------------------------- блоки экрана «Сегодня» --------------------------------- */
+/* у каждого блока своя заливка, своя полоса слева и свой значок в заголовке,
+   чтобы взглядом было видно, где кончился один список и начался другой */
+.sechead{display:flex;align-items:center;gap:8px}
+.sechead .dot{width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:11px;color:#fff}
+.zone{border-radius:18px;padding:10px;margin-bottom:6px}
+.zone.z1{background:color-mix(in srgb,var(--green-tint) 55%, transparent)}
+.zone.z2{background:color-mix(in srgb,var(--orange-tint) 55%, transparent)}
+.zone.z3{background:color-mix(in srgb,var(--red-tint) 45%, transparent)}
+.zone.z4{background:color-mix(in srgb,var(--blue-tint) 45%, transparent)}
+.zone .card{border-left:4px solid transparent}
+.zone.z1 .card{border-left-color:var(--green)}
+.zone.z2 .card{border-left-color:var(--orange)}
+.zone.z3 .card{border-left-color:var(--red)}
+.zone.z4 .card{border-left-color:var(--blue)}
+.zone.z2 .card .t1::before{content:"⏳ ";font-size:13px}
+.zone.z3 .card .t1::before{content:"⌛ ";font-size:13px}
+.zone.z4 .card .t1::before{content:"📅 ";font-size:13px}
+
+/* --------------------------------- фото и аватары --------------------------------- */
+.face{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;overflow:hidden;
+  background:var(--card2);color:var(--muted);font-size:14px;font-weight:700;border:1px solid var(--sep)}
+.face svg{width:100%;height:100%}
+.face.sm{width:28px;height:28px;font-size:11px}
+.namewrap{display:flex;align-items:center;gap:10px}
+
+/* --------------------------------- переключатель темы --------------------------------- */
+.theme{display:flex;gap:2px;padding:2px;background:var(--card2);border-radius:10px}
+.theme button{font:inherit;font-size:12.5px;border:0;background:transparent;color:var(--ink2);
+  padding:5px 10px;border-radius:8px;cursor:pointer}
+.theme button.on{background:var(--card);color:var(--ink);font-weight:600}
+
+/* --------------------------------- форма профиля должности --------------------------------- */
+.form{display:grid;gap:12px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+.field input,.field textarea,.field select{width:100%;font:inherit;font-size:14.5px;padding:10px 12px;border:0;
+  border-radius:12px;background:var(--card2);color:var(--ink);resize:vertical}
+.field textarea{min-height:68px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:720px){.two{grid-template-columns:1fr}}
+.fileline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card2);border-radius:12px;padding:11px 13px}
+.fileline .ic{width:30px;height:30px;border-radius:9px;background:var(--blue);color:#fff;display:grid;place-items:center;
+  font-size:11px;font-weight:700;flex:none}
+
+/* --------------------------------- воронка по вертикали --------------------------------- */
+.stage{background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:10px;box-shadow:var(--shadow);
+  position:relative;overflow:hidden}
+.stage::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green);opacity:.85}
+.stage.empty::before{background:var(--sep)}
+.stage .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stage .nm{font-size:16px;font-weight:650}
+.stage .cnt{font-size:13px;color:var(--muted)}
+.stage .meter{flex:1 1 180px;height:6px;border-radius:999px;background:var(--card2);overflow:hidden;min-width:120px}
+.stage .meter i{display:block;height:100%;border-radius:999px;background:var(--green);opacity:.85}
+.stage .days{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.stage .cards{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.mini{background:var(--card2);border-radius:12px;padding:9px 12px;font-size:13.5px;min-width:190px;cursor:pointer}
+.mini:hover{background:var(--green-tint)}
+.mini b{display:block;font-weight:600}
+.mini span{color:var(--muted);font-size:12.5px}
+
+/* --------------------------------- плашка активного фильтра --------------------------------- */
+.filterbar{display:flex;align-items:center;gap:10px;background:var(--blue-tint);color:var(--blue);
+  border-radius:12px;padding:9px 14px;margin-bottom:12px;font-size:14px}
+.filterbar button{font:inherit;font-size:13.5px;border:0;background:transparent;color:var(--blue);
+  cursor:pointer;margin-left:auto;font-weight:600}
+
+/* --------------------------------- две колонки --------------------------------- */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:920px){.split{grid-template-columns:1fr}}
+.kv{width:100%;font-size:14.5px}
+.kv td{border:0;padding:5px 0;vertical-align:top}
+.kv td:first-child{color:var(--muted);width:42%}
+.feat{margin-bottom:12px}
+.feat .lbl{display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:5px}
+.bar{height:6px;background:var(--card2);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--green)}
+.bar.low i{background:var(--orange)}
+.tl{border-left:2px solid var(--sep);margin-left:6px;padding-left:16px}
+.tl .ev{margin-bottom:13px;position:relative;font-size:14px}
+.tl .ev::before{content:"";position:absolute;left:-21px;top:6px;width:8px;height:8px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 0 3px var(--green-tint)}
+.tl .ev time{display:block;color:var(--muted);font-size:12.5px}
+.soc{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border-radius:12px;background:var(--card2);margin-bottom:8px}
+.soc .ico{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:11px;
+  font-weight:700;color:#fff;flex:none}
+.soc .gh{background:#48484a}.soc .tg{background:#0a84ff}.soc .vk{background:#4a76a8}
+.soc .ha{background:#5aa1c4}.soc .fo{background:#8e8e93}.soc .ok{background:#ee8208}
+.soc .li{background:#0a66c2}.soc .fb{background:#5a6a85}.soc .ig{background:#9b5d8f}
+.soc .x{background:#1c1c1e;border:1px solid var(--sep)}.soc .yt{background:#c4302b}.soc .dz{background:#2b2b2b}
+
+/* --------------------------------- чат --------------------------------- */
+.chat{display:flex;flex-direction:column;gap:10px;max-height:460px;overflow-y:auto;padding-right:4px}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.msg .who{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-size:12px;font-weight:700;background:var(--blue-tint);color:var(--blue)}
+.msg.agent .who{background:var(--green-tint);color:var(--green)}
+.bubble{background:var(--card2);border-radius:14px;padding:10px 13px;font-size:14.5px;max-width:78%}
+.msg.agent .bubble{background:var(--green-tint)}
+.bubble .meta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:8px;flex-wrap:wrap}
+.composer{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.composer textarea{width:100%;min-height:86px;font:inherit;font-size:15px;padding:12px 14px;border:0;
+  border-radius:14px;background:var(--card2);color:var(--ink);resize:vertical}
+.tagseg{display:flex;gap:2px;padding:2px;background:var(--card2);border-radius:11px;width:fit-content}
+.tagseg button{font:inherit;font-size:13.5px;border:0;background:transparent;color:var(--ink2);
+  padding:6px 13px;border-radius:9px;cursor:pointer}
+.tagseg button.on{background:var(--card);color:var(--ink);font-weight:600}
+.counter{font-size:13px;color:var(--muted)}
+.counter.bad{color:var(--red)}
+
+/* --------------------------------- модальное окно --------------------------------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);z-index:60;
+  display:none;align-items:flex-end;justify-content:center}
+.scrim.open{display:flex}
+.sheet{background:var(--card);width:min(560px,100%);border-radius:20px 20px 0 0;padding:10px 20px 22px;
+  max-height:88vh;overflow:auto;animation:up .24s ease-out}
+@media (min-width:640px){.scrim{align-items:center}.sheet{border-radius:20px}}
+@keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+.grab{width:38px;height:5px;border-radius:3px;background:var(--sep);margin:0 auto 12px}
+.sheet h3{font-size:19px;margin:0 0 4px;letter-spacing:-.02em}
+.sheet .hint{font-size:14px;color:var(--muted);margin-bottom:12px}
+.sheet textarea{width:100%;min-height:150px;font:inherit;font-size:15px;padding:12px 14px;border:0;
+  border-radius:14px;background:var(--card2);color:var(--ink);resize:vertical}
+.sheet .reasons{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.sheet .reasons button{font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;border:0;
+  background:var(--card2);color:var(--ink2);cursor:pointer}
+.sheet .reasons button:hover{background:var(--blue-tint);color:var(--blue)}
+.sheetfoot{display:flex;gap:10px;align-items:center;margin-top:14px}
+.sheetfoot .counter{margin-right:auto}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--card);
+  color:var(--ink);padding:12px 18px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.3);
+  font-size:14.5px;z-index:70;opacity:0;pointer-events:none;transition:.25s}
+.toast.show{opacity:1}
+svg{width:100%;height:auto;display:block}
+.hint{font-size:13.5px;color:var(--muted)}
+.done{opacity:.5}
+
+/* --------------------------------- печать досье в PDF --------------------------------- */
+@media print{
+  .nav,.note,.btns,.filterbar,.toast,.scrim,.tools{display:none !important}
+  main{padding:0;max-width:none}
+  body{background:#fff;color:#000}
+  .card,.list{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
+  .split{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="navin">
+    <div class="navtop">
+      <div class="mark">Р</div>
+      <h1 class="h1">Подбор</h1>
+      <div class="right">
+        <div class="theme" id="theme"></div>
+        <span title="Вход по учётной записи из 1С">Скворцова М. · рекрутер · учётка 1С</span>
+        <div class="ava">МС</div>
+      </div>
+    </div>
+    <div class="seg" id="seg"></div>
+  </div>
+</div>
+
+<main>
+<div class="note"><b>Демо.</b> Люди, компании и ссылки вымышлены. Персональных данных в файле нет.</div>
+
+<!-- ============================ СЕГОДНЯ ============================ -->
+<section id="today">
+  <div class="sechead"><span class="dot" style="background:var(--green)">1</span>Обратите внимание —
+    новые и изменившиеся люди</div>
+  <div class="zone z1"><div class="stack" id="alerts"></div></div>
+
+  <div class="sechead"><span class="dot" style="background:var(--orange)">2</span>Ждут подтверждения —
+    агент подготовил, решаете вы</div>
+  <div class="zone z2"><div class="stack" id="approvals"></div></div>
+
+  <div class="sechead"><span class="dot" style="background:var(--red)">3</span>Зависли пятый день</div>
+  <div class="zone z3"><div class="stack" id="stalled"></div></div>
+
+  <div class="sechead"><span class="dot" style="background:var(--blue)">4</span>Сегодня и завтра</div>
+  <div class="zone z4"><div class="stack" id="agenda"></div></div>
+</section>
+
+<!-- ============================ ДОСЬЕ ============================ -->
+<section id="person" hidden>
+  <div id="dossier"></div>
+</section>
+
+<!-- ============================ БАЗА ============================ -->
+<section id="base" hidden>
+  <div id="vacbar"></div>
+  <div class="tools">
+    <input class="search" id="q" placeholder="Поиск по ФИО, должности, навыку, городу">
+    <button class="b" onclick="resetFilters()">Сбросить</button>
+    <span class="hint" id="found"></span>
+  </div>
+  <div class="tablewrap">
+    <table><thead><tr id="head"></tr><tr class="filters" id="filters"></tr></thead><tbody id="rows"></tbody></table>
+  </div>
+  <p class="hint" style="margin:10px 6px">Щелчок по заголовку сортирует, повторный — в обратную сторону.
+    Строка под заголовками фильтрует по значениям колонки, фильтры складываются. ФИО открывает досье этого человека.</p>
+</section>
+
+<!-- ============================ ВАКАНСИИ ============================ -->
+<section id="vacancy" hidden>
+  <div class="sechead">Открытые вакансии</div>
+  <div class="stack" id="vacs"></div>
+  <div class="sechead">Закрытые за последний месяц</div>
+  <div class="stack" id="vacsclosed"></div>
+  <div class="sechead">Откуда вакансия попадает в систему</div>
+  <div class="split">
+    <div class="card">
+      <div class="t1">1. Рекрутер заводит сам</div>
+      <div class="t2">Должность из базы должностей, число ставок, вилка, срок, нанимающий руководитель.
+        Агент сразу показывает подходящих из накопленной базы.</div>
+      <div class="btns"><button class="b fill" onclick="toast('Форма новой вакансии открыта')">Новая вакансия</button></div>
+    </div>
+    <div class="card">
+      <div class="t1">2. Заявка руководителя — из 1С</div>
+      <div class="t2">Заявки на подбор ведутся в 1С и приходят сюда выгрузкой: кто нужен, в какое подразделение,
+        сколько ставок, к какому сроку, кто согласовал. Руками их в системе не заводят и не согласовывают —
+        решение принимается в 1С, здесь видна только готовая потребность и дата согласования.
+        Настройки обмена с 1С делаются отдельно.</div>
+      <div class="btns"><button class="b" onclick="toast('Последняя выгрузка из 1С: сегодня 06:20, принято 2 заявки')">Обмен с 1С</button></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="t1">3. Публикация на hh подхватывается сама</div>
+    <div class="t2">Опубликованную компанией вакансию агент заводит сам, с пометкой «из публикации», вместе с откликами.
+      Закрытый поиск по непубличным позициям так не заводится — для него первые два пути.</div>
+  </div>
+</section>
+
+<!-- ============================ БАЗА ДОЛЖНОСТЕЙ ============================ -->
+<section id="profiles" hidden>
+  <div class="card">
+    <div class="t1">База должностей: 83 карточки</div>
+    <div class="t2">Справочник всех должностей компании и портретов поиска по каждой. Ведётся постоянно:
+      новая должность заводится карточкой, изменившаяся правится. Портрет любой должности правит любой
+      рекрутер; сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение,
+      до утверждения выдача считается по прежней версии.</div>
+    <div class="btns">
+      <button class="b fill" onclick="toast('Создана карточка новой должности, черновик профиля собран из ДИ')">Новая должность</button>
+      <button class="b" onclick="go('logs')">Журнал изменений</button>
+      <button class="b tint" onclick="toast('Настройка: утверждение профилей — руководитель подбора')">Кто утверждает</button>
+    </div>
+  </div>
+  <div class="tools" style="margin-top:14px">
+    <input class="search" id="pq" placeholder="Поиск должности: электронщик, ОТК, продажи, бухгалтер…">
+    <select id="pdept" class="search" style="flex:0 0 240px"></select>
+    <span class="hint" id="pfound"></span>
+  </div>
+  <div class="list" id="proflist"></div>
+  <div id="profedit" style="margin-top:14px"></div>
+</section>
+
+<!-- ============================ ЖУРНАЛ И ОТЧЁТ ============================ -->
+<section id="logs" hidden>
+  <div class="card" style="margin-bottom:14px">
+    <div class="t1">Доступ и учётные записи</div>
+    <div class="t2">Система стоит на арендованном хостинге Timeweb. Вход — по учётным записям из 1С:
+      логины и подразделения приходят выгрузкой, отдельных паролей для рабочего места не заводится.
+      Сотрудник уволен в 1С — доступ закрывается при ближайшей выгрузке.</div>
+    <table class="kv" style="margin-top:10px">
+      <tr><td>Рекрутер</td><td>своя очередь, база, досье, вакансии, правка портретов должностей (на утверждение), чат обучения</td></tr>
+      <tr><td>Руководитель отдела персонала</td><td>всё то же плюс: утверждение версий профилей, решения по недельной сводке, пороги и веса, журнал изменений и отчёты, управление доступом</td></tr>
+      <tr><td>Нанимающий руководитель</td><td>свои вакансии и кандидаты по ним, без общей базы</td></tr>
+      <tr><td>Директор</td><td>чтение всего, отчёты и журнал изменений</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <div class="t1">Журнал изменений системы</div>
+    <div class="t2">Пишется всё, что меняет поведение агента: правки профилей должностей, пороги и веса,
+      настройки источников, решения по недельной сводке, изменения прав. У каждой записи — автор, время,
+      что было и что стало.</div>
+    <div class="btns">
+      <button class="b fill" onclick="toast('Отчёт за неделю сформирован и отправлен')">Сформировать отчёт сейчас</button>
+      <button class="b" onclick="toast('Получатели: руководитель отдела персонала, директор')">Получатели</button>
+    </div>
+    <div class="t2" style="margin-top:10px">Раз в неделю, по пятницам в 17:00, журнал уходит письмом на личную
+      почту руководителя отдела персонала и директора: что изменилось в профилях, в настройках агентов и в
+      системе, кто это сделал и на каком основании.</div>
+  </div>
+  <div class="sechead">Последние записи</div>
+  <div class="list" id="loglist"></div>
+</section>
+
+<!-- ============================ ОБУЧЕНИЕ АГЕНТА ============================ -->
+<section id="learn" hidden>
+  <div class="split">
+    <div>
+      <div class="sechead">Чат обучения агента</div>
+      <div class="card">
+        <div class="t2" style="margin-bottom:12px">Сюда рекрутеры пишут замечания, рекомендации и критику.
+          Агент накапливает всё, что вы написали, ищет повторяющееся и раз в неделю присылает руководителю
+          отдела персонала сводку с предложениями и анкетой. Решение принимает руководитель, после этого
+          изменение попадает в работу системы.</div>
+        <div class="chat" id="chat"></div>
+        <div class="composer">
+          <div class="tagseg" id="tagseg"></div>
+          <textarea id="msg" placeholder="Например: в выдачу по продажам третий день попадают люди из розницы. Ожидал, что стоп-фактор «нет опыта B2B» их отсечёт. Карточки К-411, К-415."></textarea>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="counter" id="msgcount"></span>
+            <button class="b fill" id="send" style="margin-left:auto" onclick="sendMsg()">Отправить агенту</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="sechead">Сводка для руководителя отдела персонала</div>
+      <div class="card">
+        <div class="t1">Неделя 22–26 сентября</div>
+        <div class="t2">Собрано 14 сообщений от четырёх рекрутеров. Агент сгруппировал их и предлагает три
+          изменения. По каждому — вопрос анкеты и решение руководителя.</div>
+        <div id="digest" style="margin-top:14px"></div>
+        <div class="btns">
+          <button class="b fill" onclick="applyDigest()">Внедрить принятые решения</button>
+          <button class="b" onclick="toast('Сводка отправлена на почту руководителя')">Отправить на почту</button>
+        </div>
+        <div class="hint" id="digestout" style="margin-top:10px"></div>
+      </div>
+      <div class="sechead">Что уже внедрено</div>
+      <div class="list" id="applied"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ВОРОНКА ============================ -->
+<section id="funnel" hidden>
+  <div class="card" style="margin-bottom:14px">
+    <div class="row">
+      <div class="grow">
+        <div class="t1">Ведущий инженер-электронщик</div>
+        <div class="t2">Открыта 18 дней из 45 · 1 ставка · в работе 8 человек · источник: завёл рекрутер</div>
+      </div>
+      <div class="btns" style="margin:0">
+        <button class="b tint" onclick="showMatching('v1')">Показать подходящих</button>
+        <button class="b" onclick="toast('Выбор вакансии: доступны три открытые')">Другая вакансия</button>
+      </div>
+    </div>
+  </div>
+  <div id="board"></div>
+  <p class="hint" style="margin:10px 6px">Этапы идут сверху вниз, ширина полосы — доля людей на этапе.
+    Карточку можно перетащить на соседний этап; каждое перемещение пишется в историю статусов
+    с автором и временем.</p>
+</section>
+
+<!-- ============================ СХЕМА ============================ -->
+<section id="arch" hidden>
+  <div class="card">
+    <div class="t1" style="margin-bottom:12px">Путь данных: от площадки до рекрутера</div>
+    <svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Схема работы агента подбора">
+      <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.6" color="var(--muted)">
+        <line x1="240" y1="86" x2="252" y2="86" marker-end="url(#ar)"/>
+        <line x1="480" y1="86" x2="492" y2="86" marker-end="url(#ar)"/>
+        <line x1="720" y1="86" x2="732" y2="86" marker-end="url(#ar)"/>
+        <path d="M850,128 L850,152 L170,152 L170,198" marker-end="url(#ar)"/>
+        <line x1="320" y1="240" x2="352" y2="240" marker-end="url(#ar)"/>
+        <line x1="640" y1="240" x2="672" y2="240" marker-end="url(#ar)"/>
+        <path d="M816,282 L816,330 L490,330 L490,356" marker-end="url(#ar)"/>
+      </g>
+      <g font-size="13" font-family="-apple-system, system-ui, Segoe UI, Roboto, Arial" fill="var(--ink)">
+        <rect x="20" y="46" width="220" height="82" rx="14" fill="var(--card2)" stroke="var(--sep)"/>
+        <text x="32" y="68" font-weight="650">Источники</text>
+        <text x="32" y="88" fill="var(--muted)">hh API · Работа России</text>
+        <text x="32" y="106" fill="var(--muted)">Авито · Хабр · соцсети</text>
+        <rect x="260" y="46" width="220" height="82" rx="14" fill="var(--green-tint)" stroke="var(--sep)"/>
+        <text x="272" y="68" font-weight="650">1. Сбор, 06:30</text>
+        <text x="272" y="88" fill="var(--muted)">обход по профилям ролей</text>
+        <text x="272" y="106" fill="var(--muted)">ответ сохраняется целиком</text>
+        <rect x="500" y="46" width="220" height="82" rx="14" fill="var(--green-tint)" stroke="var(--sep)"/>
+        <text x="512" y="68" font-weight="650">2. Сшивка досье</text>
+        <text x="512" y="88" fill="var(--muted)">резюме + соцсети + дубли</text>
+        <text x="512" y="106" fill="var(--muted)">один человек — одна карточка</text>
+        <rect x="740" y="46" width="220" height="82" rx="14" fill="var(--green-tint)" stroke="var(--sep)"/>
+        <text x="752" y="68" font-weight="650">3. Монитор изменений</text>
+        <text x="752" y="88" fill="var(--muted)">версии, диффы, события</text>
+        <text x="752" y="106" fill="var(--muted)">сменил работу, открыл поиск</text>
+        <rect x="20" y="198" width="300" height="84" rx="14" fill="var(--green-tint)" stroke="var(--sep)"/>
+        <text x="32" y="222" font-weight="650">4. Оценка по 83 профилям</text>
+        <text x="32" y="242" fill="var(--muted)">балл ≥ 60 — карточка остаётся</text>
+        <text x="32" y="260" fill="var(--muted)">в базе и наблюдается дальше</text>
+        <text x="32" y="276" fill="var(--muted)">профили правят рекрутеры</text>
+        <rect x="352" y="198" width="288" height="84" rx="14" fill="var(--green-tint)" stroke="var(--sep)"/>
+        <text x="364" y="222" font-weight="650">5. Очередь предложений</text>
+        <text x="364" y="242" fill="var(--muted)">письмо, приглашение,</text>
+        <text x="364" y="260" fill="var(--muted)">напоминание, склейка дубля —</text>
+        <text x="364" y="276" fill="var(--muted)">каждое ждёт подтверждения</text>
+        <rect x="672" y="198" width="288" height="84" rx="14" fill="var(--card2)" stroke="var(--sep)"/>
+        <text x="684" y="222" font-weight="650">6. Рекрутер</text>
+        <text x="684" y="242" fill="var(--muted)">дайджест 08:30, экран</text>
+        <text x="684" y="260" fill="var(--muted)">«Сегодня», решение —</text>
+        <text x="684" y="276" fill="var(--muted)">всегда за человеком</text>
+        <rect x="200" y="356" width="580" height="86" rx="14" fill="var(--violet-tint)" stroke="var(--sep)"/>
+        <text x="216" y="380" font-weight="650">7. Контур обучения</text>
+        <text x="216" y="400" fill="var(--muted)">чат рекрутеров · причины отказов · правки писем →</text>
+        <text x="216" y="418" fill="var(--muted)">недельная сводка и анкета руководителю отдела персонала →</text>
+        <text x="216" y="434" fill="var(--muted)">его решение меняет пороги, веса и профили</text>
+        <rect x="20" y="462" width="940" height="76" rx="14" fill="var(--card)" stroke="var(--green)" stroke-dasharray="5 4"/>
+        <text x="34" y="486" font-weight="650">База на сервере компании — две зоны</text>
+        <text x="34" y="506" fill="var(--muted)">наблюдение: профили с площадок, соцсети, версии резюме, события, оценки — без контактов</text>
+        <text x="34" y="526" fill="var(--muted)">кандидат: ФИО, контакты, файл резюме, основание обработки, история статусов, журнал доступа</text>
+      </g>
+    </svg>
+  </div>
+</section>
+</main>
+
+<!-- ============================ модальное окно решения ============================ -->
+<div class="scrim" id="scrim" onclick="if(event.target===this) closeSheet()">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="grab"></div>
+    <h3 id="sheetTitle">Решение по кандидату</h3>
+    <div class="hint" id="sheetHint"></div>
+    <div class="reasons" id="sheetReasons"></div>
+    <textarea id="sheetText" placeholder="Что именно не подошло, на что смотрели, что стоит учесть агенту в следующий раз. Чем конкретнее, тем быстрее агент перестанет носить таких же."></textarea>
+    <div class="sheetfoot">
+      <span class="counter bad" id="sheetCount">0 из 200 символов</span>
+      <button class="b" onclick="closeSheet()">Отмена</button>
+      <button class="b fill" id="sheetSave" disabled onclick="saveSheet()">Сохранить решение</button>
+    </div>
+  </div>
+</div>
+<div class="scrim" id="scrim2" onclick="if(event.target===this) closeExport()">
+  <div class="sheet" role="dialog" aria-modal="true" style="max-width:420px">
+    <div class="grab"></div>
+    <h3>Выгрузить досье</h3>
+    <div class="hint"><span id="exportName"></span> — полное досье из базы знаний: резюме, оценка,
+      профили в сети, хронология изменений. Выберите формат.</div>
+    <div class="btns">
+      <button class="b blue" onclick="exportWord()">Word (.doc)</button>
+      <button class="b fill" onclick="exportPdf()">PDF через печать</button>
+      <button class="b" onclick="closeExport()">Отмена</button>
+    </div>
+    <div class="hint" style="margin-top:10px">Каждая выгрузка пишется в журнал доступа: кто, когда и по кому.</div>
+  </div>
+</div>
+<div class="scrim" id="scrim3" onclick="if(event.target===this) closeInfo()">
+  <div class="sheet" role="dialog" aria-modal="true" style="max-width:520px">
+    <div class="grab"></div>
+    <h3 id="infoTitle"></h3>
+    <div class="hint" id="infoHint"></div>
+    <div class="list" id="infoList" style="margin-top:12px;box-shadow:none"></div>
+    <div class="btns" id="infoBtns"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================ данные ============================ */
+const TABS = [
+  ["today","Сегодня"], ["person","Досье"], ["base","База"], ["vacancy","Вакансии"],
+  ["profiles","База должностей"], ["learn","Обучение агента"], ["logs","Журнал и отчёт"],
+  ["funnel","Воронка"], ["arch","Схема"]
+];
+
+const PEOPLE = [
+  {id:"p1042", fio:"Карпов Андрей Сергеевич", city:"Краснодар", role:"Ведущий инженер-электронщик",
+   dept:"Инженерные разработки", score:88, state:"веду особо", src:"hh.ru", upd:"26.09 · открыл поиск",
+   why:"Открыл резюме для поиска сегодня в 06:32. Altium, 9 лет, приборостроение. В сети — активный GitHub по STM32",
+   chips:[["g","Altium"],["","Краснодар"],["b","открыл поиск"],["v","веду особо"]],
+   resume:{pos:"Инженер-электронщик, ведущий", geo:"Краснодар, переезд не требуется", exp:"9 лет 4 месяца, три места",
+     last:"приборостроительный завод, 4 года 2 месяца", tools:"Altium Designer, OrCAD, ЭМС, многослойные платы",
+     edu:"высшее техническое, радиотехника", want:"190 000 ₽ на руки", src:"hh.ru, найден по API 26.09 в 06:32"},
+   feats:[["Опыт по профилю, 9 лет",18,20],["Инструменты: Altium, трассировка",20,20],["Отрасль: приборостроение",15,15],
+     ["Держится на месте в среднем 3 года",14,15],["География: Краснодар",10,10],["Ожидания против вилки",7,10],
+     ["Вывод изделия в серию — не подтверждён",4,10]],
+   gap:"Нет подтверждённого опыта вывода изделия в серию и работы с контрактным производством. Это вопросы на первый разговор, а не повод отказать.",
+   events:[["26 сентября, 06:32","Открыл резюме для поиска работы"],["14 сентября","Добавил навыки: трассировка многослойных плат, ЭМС"],
+     ["2 августа","Поднял ожидания со 165 000 до 190 000 ₽"],["3 марта","Попал в поле зрения агента, балл был 71"]],
+   soc:[["gh","GitHub","14 репозиториев, последний коммит 12 дней назад, STM32 и датчики","подтверждено"],
+     ["tg","Telegram, чат электронщиков","Отвечает по трассировке и ЭМС","вероятно"],
+     ["vk","ВКонтакте","Открытый профиль, публикации с производства","подтверждено"],
+     ["ha","Хабр Карьера","Профиль обновлён в августе, тот же стек","подтверждено"]]},
+
+  {id:"p380", fio:"Демченко Игорь Валентинович", city:"Ростов-на-Дону", role:"Менеджер проектных продаж",
+   dept:"Продажи", score:81, state:"наблюдение", src:"hh.ru", upd:"24.09 · сменил работу",
+   why:"Сменил работодателя два месяца назад: ушёл из дистрибьютора систем безопасности. Донорский профиль B",
+   chips:[["g","донор: дистрибьютор СБ"],["","44-ФЗ"],["b","сменил работу"]],
+   resume:{pos:"Менеджер проектных продаж", geo:"Ростов-на-Дону, переезд обсуждается", exp:"7 лет, два места",
+     last:"дистрибьютор систем безопасности, 4 года", tools:"проектные продажи, 44-ФЗ и 223-ФЗ, регистрация проектов, CRM",
+     edu:"высшее техническое", want:"140 000 ₽ оклад плюс бонус", src:"hh.ru, найден по API 24.09"},
+   feats:[["Отрасль-донор: дистрибьютор СБ",20,20],["Длинный цикл сделки, проектные продажи",17,20],
+     ["Опыт 44-ФЗ и 223-ФЗ",13,15],["Работа с несколькими ЛПР",12,15],["География: переезд обсуждается",6,10],
+     ["Ожидания против вилки",8,10],["Дисциплина в CRM — не подтверждена",5,10]],
+   gap:"Не видно, как защищал цену и работал ли с проектировщиками. Спросить про самую длинную сделку и кто был реальным ЛПР.",
+   events:[["24 сентября","Сменил работодателя: перешёл в интегратора"],["11 сентября","Обновил резюме целиком"],
+     ["6 мая","Попал в поле зрения агента, балл был 74"]],
+   soc:[["tg","Telegram, чат проектировщиков СБ","Задаёт вопросы по совместимости оборудования","вероятно"],
+     ["vk","ВКонтакте","Открытый профиль, отраслевые репосты","подтверждено"]]},
+
+  {id:"p355", fio:"Савельев Пётр Дмитриевич", city:"удалённо", role:"Инженер-программист",
+   dept:"Разработка ПО", score:76, state:"кандидат", src:"Хабр Карьера", upd:"22.09 · добавил навык",
+   why:"Добавил в навыки FreeRTOS и STM32, в телеграм-чате разбирает прошивки. Полгода назад под профиль не подходил",
+   chips:[["g","Embedded"],["","удалённо"],["b","добавил навык"]],
+   resume:{pos:"Инженер-программист, встраиваемые системы", geo:"удалённо, Самара", exp:"6 лет",
+     last:"разработчик прошивок, 3 года", tools:"C, C++, FreeRTOS, STM32, Zephyr, Git",
+     edu:"высшее, вычислительная техника", want:"210 000 ₽", src:"Хабр Карьера, суточный доступ 22.09"},
+   feats:[["Embedded: C, C++, RTOS",19,20],["Опыт по профилю, 6 лет",15,20],["Работа с железом и отладкой",12,15],
+     ["Открытый код и активность",11,15],["География: удалённо",8,10],["Ожидания против вилки",6,10],
+     ["Опыт в серийном изделии — не подтверждён",5,10]],
+   gap:"Не ясно, работал ли в серийных изделиях и с сертификацией. Спросить про самый крупный проект в производстве.",
+   events:[["22 сентября","Добавил в навыки FreeRTOS и STM32"],["15 августа","Новый репозиторий с драйверами датчиков"],
+     ["2 апреля","Попал в поле зрения агента, балл был 64"]],
+   soc:[["gh","GitHub","23 репозитория, коммиты каждую неделю","подтверждено"],
+     ["tg","Telegram, embedded-чат","Разбирает чужие прошивки, отвечает новичкам","подтверждено"],
+     ["ha","Хабр Карьера","Профиль и две статьи про RTOS","подтверждено"]]},
+
+  {id:"p512", fio:"Ниязова Алина Рустамовна", city:"Ставрополь", role:"Руководитель ОТК", dept:"ОТК",
+   score:72, band:"mid", state:"наблюдение", src:"hh.ru", upd:"21.09 · ожидания",
+   why:"Подняла ожидания до 180 000 ₽ — вошла в вилку релокации. Опыт серийного производства электроники",
+   chips:[["o","релокация"],["","Ставрополь"],["b","изменила ожидания"]],
+   resume:{pos:"Руководитель ОТК", geo:"Ставрополь, готова к переезду", exp:"11 лет, два предприятия",
+     last:"завод электронных компонентов, 6 лет", tools:"AQL, входной контроль, ПСИ, 8D, ISO 9001",
+     edu:"высшее техническое, метрология", want:"180 000 ₽", src:"hh.ru, найдена по API 21.09"},
+   feats:[["Опыт ОТК в электронике",18,20],["Серийное производство",15,20],["Методики: AQL, 8D, ПСИ",14,15],
+     ["Управление людьми",11,15],["География: релокация",5,10],["Ожидания против вилки",6,10],
+     ["Опыт постановки изделия на производство",3,10]],
+   gap:"Не видно опыта постановки нового изделия на производство. Спросить, вела ли первые партии и как считала брак.",
+   events:[["21 сентября","Подняла ожидания со 150 000 до 180 000 ₽"],["3 сентября","Указала готовность к переезду"],
+     ["17 января","Попала в поле зрения агента, балл был 66"]],
+   soc:[["fo","Отраслевой форум по качеству","Отвечает в ветке про входной контроль","вероятно"]]},
+
+  {id:"p288", fio:"Тарасов Максим Олегович", city:"Краснодар", role:"Инженер технической поддержки",
+   dept:"Техподдержка", score:69, band:"mid", state:"наблюдение", src:"hh.ru", upd:"20.09 · сменил работу",
+   why:"Отказ в марте по опыту. За полгода балл вырос на 14: сменил работу на профильную",
+   chips:[["r","был отказ"],["g","балл +14"],["","Краснодар"]],
+   resume:{pos:"Инженер технической поддержки", geo:"Краснодар", exp:"5 лет",
+     last:"интегратор систем видеонаблюдения, 7 месяцев", tools:"IP-камеры, ONVIF, VMS, сети, PoE",
+     edu:"среднее специальное, радиоаппаратостроение", want:"95 000 ₽", src:"hh.ru, найден по API 20.09"},
+   feats:[["Профильный опыт: видеонаблюдение",16,20],["Сети и ONVIF",13,15],["Работа с клиентом",12,15],
+     ["Опыт по профилю, 5 лет",14,20],["География: Краснодар",10,10],["Ожидания против вилки",4,10]],
+   gap:"На новом месте всего семь месяцев: раньше чем через полгода звать бессмысленно, но наблюдение продолжается.",
+   events:[["20 сентября","Сменил работу на профильную"],["12 марта","Отказ: не хватало профильного опыта"],
+     ["4 марта","Попал в поле зрения агента, балл был 55"]],
+   soc:[["tg","Telegram, чат монтажников","Спрашивает про настройку VMS","вероятно"],
+     ["vk","ВКонтакте","Открытый профиль","подтверждено"]]},
+
+  {id:"p362", fio:"Гриценко Сергей Анатольевич", city:"Краснодар", role:"Мастер производства", dept:"Производство",
+   score:74, state:"кандидат", src:"Работа России", upd:"26.09 · звонок сегодня",
+   why:"Кандидат в работе: телефонное интервью сегодня в 15:00",
+   chips:[["g","производство электроники"],["","Краснодар"]],
+   resume:{pos:"Мастер производственного участка", geo:"Краснодар", exp:"12 лет",
+     last:"сборочное производство, 5 лет", tools:"SMT, монтаж, бережливое производство, 1С",
+     edu:"среднее специальное", want:"120 000 ₽", src:"Работа России, найден по API 18.09"},
+   feats:[["Опыт производства электроники",18,20],["Управление участком",15,20],["Бережливое производство",11,15],
+     ["Дисциплина и отчётность",12,15],["География: Краснодар",10,10],["Ожидания против вилки",8,10]],
+   gap:"Спросить про брак и как его считал: цифры в резюме не названы.",
+   events:[["26 сентября","Назначено телефонное интервью"],["18 сентября","Взят в работу рекрутером"]],
+   soc:[]},
+
+  {id:"p771", fio:"Белозёрова Ирина Павловна", city:"Краснодар", role:"Специалист по закупкам",
+   dept:"Закупки и склад", score:66, band:"mid", state:"наблюдение", src:"Авито Работа", upd:"19.09 · обновила резюме",
+   why:"Обновила резюме, опыт закупок комплектующих у китайских поставщиков",
+   chips:[["","ВЭД"],["","Краснодар"]],
+   resume:{pos:"Специалист по закупкам", geo:"Краснодар", exp:"8 лет", last:"торговая компания, 4 года",
+     tools:"ВЭД, поставщики Китая, 1С:УТ, логистика", edu:"высшее экономическое", want:"90 000 ₽",
+     src:"Авито Работа, выгрузка из кабинета 19.09"},
+   feats:[["Закупки комплектующих",15,20],["ВЭД и работа с Китаем",14,15],["1С и документооборот",12,15],
+     ["Опыт по профилю, 8 лет",15,20],["География: Краснодар",10,10],["Ожидания против вилки",0,10]],
+   gap:"Не видно работы с техническими спецификациями. Спросить, разбирала ли чертежи и ТУ.",
+   events:[["19 сентября","Обновила резюме"],["7 июня","Попала в поле зрения агента, балл был 62"]],
+   soc:[["vk","ВКонтакте","Открытый профиль","вероятно"]]},
+
+  {id:"p604", fio:"Кравченко Олег Николаевич", city:"Краснодар", role:"Ведущий системный администратор",
+   dept:"ИТ", score:61, band:"mid", state:"наблюдение", src:"hh.ru", upd:"17.09 · обновил резюме",
+   why:"Обновил резюме: добавил опыт с виртуализацией и резервным копированием",
+   chips:[["","Linux"],["","Краснодар"]],
+   resume:{pos:"Системный администратор, ведущий", geo:"Краснодар", exp:"9 лет", last:"производственная компания, 5 лет",
+     tools:"Linux, Proxmox, PostgreSQL, сети, резервное копирование", edu:"высшее техническое", want:"150 000 ₽",
+     src:"hh.ru, найден по API 17.09"},
+   feats:[["Администрирование Linux",16,20],["Виртуализация и бэкапы",12,15],["Сети",11,15],
+     ["Опыт по профилю, 9 лет",16,20],["География: Краснодар",10,10],["Ожидания против вилки",0,10]],
+   gap:"Ожидания выше вилки на 15%. Уточнить, что входит в ожидаемый доход.",
+   events:[["17 сентября","Обновил резюме"],["22 февраля","Попал в поле зрения агента, балл был 58"]],
+   soc:[["gh","GitHub","Скрипты автоматизации, редкие коммиты","вероятно"],
+     ["tg","Telegram, чат админов","Отвечает по Proxmox","вероятно"],["vk","ВКонтакте","Открытый профиль","подтверждено"]]},
+
+  {id:"p915", fio:"Шевчук Дарья Владимировна", city:"Краснодар", role:"Бухгалтер по расчёту заработной платы",
+   dept:"Финансы", score:64, band:"mid", state:"наблюдение", src:"Работа России", upd:"18.09 · обновила резюме",
+   why:"Обновила резюме: опыт расчёта зарплаты на производстве со сдельной оплатой",
+   chips:[["","1С:ЗУП"],["","Краснодар"]],
+   resume:{pos:"Бухгалтер по расчёту заработной платы", geo:"Краснодар", exp:"10 лет",
+     last:"производственное предприятие, 6 лет", tools:"1С:ЗУП, сдельная оплата, отчётность",
+     edu:"высшее экономическое", want:"85 000 ₽", src:"Работа России, найдена по API 18.09"},
+   feats:[["Расчёт зарплаты на производстве",17,20],["1С:ЗУП",14,15],["Отчётность",12,15],
+     ["Опыт по профилю, 10 лет",16,20],["География: Краснодар",10,10],["Ожидания против вилки",5,10]],
+   gap:"Уточнить опыт со сдельной оплатой и КТУ: у нас это основной способ расчёта в производстве.",
+   events:[["18 сентября","Обновила резюме"],["9 мая","Попала в поле зрения агента, балл был 61"]],
+   soc:[]},
+
+  {id:"p733", fio:"Морозов Виктор Степанович", city:"Новороссийск", role:"Инженер ОТК", dept:"ОТК",
+   score:58, band:"mid", state:"кандидат", src:"hh.ru", upd:"22.09 · не пришёл",
+   why:"Не пришёл на телефонное интервью, на повторное предложение не ответил",
+   chips:[["r","не пришёл"],["","Новороссийск"]],
+   resume:{pos:"Инженер ОТК", geo:"Новороссийск", exp:"4 года", last:"машиностроительный завод, 2 года",
+     tools:"измерительный инструмент, входной контроль", edu:"среднее специальное", want:"80 000 ₽",
+     src:"hh.ru, найден по API 2.09"},
+   feats:[["Опыт ОТК",12,20],["Электроника — нет опыта",4,20],["Методики контроля",9,15],
+     ["Опыт по профилю, 4 года",12,20],["География: другой город",3,10],["Ожидания против вилки",8,10]],
+   gap:"Опыт в машиностроении, не в электронике. Переучивание займёт месяцы.",
+   events:[["22 сентября","Не пришёл на интервью"],["2 сентября","Взят в работу рекрутером"]],
+   soc:[]},
+
+  {id:"p841", fio:"Латыпов Рустам Ильдарович", city:"удалённо", role:"Старший специалист тестирования ПО",
+   dept:"Разработка ПО", score:70, band:"mid", state:"наблюдение", src:"GitHub", upd:"25.09 · новый репозиторий",
+   why:"Найден по активности на GitHub: автотесты для встраиваемых устройств",
+   chips:[["g","автотесты"],["","удалённо"],["b","новый репозиторий"]],
+   resume:{pos:"Старший инженер по тестированию", geo:"удалённо, Казань", exp:"7 лет",
+     last:"продуктовая компания, 3 года", tools:"Python, pytest, автотесты железа, CI",
+     edu:"высшее техническое", want:"200 000 ₽", src:"GitHub, найден по активности 25.09"},
+   feats:[["Автотесты и CI",18,20],["Тестирование железа",13,15],["Python",13,15],
+     ["Опыт по профилю, 7 лет",15,20],["География: удалённо",8,10],["Ожидания против вилки",3,10]],
+   gap:"Резюме на площадках нет, оценка собрана по открытому коду. Контакт искать через профиль на GitHub.",
+   events:[["25 сентября","Новый репозиторий с автотестами"],["30 августа","Попал в поле зрения агента, балл был 67"]],
+   soc:[["gh","GitHub","41 репозиторий, активность каждую неделю","подтверждено"],
+     ["ha","Хабр Карьера","Профиль без резюме","вероятно"],["tg","Telegram, QA-чат","Отвечает по pytest","вероятно"],
+     ["fo","Форум тестировщиков","Старые ответы 2023 года","вероятно"]]},
+
+  {id:"p478", fio:"Ерохина Наталья Андреевна", city:"Краснодар", role:"Менеджер по сопровождению клиентов",
+   dept:"Продажи", score:63, band:"mid", state:"кандидат", src:"Работа России", upd:"25.09 · оффер",
+   why:"Оффер на рассмотрении, ответ ждём до 29 сентября",
+   chips:[["g","оффер"],["","Краснодар"]],
+   resume:{pos:"Менеджер по сопровождению клиентов", geo:"Краснодар", exp:"6 лет",
+     last:"оптовая компания, 3 года", tools:"CRM, документооборот, работа с рекламациями",
+     edu:"высшее", want:"85 000 ₽", src:"Работа России, найдена по API 8.09"},
+   feats:[["Сопровождение клиентов",15,20],["CRM и дисциплина",13,15],["Работа с рекламациями",11,15],
+     ["Опыт по профилю, 6 лет",14,20],["География: Краснодар",10,10],["Ожидания против вилки",0,10]],
+   gap:"Нет опыта в технической продукции. Обучение продукту займёт два-три месяца.",
+   events:[["25 сентября","Отправлен оффер"],["16 сентября","Встреча с руководителем"],["8 сентября","Взята в работу"]],
+   soc:[["vk","ВКонтакте","Открытый профиль","подтверждено"]]},
+
+  {id:"p1187", fio:"Пшеничный Артём Юрьевич", city:"Армавир", role:"Инженер-электронщик 1 категории",
+   dept:"Инженерные разработки", score:79, state:"веду особо", src:"hh.ru", upd:"23.09 · открыл поиск",
+   why:"Открыл резюме для поиска. Схемотехника и разводка плат, готов к переезду в Краснодар",
+   chips:[["g","схемотехника"],["o","релокация"],["b","открыл поиск"],["v","веду особо"]],
+   resume:{pos:"Инженер-электронщик 1 категории", geo:"Армавир, готов к переезду", exp:"7 лет",
+     last:"приборостроительное предприятие, 5 лет", tools:"Altium, аналоговая схемотехника, измерения",
+     edu:"высшее техническое", want:"160 000 ₽", src:"hh.ru, найден по API 23.09"},
+   feats:[["Схемотехника",17,20],["Altium и разводка",16,20],["Отрасль: приборостроение",14,15],
+     ["Опыт по профилю, 7 лет",14,20],["География: релокация",6,10],["Ожидания против вилки",8,10]],
+   gap:"Переезд в Краснодар обсуждается, но семья в Армавире. Уточнить условия на первом разговоре.",
+   events:[["23 сентября","Открыл резюме для поиска"],["4 сентября","Обновил описание последнего места"],
+     ["19 февраля","Попал в поле зрения агента, балл был 72"]],
+   soc:[["tg","Telegram, чат электронщиков","Обсуждает измерения и приборы","вероятно"],
+     ["vk","ВКонтакте","Открытый профиль","подтверждено"],["gh","GitHub","Два репозитория, старые","вероятно"]]},
+
+  {id:"p390", fio:"Садыкова Лилия Маратовна", city:"Краснодар", role:"Специалист по развитию персонала",
+   dept:"Персонал", score:60, band:"mid", state:"наблюдение", src:"hh.ru", upd:"15.09 · обновила резюме",
+   why:"Попала в наблюдение по порогу: опыт обучения производственного персонала",
+   chips:[["","обучение"],["","Краснодар"]],
+   resume:{pos:"Специалист по развитию персонала", geo:"Краснодар", exp:"5 лет",
+     last:"производственная компания, 3 года", tools:"адаптация, обучение, оценка персонала",
+     edu:"высшее, психология", want:"95 000 ₽", src:"hh.ru, найдена по API 15.09"},
+   feats:[["Обучение персонала",14,20],["Адаптация новичков",12,15],["Оценка",10,15],
+     ["Опыт по профилю, 5 лет",12,20],["География: Краснодар",10,10],["Ожидания против вилки",2,10]],
+   gap:"Нет опыта с производственными профессиями рабочих специальностей.",
+   events:[["15 сентября","Обновила резюме"],["1 июля","Попала в поле зрения агента, балл был 60"]],
+   soc:[["vk","ВКонтакте","Открытый профиль","подтверждено"]]}
+];
+const byId = id => PEOPLE.find(p => p.id === id);
+
+const ALERTS = ["p1042","p380","p355","p512","p288"];
+const APPROVALS = [
+  {t:"Первое сообщение — Карпов А. С.", d:"Шаблон «инженерные роли»: вакансия, график, адрес, чем занимается компания, контакт рекрутера. Зарплата не называется."},
+  {t:"Приглашение на интервью — Демченко И. В.", d:"Вторник, 30 сентября, 11:00, встреча с руководителем отдела проектных продаж. Календарь свободен."},
+  {t:"Склеить два профиля — Савельев П. Д.", d:"Резюме на hh и профиль на Хабр Карьере: совпали работодатели и даты, сходство 0,86. Один человек?"},
+  {t:"Подтвердить профиль в сети — Карпов А. С.", d:"Телеграм-профиль с тем же ником и городом, пишет по трассировке плат. Добавить в досье?"}
+];
+const STALLED = [
+  {t:"Савельев П. Д. — инженер-программист", d:"Первое сообщение отправлено 21 сентября, ответа нет. Предлагаю напомнить одним сообщением."},
+  {t:"Ниязова А. Р. — руководитель ОТК", d:"Не пришла на телефонное интервью 22 сентября, на повторное предложение не ответила."}
+];
+const AGENDA = [
+  {t:"Сегодня, 15:00 — телефонное интервью, Гриценко С. А.", d:"Вопросы для скрининга подготовлены агентом."},
+  {t:"Завтра, 10:30 — встреча с руководителем, Демченко И. В.", d:"Технический кейс проводит инженер техподдержки, 45 минут."}
+];
+const VACS = [
+  {id:"v1", t:"Ведущий инженер-электронщик · 1 ставка", role:"Ведущий инженер-электронщик",
+   dept:"Инженерные разработки",
+   d:"Открыта 18 дней из 45. В работе 8 человек, подобрано агентом из базы 34. Источник: завёл рекрутер."},
+  {id:"v2", t:"Менеджер проектных продаж · 3 ставки", role:"Менеджер проектных продаж", dept:"Продажи",
+   d:"Открыта 9 дней. В работе 11 человек. Источник: заявка из 1С, согласована 17 сентября, заказчик — руководитель отдела проектных продаж."},
+  {id:"v3", t:"Инженер ОТК · 2 ставки", role:"Инженер ОТК", dept:"ОТК",
+   d:"Открыта 31 день при норме 45. В работе 2 человека — вакансия голодает, агент поднял приоритет. Источник: публикация на hh."}
+];
+const VACS_CLOSED = [
+  {id:"v0", t:"Инженер технической поддержки · 1 ставка", role:"Инженер технической поддержки", dept:"Техподдержка",
+   d:"Закрыта 12 сентября: вышел человек из резерва, срок 26 дней. Подбор по позиции продолжается: 14 человек в наблюдении, профиль активен."}
+];
+const PROFILES = [
+  ["Ведущий инженер-электронщик","Инженерные разработки","в. 1.1 от 20.09, утверждена","ok"],
+  ["Инженер-электронщик 1 категории","Инженерные разработки","в. 1.0 от 12.09, утверждена","ok"],
+  ["Инженер-программист","Разработка ПО","в. 1.2 от 24.09, ждёт утверждения","wait"],
+  ["Старший специалист тестирования ПО","Разработка ПО","в. 1.0 от 12.09, утверждена","ok"],
+  ["Менеджер проектных продаж","Продажи","в. 2.0 от 25.09, утверждена","ok"],
+  ["Региональный менеджер по продажам","Продажи","черновик из ДИ, не утверждён","draft"],
+  ["Руководитель ОТК","ОТК","в. 1.1 от 19.09, утверждена","ok"],
+  ["Инженер ОТК","ОТК","в. 1.0 от 12.09, утверждена","ok"],
+  ["Мастер производства","Производство","в. 1.0 от 12.09, утверждена","ok"],
+  ["Инженер технической поддержки","Техподдержка","в. 1.0 от 12.09, утверждена","ok"],
+  ["Ведущий системный администратор","ИТ","черновик из ДИ, не утверждён","draft"],
+  ["Специалист по закупкам","Закупки и склад","в. 1.0 от 12.09, утверждена","ok"],
+  ["Бухгалтер по расчёту заработной платы","Финансы","в. 1.0 от 12.09, утверждена","ok"],
+  ["Специалист по развитию персонала","Персонал","черновик из ДИ, не утверждён","draft"]
+];
+const CHAT = [
+  {who:"МС", name:"Скворцова М.", time:"вчера, 16:12", tag:"замечание",
+   text:"По продажам третий день приходят люди из розницы и FMCG. Ожидала, что их отсечёт требование B2B-опыта. Карточки К-411, К-415, К-420."},
+  {who:"АГ", name:"Агент", time:"вчера, 16:12", tag:"принято", agent:true,
+   text:"Записал. Похожее замечание было 23 сентября от Приходько А. Сгруппировал, войдёт в недельную сводку как предложение по профилю «Менеджер проектных продаж»."},
+  {who:"ПА", name:"Приходько А.", time:"вчера, 18:40", tag:"рекомендация",
+   text:"Для инженерных ролей стоит поднять вес открытого кода: по двум последним наймам GitHub предсказал уровень лучше, чем стаж в резюме."},
+  {who:"ВК", name:"Волкова К.", time:"сегодня, 09:22", tag:"критика",
+   text:"Письма для ОТК звучат как для продажников. Люди на производстве такого тона не любят, два отказа подряд с формулировкой «не интересно»."},
+  {who:"АГ", name:"Агент", time:"сегодня, 09:23", tag:"принято", agent:true,
+   text:"Записал. Это третье сообщение про тон писем за две недели. Предложу руководителю отдельный шаблон для производственных ролей."}
+];
+const DIGEST = [
+  {id:"d1", title:"Добавить стоп-фактор «нет опыта B2B» в профиль менеджера проектных продаж",
+   base:"4 сообщения от двух рекрутеров за неделю, 11 карточек в выдаче",
+   q:"Отсекать таких на входе или оставлять с пониженным баллом?"},
+  {id:"d2", title:"Поднять вес открытого кода для инженерных и программистских ролей с 5 до 12",
+   base:"2 сообщения, подтверждено двумя наймами за квартал",
+   q:"Применить ко всем инженерным профилям или только к разработке ПО?"},
+  {id:"d3", title:"Завести отдельный шаблон первого письма для производственных ролей и ОТК",
+   base:"3 сообщения за две недели, два отказа с формулировкой «не интересно»",
+   q:"Кто пишет текст шаблона: руководитель подбора или рекрутер направления?"}
+];
+const APPLIED = [
+  ["22.09 · Вес географии для релокации поднят с 5 до 10","Решение руководителя по сводке недели 15–19 сентября. Причина: 6 отказов из-за переезда"],
+  ["15.09 · Порог наблюдения снижен с 65 до 60","Рекрутеры жаловались, что выдача пустая по редким ролям"],
+  ["08.09 · В карточку добавлена строка «почему сегодня»","Три сообщения о том, что непонятно, почему человек показан именно сейчас"]
+];
+const BOARD = [
+  {st:"Отобран агентом", items:[["Карпов А. С.","инженер-электронщик, 88"],["Пшеничный А. Ю.","1 категория, 79"]]},
+  {st:"Написали", items:[["Латыпов Р. И.","3 дня назад"]]},
+  {st:"Ответил", items:[["Савельев П. Д.","ждёт созвона"]]},
+  {st:"Телефонное интервью", items:[["Гриценко С. А.","сегодня 15:00"]]},
+  {st:"Встреча с руководителем", items:[["Демченко И. В.","30.09, 11:00"]]},
+  {st:"Проверка СБ", items:[]},
+  {st:"Оффер", items:[["Ерохина Н. А.","решение до 29.09"]]},
+  {st:"Резерв", items:[["Ниязова А. Р.","вернуться через 3 месяца"],["Морозов В. С.","пересмотр в декабре"]]}
+];
+const COLS = [
+  {k:"fio", t:"ФИО", type:"text"}, {k:"city", t:"Город", type:"enum"},
+  {k:"role", t:"Должность", type:"enum"}, {k:"dept", t:"Подразделение", type:"enum"},
+  {k:"score", t:"Балл", type:"num"}, {k:"state", t:"Где числится", type:"enum"},
+  {k:"src", t:"Источник", type:"enum"}, {k:"socn", t:"Профилей в сети", type:"num"},
+  {k:"upd", t:"Последнее изменение", type:"text"}
+];
+PEOPLE.forEach(p => p.socn = (p.soc || []).length);
+
+/* профили на других площадках: агент ищет по всем, не только во ВКонтакте */
+[["p380", ["ok", "Одноклассники", "Открытый профиль, город и место работы совпали", "подтверждено"]],
+ ["p380", ["li", "LinkedIn", "Профиль на английском, тот же опыт и работодатели", "вероятно"]],
+ ["p1042", ["x", "X (Twitter)", "Редкие посты по электронике и измерениям", "вероятно"]],
+ ["p512", ["ok", "Одноклассники", "Открытый профиль, указан завод", "подтверждено"]],
+ ["p478", ["fb", "Facebook*", "Старый открытый профиль, последняя запись 2022 год", "вероятно"]],
+ ["p841", ["yt", "YouTube", "Два доклада с профильной конференции", "подтверждено"]]
+].forEach(([id, rec]) => {
+  const p = PEOPLE.find(x => x.id === id);
+  if (p) (p.soc = p.soc || []).push(rec);
+});
+
+/* у части людей к резюме приложено фото — в демо вместо него рисуется значок */
+["p1042", "p380", "p355", "p512", "p478", "p1187", "p841"].forEach(id => {
+  const p = PEOPLE.find(x => x.id === id); if (p) p.photo = true;
+});
+
+/* ============================ вспомогательное ============================ */
+const el = s => document.querySelector(s);
+const initials = fio => fio.split(" ").slice(0, 2).map(w => w[0]).join("");
+function face(p, cls = ""){
+  return p.photo
+    ? `<div class="face ${cls}" title="Фото из резюме">
+         <svg viewBox="0 0 40 40" aria-hidden="true">
+           <rect width="40" height="40" fill="var(--green-tint)"/>
+           <circle cx="20" cy="15" r="7" fill="var(--green)" opacity=".85"/>
+           <path d="M6 40c0-8 6.5-13 14-13s14 5 14 13z" fill="var(--green)" opacity=".85"/>
+         </svg></div>`
+    : `<div class="face ${cls}" title="Фото к резюме не приложено">${initials(p.fio)}</div>`;
+}
+const chipHtml = ([c, t]) => `<span class="chip ${c}">${t}</span>`;
+let toastTimer;
+function toast(text){
+  const t = el("#toast"); t.textContent = text; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function go(id){
+  document.querySelectorAll("main > section").forEach(s => s.hidden = (s.id !== id));
+  document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.tab === id));
+  window.scrollTo({top:0, behavior:"instant"});
+}
+
+/* ============================ навигация ============================ */
+el("#seg").innerHTML = TABS.map(([id, t], i) =>
+  `<button class="${i === 0 ? "on" : ""}" data-tab="${id}" onclick="go('${id}')">${t}<span class="badge" id="bdg_${id}"></span></button>`).join("");
+
+/* ============================ Сегодня ============================ */
+el("#alerts").innerHTML = ALERTS.map(id => {
+  const p = byId(id);
+  return `<div class="card" id="card_${p.id}">
+    <div class="row">
+      <div class="badge-score${p.band === "mid" ? " mid" : ""}"><b>${p.score}</b><span>из 100</span></div>
+      <div class="grow">
+        <div class="namewrap">${face(p, "sm")}<div class="t1">${p.fio}</div></div>
+        <div class="t2">${p.role} · ${p.dept}</div>
+        <div class="t2" style="color:var(--ink2)">${p.why}</div>
+        <div class="chips">${p.chips.map(chipHtml).join("")}</div>
+        <div class="btns">
+          <button class="b fill" onclick="takeIn('${p.id}', this)">В работу</button>
+          <button class="b" onclick="openSheet('${p.id}','postpone')">Отложить</button>
+          <button class="b danger" onclick="openSheet('${p.id}','reject')">Не наш</button>
+          <button class="b tint" onclick="openDossier('${p.id}')">Открыть досье</button>
+        </div>
+      </div>
+    </div></div>`;
+}).join("");
+
+const plain = (arr, btns) => arr.map(a => `<div class="card">
+  <div class="t1">${a.t}</div><div class="t2">${a.d}</div><div class="btns">${btns}</div></div>`).join("");
+el("#approvals").innerHTML = plain(APPROVALS,
+  `<button class="b fill" onclick="done(this,'Одобрено и исполнено')">Одобрить</button>
+   <button class="b" onclick="done(this,'Отправлено на правку')">Править</button>
+   <button class="b danger" onclick="done(this,'Отклонено, причина записана')">Отклонить</button>`);
+el("#stalled").innerHTML = plain(STALLED,
+  `<button class="b fill" onclick="done(this,'Напоминание подготовлено')">Напомнить</button>
+   <button class="b" onclick="done(this,'Перенесён в резерв')">В резерв</button>
+   <button class="b danger" onclick="done(this,'Закрыт: отказ кандидата')">Закрыть</button>`);
+el("#agenda").innerHTML = AGENDA.map(a => `<div class="card"><div class="t1">${a.t}</div><div class="t2">${a.d}</div></div>`).join("");
+el("#vacs").innerHTML = VACS.map(v => `<div class="card" id="vac_${v.id}"><div class="t1">${v.t}</div>
+  <div class="t2">${v.d}</div>
+  <div class="btns"><button class="b fill" onclick="showMatching('${v.id}')">Показать подходящих</button>
+  <button class="b danger" onclick="openSheet('${v.id}','closeVacancy')">Закрыть вакансию</button></div></div>`).join("");
+el("#vacsclosed").innerHTML = VACS_CLOSED.map(v => `<div class="card" style="opacity:.75">
+  <div class="t1">${v.t}</div><div class="t2">${v.d}</div>
+  <div class="btns"><button class="b tint" onclick="showMatching('${v.id}')">Кто накопился по позиции</button>
+  <button class="b" onclick="toast('Вакансия открыта заново, наблюдение уже велось')">Открыть заново</button></div></div>`).join("");
+el("#bdg_today").textContent = ALERTS.length + APPROVALS.length;
+el("#bdg_vacancy").textContent = VACS.length;
+
+/* ============================ Досье ============================ */
+const SOCNAMES = {gh:"GH", tg:"TG", vk:"VK", ha:"ХК", fo:"Ф", ok:"ОК", li:"in", fb:"FB", ig:"IG",
+  x:"X", yt:"YT", dz:"Дз"};
+function dossier(p){
+  const bars = p.feats.map(([n, v, m]) => `<div class="feat">
+      <div class="lbl"><span>${n}</span><span class="num">${v} / ${m}</span></div>
+      <div class="bar${v / m < .75 ? " low" : ""}"><i style="width:${Math.round(v / m * 100)}%"></i></div></div>`).join("");
+  const soc = (p.soc || []).length ? p.soc.map(([k, t, d, conf]) => `<div class="soc">
+      <div class="ico ${k}">${SOCNAMES[k]}</div>
+      <div><div style="font-weight:600">${t} <span class="chip ${conf === "подтверждено" ? "g" : "o"}">${conf}</span></div>
+      <div class="t2">${d}</div></div></div>`).join("")
+    : `<div class="t2">Профессиональных следов в открытых источниках пока не найдено. Агент повторит поиск при следующем изменении резюме.</div>`;
+  const events = p.events.map(([t, d]) => `<div class="ev"><time>${t}</time>${d}</div>`).join("");
+  return `
+  <div class="card">
+    <div class="row">
+      <div class="badge-score${p.band === "mid" ? " mid" : ""}"><b>${p.score}</b><span>из 100</span></div>
+      ${face(p)}
+      <div class="grow">
+        <div class="t1">${p.fio} — ${p.role}, ${p.city}</div>
+        <div class="t2">${p.dept} · ${p.state} · источник: ${p.src} · карточка ${p.id.toUpperCase()}</div>
+        <div class="chips">${p.chips.map(chipHtml).join("")}</div>
+      </div>
+      <div class="btns" style="margin:0">
+        <button class="b fill" onclick="takeIn('${p.id}', this)">Взять в работу</button>
+        <button class="b" onclick="openSheet('${p.id}','postpone')">Отложить</button>
+        <button class="b danger" onclick="openSheet('${p.id}','reject')">Не наш</button>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="b tint" onclick="fullDossier('${p.id}')">Просмотреть полное досье</button>
+      <button class="b" onclick="openExport('${p.id}')">Выгрузить в Word или PDF</button>
+    </div>
+  </div>
+  <div class="split" style="margin-top:14px">
+    <div class="stack">
+      <div class="card">
+        <div class="t1" style="margin-bottom:10px">Резюме</div>
+        <table class="kv">
+          <tr><td>Желаемая должность</td><td>${p.resume.pos}</td></tr>
+          <tr><td>Город</td><td>${p.resume.geo}</td></tr>
+          <tr><td>Опыт</td><td>${p.resume.exp}</td></tr>
+          <tr><td>Последнее место</td><td>${p.resume.last}</td></tr>
+          <tr><td>Инструменты</td><td>${p.resume.tools}</td></tr>
+          <tr><td>Образование</td><td>${p.resume.edu}</td></tr>
+          <tr><td>Ожидания</td><td>${p.resume.want}</td></tr>
+          <tr><td>Источник</td><td>${p.resume.src}</td></tr>
+          <tr><td>Контакты</td><td>${p.state === "кандидат"
+            ? "открыты, журнал доступа ведётся"
+            : `<span class="chip">откроются после «взять в работу»</span>`}</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="t1" style="margin-bottom:10px">Соцсети и профессиональные следы</div>
+        ${soc}
+        <div class="t2" style="margin-top:8px">Ищет агент по имени, нику, почте и работодателю. Вероятное
+          совпадение подтверждает рекрутер: однофамилец в досье хуже пустого поля.</div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card">
+        <div class="t1" style="margin-bottom:10px">Из чего сложился балл</div>
+        ${bars}
+        <div class="t2">Чего не хватает: ${p.gap}</div>
+        <div class="t2" style="margin-top:6px">Веса признаков задаются в профиле должности «${p.role}» — экран
+          «Профили должностей», правит любой рекрутер.</div>
+      </div>
+      <div class="card">
+        <div class="t1" style="margin-bottom:10px">Что изменилось</div>
+        <div class="tl">${events}</div>
+      </div>
+    </div>
+  </div>`;
+}
+let currentPerson = PEOPLE[0].id;
+function openDossier(id){
+  currentPerson = id;
+  el("#dossier").innerHTML = dossier(byId(id));
+  go("person");
+}
+openDossier(currentPerson);
+
+/* ---------------- полное досье: один источник данных для экрана и для выгрузки ---------------- */
+const SOC_TITLE = {gh:"GitHub", tg:"Telegram", vk:"ВКонтакте", ha:"Хабр Карьера", fo:"Профильный форум",
+  ok:"Одноклассники", li:"LinkedIn", fb:"Facebook*", ig:"Instagram*", yt:"YouTube", dz:"Дзен", x:"X (Twitter)"};
+/* Где агент ищет человека. Пустой результат — тоже результат: в досье видно, что искали и не нашли. */
+const SOC_SOURCES = [
+  ["vk", "ВКонтакте"], ["ok", "Одноклассники"], ["tg", "Telegram"], ["gh", "GitHub и GitLab"],
+  ["ha", "Хабр и Хабр Карьера"], ["li", "LinkedIn"], ["fb", "Facebook*"], ["ig", "Instagram*"],
+  ["x", "X (бывший Twitter)"], ["yt", "YouTube"], ["dz", "Дзен"], ["fo", "Отраслевые форумы и сообщества"]
+];
+/* Имя ищется и кириллицей, и латиницей: транслитерация плюс частые варианты написания */
+const TRANSLIT = {а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"i",к:"k",л:"l",м:"m",
+  н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ъ:"",ы:"y",ь:"",
+  э:"e",ю:"iu",я:"ia"};
+function translit(s){
+  return s.toLowerCase().split("").map(c => TRANSLIT[c] !== undefined ? TRANSLIT[c] : c).join("");
+}
+function nameVariants(fio){
+  const [last, first] = fio.split(" ");
+  const v = new Set([`${last} ${first}`, `${first} ${last}`,
+    `${translit(last)} ${translit(first)}`, `${translit(first)} ${translit(last)}`,
+    `${translit(first)}.${translit(last)}`, `${translit(first)}_${translit(last)}`]);
+  if (translit(first).startsWith("iu")) v.add(`${translit(first).replace(/^iu/, "yu")} ${translit(last)}`);
+  if (translit(first).startsWith("ia")) v.add(`${translit(first).replace(/^ia/, "ya")} ${translit(last)}`);
+  return [...v];
+}
+function socDetail(p, [kind, title, summary, conf], i){
+  const seed = p.id.length + i;
+  return {
+    kind, title: SOC_TITLE[kind] || title, conf,
+    rows: [
+      ["Ссылка", `${title.toLowerCase().replace(/\s+/g, "-")}/${p.fio.split(" ")[0].toLowerCase()}`],
+      ["Ник", `${p.fio.split(" ")[0].toLowerCase()}_${(seed * 7) % 90 + 10}`],
+      ["Виден с", `${2019 + (seed % 5)} года`],
+      ["Последняя активность", ["сегодня", "3 дня назад", "две недели назад", "месяц назад"][seed % 4]],
+      ["Что публикует", summary],
+      ["Темы", kind === "gh" ? "прошивки, драйверы, отладка"
+        : kind === "tg" ? "трассировка, измерения, выбор компонентов"
+        : kind === "vk" ? "работа, отраслевые репосты, фото с производства"
+        : "профессиональные обсуждения по специальности"],
+      ["Признаки поиска работы", ["не видно", "обновил профиль", "спрашивал про рынок и зарплаты", "открыто пишет, что смотрит варианты"][seed % 4]],
+      ["Чем подтверждено совпадение", conf === "подтверждено"
+        ? "совпали имя, работодатель и город; ник встречается в резюме"
+        : "совпали ник и город; работодатель не указан — подтверждает рекрутер"]
+    ]
+  };
+}
+function dossierData(p){
+  const jobs = [
+    [p.resume.last.split(",")[0], "по настоящее время", p.resume.pos, "из резюме, подтверждено профилем в сети"],
+    ["предыдущий работодатель", "3 года", "должность на ступень ниже", "из резюме"],
+    ["первое место работы", "2 года", "стартовая должность", "из резюме, дат в профилях сети нет"]
+  ];
+  return {
+    summary: [
+      ["Должность поиска", p.role], ["Подразделение", p.dept], ["Город", p.city],
+      ["Балл по основному профилю", `${p.score} из 100`], ["Состояние", p.state],
+      ["Источник первой находки", p.src], ["Карточка", p.id.toUpperCase()],
+      ["Досье собрано", "26.09.2026, агентом подбора"],
+      ["Источников использовано", `${1 + (p.soc || []).length}`]
+    ],
+    ident: [
+      ["Как сшит", "по имени, работодателю и городу; профили в сети — по нику и работодателю"],
+      ["Идентификатор на площадке", `${p.src}: ${p.id.replace("p", "resume-")}`],
+      ["Возможные дубли", "проверено, не найдено"],
+      ["Первое появление в поле зрения", "7 ноября 2024"]
+    ],
+    contacts: p.state === "кандидат"
+      ? [["Телефон", "открыт по подписке, в карточке"], ["Почта", "открыта по подписке, в карточке"],
+         ["Кто открывал", "рекрутер Скворцова М., 18.09.2026"]]
+      : [["Контакты", "не открывались — человек в наблюдении"],
+         ["Что нужно, чтобы открыть", "нажать «взять в работу»: спишется контакт из подписки"]],
+    resume: [
+      ["Желаемая должность", p.resume.pos], ["География", p.resume.geo], ["Опыт", p.resume.exp],
+      ["Последнее место", p.resume.last], ["Инструменты", p.resume.tools],
+      ["Образование", p.resume.edu], ["Ожидания", p.resume.want], ["Источник", p.resume.src],
+      ["Фото в резюме", p.photo ? "есть" : "нет"]
+    ],
+    jobs,
+    skills: [
+      ["Из резюме", p.resume.tools],
+      ["Из открытого кода и обсуждений", (p.soc || []).length
+        ? "подтверждаются практикой: активность по теме за последние месяцы" : "подтверждений в сети нет"],
+      ["Ключевые слова профиля должности", "совпало " + p.feats.filter(f => f[1] / f[2] > .7).length + " из " + p.feats.length]
+    ],
+    socials: (p.soc || []).map((s, i) => socDetail(p, s, i)),
+    searched: SOC_SOURCES.map(([k, title]) => {
+      const hit = (p.soc || []).find(s => s[0] === k);
+      return [title, hit ? `найден профиль — ${hit[3]}` :
+        (k === "fb" || k === "ig" || k === "li") ? "не найден; доступ к площадке ограничен, поиск по открытым копиям"
+        : "не найден"];
+    }),
+    names: [
+      ["Кириллицей", nameVariants(p.fio).filter(v => /[а-яё]/i.test(v)).join(", ")],
+      ["Латиницей", nameVariants(p.fio).filter(v => !/[а-яё]/i.test(v)).join(", ")],
+      ["Плюс", "ник из резюме и профилей, почта, телефон, работодатель, город"],
+      ["Зачем", "половина профилей заведена латиницей, а в отчествах и мягких знаках площадки пишут по-разному"]
+    ],
+    public: [
+      ["Статьи и доклады", (p.soc || []).some(s => s[0] === "ha") ? "две статьи по специальности" : "не найдено"],
+      ["Патенты и публикации", "в открытых реестрах не найдено"],
+      ["Упоминания на сайтах работодателей", "есть в разделе «команда» прошлого работодателя"],
+      ["Конференции и сообщества", (p.soc || []).some(s => s[0] === "tg") ? "участник профильных чатов" : "не найдено"]
+    ],
+    timeline: p.events.map(([t, d]) => [t, d, "резюме"]).concat([
+      ["12 января 2026", "Резюме: ожидания ниже нынешних на 15%", "резюме"],
+      ["4 сентября 2025", "Смена работодателя — подтверждена и в резюме, и в профиле в сети", "резюме и соцсети"],
+      ["18 марта 2025", "В профиле в сети появились новые проекты и инструменты", "соцсети"],
+      ["7 ноября 2024", "Первое появление в открытых источниках", "соцсети"]
+    ]),
+    scores: [[p.role, p.score], ["смежная должность", Math.max(40, p.score - 12)],
+             ["ещё одна смежная", Math.max(35, p.score - 19)]],
+    interaction: p.state === "кандидат"
+      ? [["Письма", "2 отправлено, 1 ответ"], ["Звонки", "1 состоялся"], ["Интервью", "назначено"],
+         ["Решения", "все с комментариями от 200 знаков"]]
+      : [["Письма", "не отправлялись"], ["Решения", "наблюдение, решений по человеку нет"]],
+    access: [
+      ["Открытия контактов", p.state === "кандидат" ? "2 записи в журнале" : "записей нет"],
+      ["Выгрузки досье", "ведутся в журнале: кто, когда, в каком формате"],
+      ["Срок хранения", "наблюдение — пока резюме на площадке плюс 12 месяцев; кандидат — 3 года с последнего контакта"]
+    ]
+  };
+}
+
+/* ---------------- старая лента изменений (используется в кратком досье) ---------------- */
+function history(p){
+  const years = [2026, 2025, 2024];
+  const base = p.events.map(([t, d]) => [t, d, "резюме"]);
+  const extra = [
+    ["12 января 2026", `Резюме на ${p.src}: должность «${p.resume.pos}», ожидания ниже нынешних на 15%`, "резюме"],
+    ["4 сентября 2025", "Смена работодателя, в резюме появилось новое место", "резюме"],
+    ["18 марта 2025", "Профиль в сети: добавлены новые проекты и инструменты", "соцсети"],
+    ["7 ноября 2024", "Первое появление в открытых источниках: резюме скрыто, профиль на площадке сообществ", "соцсети"]
+  ];
+  const all = base.concat(extra);
+  return `<div class="tl">${all.map(([t, d, kind]) =>
+    `<div class="ev"><time>${t} · ${kind}</time>${d}</div>`).join("")}</div>`;
+}
+function fullDossierHtml(p){
+  const d = dossierData(p);
+  const tbl = rows => `<table border="1" cellspacing="0" cellpadding="6" width="100%">${
+    rows.map(([a, b]) => `<tr><td width="35%"><b>${a}</b></td><td>${b}</td></tr>`).join("")}</table>`;
+  const socials = d.socials.length ? d.socials.map((s, i) => `
+      <h3>${i + 1}. ${s.title} — ${s.conf}</h3>${tbl(s.rows)}`).join("")
+    : "<p>Профессиональных следов в открытых источниках не найдено.</p>";
+  return `
+  <h1>Досье кандидата: ${p.fio}</h1>
+  <p><i>Собрано агентом подбора 26.09.2026 из ${1 + (p.soc || []).length} источников.
+  Демонстрационные данные прототипа.</i></p>
+
+  <h2>1. Сводка</h2>${tbl(d.summary)}
+  <h2>2. Идентификация и сшивка профилей</h2>${tbl(d.ident)}
+  <h2>3. Контакты</h2>${tbl(d.contacts)}
+  <h2>4. Резюме</h2>${tbl(d.resume)}
+  <h2>5. Опыт работы по местам</h2>
+  <table border="1" cellspacing="0" cellpadding="6" width="100%">
+    <tr><td><b>Работодатель</b></td><td><b>Период</b></td><td><b>Должность</b></td><td><b>Чем подтверждено</b></td></tr>
+    ${d.jobs.map(j => `<tr><td>${j[0]}</td><td>${j[1]}</td><td>${j[2]}</td><td>${j[3]}</td></tr>`).join("")}
+  </table>
+  <h2>6. Навыки и чем они подтверждены</h2>${tbl(d.skills)}
+
+  <h2>7. Цифровой след: профили в соцсетях и сообществах</h2>
+  <p>Главный раздел досье для инженерных и продающих ролей: резюме показывает,
+  как человек себя описывает, профили в сети — что он делает и чем живёт профессионально.
+  Берётся только открытое и только профессиональное.</p>
+  <h3>Как искали имя</h3>${tbl(d.names)}
+  <h3>Где искали и что нашли</h3>${tbl(d.searched)}
+  <h3>Найденные профили подробно</h3>
+  ${socials}
+
+  <h2>8. Публичная профессиональная активность</h2>${tbl(d.public)}
+  <h2>9. Хронология наблюдения</h2>
+  <table border="1" cellspacing="0" cellpadding="6" width="100%">
+    <tr><td><b>Дата</b></td><td><b>Что произошло</b></td><td><b>Источник</b></td></tr>
+    ${d.timeline.map(t => `<tr><td>${t[0]}</td><td>${t[1]}</td><td>${t[2]}</td></tr>`).join("")}
+  </table>
+  <h2>10. Оценка по профилям должностей</h2>
+  <table border="1" cellspacing="0" cellpadding="6" width="100%">
+    ${d.scores.map(s => `<tr><td width="60%">${s[0]}</td><td>${s[1]} из 100</td></tr>`).join("")}
+  </table>
+  <h3>Из чего сложился основной балл</h3>
+  <table border="1" cellspacing="0" cellpadding="6" width="100%">
+    ${p.feats.map(([n, v, m]) => `<tr><td width="60%">${n}</td><td>${v} из ${m}</td></tr>`).join("")}
+  </table>
+  <p><b>Чего не хватает:</b> ${p.gap}</p>
+  <h2>11. Взаимодействие и решения</h2>${tbl(d.interaction)}
+  <h2>12. Доступ к данным и хранение</h2>${tbl(d.access)}
+  <p><i>Источники открытые: площадки поиска работы под оплаченной подпиской и публичные профили.
+  Личная жизнь, взгляды, круг общения не собираются. Выгрузка записана в журнал доступа.</i></p>
+  <p><i>* Facebook и Instagram принадлежат компании Meta, признанной в России экстремистской
+  организацией, её деятельность запрещена. Профили на этих площадках учитываются только если они
+  открыты и найдены через общедоступный поиск; отдельный доступ к самим площадкам не настраивается.</i></p>`;
+}
+function fullDossier(id){
+  const p = byId(id);
+  const d = dossierData(p);
+  const kv = rows => `<table class="kv">${rows.map(([a, b]) =>
+    `<tr><td>${a}</td><td>${b}</td></tr>`).join("")}</table>`;
+  const block = (title, inner) => `<div class="card"><div class="t1" style="margin-bottom:10px">${title}</div>${inner}</div>`;
+  const socCards = d.socials.length ? d.socials.map((s, i) => `
+      <div class="card">
+        <div class="row" style="margin-bottom:8px">
+          <div class="soc" style="margin:0;background:transparent;padding:0">
+            <div class="ico ${s.kind}">${SOCNAMES[s.kind] || "С"}</div>
+          </div>
+          <div class="grow"><div class="t1">${i + 1}. ${s.title}</div>
+            <div class="t2"><span class="chip ${s.conf === "подтверждено" ? "g" : "o"}">${s.conf}</span></div></div>
+        </div>
+        ${kv(s.rows)}
+      </div>`).join("")
+    : block("Профили в сети", `<div class="t2">Не найдено. Агент повторит поиск при следующем изменении резюме.</div>`);
+
+  el("#dossier").innerHTML = `
+    <div class="card">
+      <div class="row">
+        ${face(p)}
+        <div class="grow">
+          <div class="t1">Полное досье: ${p.fio}</div>
+          <div class="t2">Всё, что собрано с первого появления в открытых источниках: резюме и его версии,
+            места работы, навыки и чем они подтверждены, профили в соцсетях и сообществах, публичная активность,
+            хронология изменений, оценки, решения и журнал доступа. Демонстрационные данные.</div>
+        </div>
+        <div class="btns" style="margin:0">
+          <button class="b" onclick="openDossier('${p.id}')">Назад к краткому</button>
+          <button class="b tint" onclick="openExport('${p.id}')">Выгрузить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sechead" style="margin-top:18px">1–4 · Сводка, сшивка, контакты, резюме</div>
+    <div class="split">
+      <div class="stack">${block("Сводка", kv(d.summary))}${block("Контакты", kv(d.contacts))}</div>
+      <div class="stack">${block("Идентификация и сшивка", kv(d.ident))}${block("Резюме", kv(d.resume))}</div>
+    </div>
+
+    <div class="sechead" style="margin-top:18px">5–6 · Опыт и навыки</div>
+    <div class="split">
+      ${block("Места работы", `<table class="kv">${d.jobs.map(j =>
+        `<tr><td>${j[0]}</td><td>${j[2]}, ${j[1]}<br><span class="hint">${j[3]}</span></td></tr>`).join("")}</table>`)}
+      ${block("Навыки и подтверждения", kv(d.skills))}
+    </div>
+
+    <div class="sechead" style="margin-top:18px">7 · Цифровой след: соцсети и сообщества</div>
+    <div class="card" style="margin-bottom:10px">
+      <div class="t2">Для инженерных и продающих ролей это главная часть досье: резюме показывает, как человек
+        себя описывает, профили в сети — что он делает. Берётся только открытое и только профессиональное.</div>
+    </div>
+    <div class="split" style="margin-bottom:10px">
+      ${block("Как искали имя", kv(d.names))}
+      ${block("Где искали и что нашли", kv(d.searched))}
+    </div>
+    <div class="split">${socCards}</div>
+    <div class="card" style="margin-top:10px">
+      <div class="hint">* Facebook и Instagram принадлежат компании Meta, признанной в России экстремистской
+        организацией, её деятельность запрещена. Профили учитываются, только если они открыты и найдены через
+        общедоступный поиск.</div>
+    </div>
+
+    <div class="sechead" style="margin-top:18px">8–10 · Публичная активность, хронология, оценки</div>
+    <div class="split">
+      <div class="stack">
+        ${block("Публичная профессиональная активность", kv(d.public))}
+        ${block("Оценка по профилям должностей", kv(d.scores.map(s => [s[0], s[1] + " из 100"])))}
+      </div>
+      ${block("Хронология наблюдения", `<div class="tl">${d.timeline.map(t =>
+        `<div class="ev"><time>${t[0]} · ${t[2]}</time>${t[1]}</div>`).join("")}</div>`)}
+    </div>
+
+    <div class="sechead" style="margin-top:18px">11–12 · Взаимодействие и доступ к данным</div>
+    <div class="split">
+      ${block("Взаимодействие и решения", kv(d.interaction))}
+      ${block("Доступ к данным и хранение", kv(d.access))}
+    </div>`;
+  go("person");
+}
+
+/* ---------------- выгрузка досье ---------------- */
+function openExport(id){
+  currentPerson = id;
+  el("#exportName").textContent = byId(id).fio;
+  el("#scrim2").classList.add("open");
+}
+function closeExport(){ el("#scrim2").classList.remove("open"); }
+function exportWord(){
+  const p = byId(currentPerson);
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+    xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">
+    <title>Досье ${p.fio}</title></head><body>${fullDossierHtml(p)}</body></html>`;
+  const blob = new Blob(["﻿", html], {type:"application/msword"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `Досье_${p.fio.replace(/\s+/g, "_")}.doc`;
+  a.click(); URL.revokeObjectURL(a.href);
+  closeExport(); toast("Файл Word сформирован");
+}
+function exportPdf(){
+  closeExport();
+  toast("Откроется печать: выберите «Сохранить как PDF»");
+  setTimeout(() => window.print(), 400);
+}
+
+/* ============================ База ============================ */
+let sortKey = "score", sortDir = -1;
+const filters = {};
+el("#head").innerHTML = COLS.map(c => `<th data-k="${c.k}" onclick="sortBy('${c.k}')">${c.t} <span class="dir">↕</span></th>`).join("");
+el("#filters").innerHTML = COLS.map(c => {
+  if (c.type === "enum"){
+    const vals = [...new Set(PEOPLE.map(r => r[c.k]))].sort();
+    return `<th><select onchange="setFilter('${c.k}',this.value)"><option value="">все</option>${
+      vals.map(v => `<option>${v}</option>`).join("")}</select></th>`;
+  }
+  if (c.type === "num") return `<th><input type="number" min="0" placeholder="от" oninput="setFilter('${c.k}',this.value)"></th>`;
+  return `<th><input placeholder="содержит" oninput="setFilter('${c.k}',this.value)"></th>`;
+}).join("");
+function setFilter(k, v){ filters[k] = v; draw(); }
+let vacFilter = null;
+function fieldOf(key){
+  const i = COLS.findIndex(c => c.k === key) + 1;
+  return document.querySelector(`#filters th:nth-child(${i}) select, #filters th:nth-child(${i}) input`);
+}
+/* «Показать подходящих» — переносит на базу с фильтрами этой вакансии и сортировкой по баллу вниз */
+function showMatching(vacId){
+  const v = [...VACS, ...VACS_CLOSED].find(x => x.id === vacId);
+  if (!v) return;
+  resetFilters();
+  vacFilter = v;
+  filters.dept = v.dept;
+  filters.score = 60;
+  const d = fieldOf("dept"); if (d) d.value = v.dept;
+  const s = fieldOf("score"); if (s) s.value = 60;
+  sortKey = "score"; sortDir = -1;
+  draw(); go("base");
+  toast(`Подходящие под вакансию «${v.role}»`);
+}
+function clearVacFilter(){ vacFilter = null; resetFilters(); }
+function drawVacBar(){
+  el("#vacbar").innerHTML = vacFilter
+    ? `<div class="filterbar"><span>Подходящие под вакансию «${vacFilter.role}»: подразделение
+       «${vacFilter.dept}», балл от 60, по убыванию балла</span>
+       <button onclick="clearVacFilter()">Показать всю базу</button></div>`
+    : "";
+}
+function sortBy(k){
+  sortDir = (sortKey === k) ? -sortDir : (COLS.find(c => c.k === k).type === "num" ? -1 : 1);
+  sortKey = k; draw();
+}
+function resetFilters(){
+  Object.keys(filters).forEach(k => delete filters[k]);
+  vacFilter = null;
+  el("#q").value = "";
+  document.querySelectorAll("#filters input").forEach(i => i.value = "");
+  document.querySelectorAll("#filters select").forEach(s => s.value = "");
+  draw();
+}
+function draw(){
+  const q = el("#q").value.trim().toLowerCase();
+  let rows = PEOPLE.filter(r => COLS.every(c => {
+    const f = filters[c.k];
+    if (!f) return true;
+    if (c.type === "num") return Number(r[c.k]) >= Number(f);
+    if (c.type === "enum") return r[c.k] === f;
+    return String(r[c.k]).toLowerCase().includes(String(f).toLowerCase());
+  }));
+  if (q) rows = rows.filter(r => [r.fio, r.role, r.dept, r.city, r.src, r.resume.tools].join(" ").toLowerCase().includes(q));
+  const type = COLS.find(c => c.k === sortKey).type;
+  rows.sort((a, b) => type === "num" ? (a[sortKey] - b[sortKey]) * sortDir
+    : String(a[sortKey]).localeCompare(String(b[sortKey]), "ru") * sortDir);
+  el("#rows").innerHTML = rows.map(r => `<tr>
+    <td class="name"><span class="namewrap">${face(r, "sm")}<span class="link"
+      onclick="openDossier('${r.id}')">${r.fio}</span></span></td>
+    <td>${r.city}</td><td>${r.role}</td><td class="hint">${r.dept}</td>
+    <td class="num">${r.score}</td>
+    <td><span class="pill ${r.state === "кандидат" ? "cand" : r.state === "веду особо" ? "watch" : "obs"}">${r.state}</span></td>
+    <td>${r.src}</td><td class="num">${r.socn || "—"}</td><td class="hint">${r.upd}</td></tr>`).join("")
+    || `<tr><td colspan="${COLS.length}" class="hint">Под фильтры никто не подошёл</td></tr>`;
+  document.querySelectorAll("#head th").forEach(th => {
+    const on = th.dataset.k === sortKey;
+    th.classList.toggle("sorted", on);
+    th.querySelector(".dir").textContent = on ? (sortDir > 0 ? "↑" : "↓") : "↕";
+  });
+  el("#found").textContent = `показано ${rows.length} из ${PEOPLE.length}`;
+  el("#bdg_base").textContent = PEOPLE.length;
+  drawVacBar();
+}
+PEOPLE.forEach(p => p.socn = (p.soc || []).length);   // после всех добавлений профилей
+el("#q").addEventListener("input", draw);
+draw();
+
+/* ============================ Профили должностей ============================ */
+el("#pdept").innerHTML = `<option value="">Все подразделения</option>` +
+  [...new Set(PROFILES.map(p => p[1]))].sort().map(d => `<option>${d}</option>`).join("");
+el("#pdept").addEventListener("change", drawProfiles);
+function drawProfiles(){
+  const q = el("#pq").value.trim().toLowerCase();
+  const dept = el("#pdept").value;
+  const rows = PROFILES.filter(([t, d]) => (!q || (t + " " + d).toLowerCase().includes(q)) && (!dept || d === dept));
+  el("#proflist").innerHTML = rows.map(([t, d, v, st]) => `<div class="li" onclick="editProfile('${t.replace(/'/g, "")}')">
+      <div><div style="font-weight:600">${t}</div><div class="sub">${d} · ${v}</div></div>
+      <span class="pill ${st === "ok" ? "cand" : st === "wait" ? "watch" : "obs"}">${
+        st === "ok" ? "действует" : st === "wait" ? "ждёт утверждения" : "черновик"}</span>
+      <span class="chev">›</span></div>`).join("")
+    || `<div class="li"><span class="hint">Ничего не найдено</span></div>`;
+  el("#pfound").textContent = `${rows.length} из ${PROFILES.length} показано, всего должностей в базе 83`;
+}
+el("#pq").addEventListener("input", drawProfiles);
+drawProfiles();
+
+/* Данные профилей: то, что рекрутер правит руками, и файл должностной инструкции */
+const PDATA = {};
+function pdata(title){
+  if (!PDATA[title]) PDATA[title] = {
+    must:"Профильный опыт от 3 лет. Схемотехника. Altium Designer или аналог.",
+    nice:"Вывод изделия в серию, работа с контрактным производством, ЭМС.",
+    stop:"Средняя длительность места работы меньше года. Нет профильного опыта.",
+    kw:"Altium, Altium Designer, альтиум, OrCAD, трассировка, схемотехника",
+    donors:"Болид, Рубеж, Аргус-Спектр, Сигма-ИС, приборостроительные заводы",
+    geo:"Краснодар; переезд при доходе от 150 000 ₽",
+    salary:"150 000 – 200 000 ₽",
+    weights:"опыт 20, инструменты 20, отрасль 15, стаж на месте 15, география 10, ожидания 10, прочее 10",
+    ver:"1.1",
+    di:{name:"Ведущий инженер-электронщик.docx", date:"25.09.2026", ver:"ред. от 25.09.2026", size:"48 КБ"},
+    diHist:[["ред. от 25.09.2026", "загрузил: Приходько А."], ["ред. от 03.09.2026", "загрузил: отдел персонала"],
+            ["ред. от 17.08.2026", "первая загрузка"]]
+  };
+  return PDATA[title];
+}
+function editProfile(title){
+  const d = pdata(title);
+  el("#profedit").innerHTML = `<div class="card">
+    <div class="row">
+      <div class="grow">
+        <div class="t1">${title}</div>
+        <div class="t2">Правка портрета. Сохранение создаёт версию с вашим именем и уходит руководителю подбора
+          на утверждение; до утверждения выдача считается по действующей версии ${d.ver}.</div>
+      </div>
+      <div class="btns" style="margin:0"><button class="b" onclick="el('#profedit').innerHTML=''">Закрыть</button></div>
+    </div>
+
+    <div class="form" style="margin-top:14px">
+      <div class="field"><label>Обязательные требования</label>
+        <textarea id="f_must">${d.must}</textarea></div>
+      <div class="two">
+        <div class="field"><label>Желательно</label><textarea id="f_nice">${d.nice}</textarea></div>
+        <div class="field"><label>Стоп-факторы</label><textarea id="f_stop">${d.stop}</textarea></div>
+      </div>
+      <div class="field"><label>Ключевые слова и синонимы, как они встречаются в резюме</label>
+        <textarea id="f_kw">${d.kw}</textarea></div>
+      <div class="field"><label>Компании-доноры</label><textarea id="f_donors">${d.donors}</textarea></div>
+      <div class="two">
+        <div class="field"><label>География</label><input id="f_geo" value="${d.geo}"></div>
+        <div class="field"><label>Вилка</label><input id="f_salary" value="${d.salary}"></div>
+      </div>
+      <div class="field"><label>Веса признаков, сумма 100</label><input id="f_weights" value="${d.weights}"></div>
+
+      <div class="field">
+        <label>Должностная инструкция — файл, по которому агент собирает профиль</label>
+        <div class="fileline">
+          <div class="ic">DI</div>
+          <div class="grow"><div style="font-weight:600" id="di_name">${d.di.name}</div>
+            <div class="hint" id="di_meta">${d.di.ver} · загружен ${d.di.date} · ${d.di.size}</div></div>
+          <input type="file" id="di_file" accept=".doc,.docx,.pdf,.rtf,.odt" style="display:none"
+                 onchange="uploadDI('${title.replace(/'/g, "")}', this)">
+          <button class="b blue" onclick="document.getElementById('di_file').click()">Заменить файл</button>
+          <button class="b" onclick="toast('Файл открыт в отдельном окне')">Открыть</button>
+        </div>
+        <div class="hint" style="margin-top:8px">Загрузили новую редакцию — агент разбирает её и предлагает
+          изменения в портрете: что добавилось в задачи и требования. Предложение приходит в блок
+          «Ждут подтверждения», молча профиль не меняется.</div>
+      </div>
+
+      <div class="field"><label>История файла инструкции</label>
+        <div class="list" style="box-shadow:none">
+          ${d.diHist.map(([v, who]) => `<div class="li" style="cursor:default">
+            <div><div style="font-weight:600">${v}</div><div class="sub">${who}</div></div></div>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <div class="btns">
+      <button class="b fill" onclick="previewProfile('${title.replace(/'/g, "")}')">Предпросмотр изменений</button>
+      <button class="b blue" onclick="saveProfile('${title.replace(/'/g, "")}')">Сохранить версию</button>
+    </div>
+    <div class="hint" id="p_out" style="margin-top:10px"></div></div>`;
+  el("#profedit").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+function collectProfile(){
+  return {must:el("#f_must").value, nice:el("#f_nice").value, stop:el("#f_stop").value,
+    kw:el("#f_kw").value, donors:el("#f_donors").value, geo:el("#f_geo").value,
+    salary:el("#f_salary").value, weights:el("#f_weights").value};
+}
+function previewProfile(title){
+  const v = collectProfile();
+  const kws = v.kw.split(",").filter(s => s.trim()).length;
+  el("#p_out").textContent = `Предпросмотр: по новым настройкам проходят ${28 + kws * 2} человек из базы, `
+    + `выпадают ${Math.max(1, 9 - kws)}. Изменения ещё не сохранены.`;
+}
+function saveProfile(title){
+  const d = pdata(title);
+  Object.assign(d, collectProfile());
+  d.ver = (parseFloat(d.ver) + 0.1).toFixed(1);
+  const now = new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+  LOGS.unshift([`сегодня, ${now}`, `Профиль «${title}» — версия ${d.ver}`,
+    "Вы · изменены требования и веса · ждёт утверждения руководителем подбора"]);
+  drawLogs();
+  const row = PROFILES.find(r => r[0] === title);
+  if (row){ row[2] = `в. ${d.ver} от сегодня, ждёт утверждения`; row[3] = "wait"; drawProfiles(); }
+  el("#p_out").textContent = `Сохранено версией ${d.ver} и отправлено на утверждение. `
+    + `До утверждения выдача считается по прежней версии; запись ушла в журнал изменений.`;
+  toast("Версия сохранена и отправлена на утверждение");
+}
+function uploadDI(title, input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const d = pdata(title);
+  const today = new Date().toLocaleDateString("ru-RU");
+  d.di = {name:f.name, date:today, ver:"ред. от " + today, size:Math.max(1, Math.round(f.size / 1024)) + " КБ"};
+  d.diHist.unshift([d.di.ver, "загрузил: Вы"]);
+  el("#di_name").textContent = d.di.name;
+  el("#di_meta").textContent = `${d.di.ver} · загружен ${d.di.date} · ${d.di.size}`;
+  const now = new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+  LOGS.unshift([`сегодня, ${now}`, `Должностная инструкция «${title}» заменена`,
+    `Вы · файл ${d.di.name} · агент разбирает и предложит правки портрета`]);
+  drawLogs();
+  CHAT.push({who:"АГ", name:"Агент", time:`сегодня, ${now}`, tag:"принято", agent:true,
+    text:`Принял новую редакцию должностной инструкции «${title}». Разберу и предложу, что добавить в портрет: новые задачи, инструменты и требования. Предложение придёт в «Ждут подтверждения».`});
+  drawChat();
+  toast("Файл инструкции обновлён, агент его разбирает");
+}
+
+/* ============================ Обучение агента ============================ */
+const TAGS = ["замечание", "рекомендация", "критика", "вопрос"];
+let curTag = TAGS[0];
+el("#tagseg").innerHTML = TAGS.map((t, i) =>
+  `<button class="${i === 0 ? "on" : ""}" onclick="pickTag('${t}',this)">${t}</button>`).join("");
+function pickTag(t, btn){
+  curTag = t;
+  document.querySelectorAll("#tagseg button").forEach(b => b.classList.toggle("on", b === btn));
+}
+function drawChat(){
+  el("#chat").innerHTML = CHAT.map(m => `<div class="msg${m.agent ? " agent" : ""}">
+      <div class="who">${m.who}</div>
+      <div class="bubble"><div class="meta"><b>${m.name}</b><span>${m.time}</span>
+      <span class="chip ${m.agent ? "g" : "b"}">${m.tag}</span></div>${m.text}</div></div>`).join("");
+  el("#chat").scrollTop = el("#chat").scrollHeight;
+  el("#bdg_learn").textContent = CHAT.filter(m => !m.agent).length;
+}
+drawChat();
+const MIN_MSG = 40;
+el("#msg").addEventListener("input", () => {
+  const n = el("#msg").value.trim().length;
+  el("#msgcount").textContent = `${n} символов, нужно не меньше ${MIN_MSG}`;
+  el("#msgcount").classList.toggle("bad", n < MIN_MSG);
+  el("#send").disabled = n < MIN_MSG;
+});
+el("#send").disabled = true;
+el("#msgcount").textContent = `0 символов, нужно не меньше ${MIN_MSG}`;
+el("#msgcount").classList.add("bad");
+function sendMsg(){
+  const text = el("#msg").value.trim();
+  if (text.length < MIN_MSG) return;
+  const now = new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+  CHAT.push({who:"ДП", name:"Вы", time:`сегодня, ${now}`, tag:curTag, text});
+  CHAT.push({who:"АГ", name:"Агент", time:`сегодня, ${now}`, tag:"принято", agent:true,
+    text:`Записал как «${curTag}». Если такое повторится ещё раз, соберу в предложение и вынесу в недельную сводку руководителю отдела персонала.`});
+  el("#msg").value = ""; el("#send").disabled = true;
+  el("#msgcount").textContent = `0 символов, нужно не меньше ${MIN_MSG}`;
+  el("#msgcount").classList.add("bad");
+  drawChat();
+  toast("Отправлено агенту");
+}
+const answers = {};
+function drawDigest(){
+  el("#digest").innerHTML = DIGEST.map(d => `<div class="card inset" style="margin-bottom:10px">
+    <div class="t1" style="font-size:15.5px">${d.title}</div>
+    <div class="t2">Основание: ${d.base}</div>
+    <div class="t2" style="color:var(--ink2);margin-top:6px"><b>Вопрос руководителю:</b> ${d.q}</div>
+    <div class="btns">
+      ${["Принять", "Отклонить", "Обсудить"].map(a =>
+        `<button class="b ${answers[d.id] === a ? (a === "Принять" ? "fill" : a === "Отклонить" ? "danger" : "blue") : ""}"
+          onclick="answer('${d.id}','${a}')">${a}</button>`).join("")}
+      <span class="hint" style="align-self:center">${answers[d.id] ? "выбрано: " + answers[d.id] : "решение не принято"}</span>
+    </div></div>`).join("");
+}
+function answer(id, a){ answers[id] = a; drawDigest(); }
+drawDigest();
+function applyDigest(){
+  const taken = DIGEST.filter(d => answers[d.id] === "Принять");
+  const rest = DIGEST.length - Object.keys(answers).length;
+  if (!Object.keys(answers).length){ toast("Сначала примите решение хотя бы по одному пункту"); return; }
+  el("#digestout").textContent = `Внедрено пунктов: ${taken.length}. Изменения применяются ночью, `
+    + `каждое записано в журнал с именем руководителя и датой.`
+    + (rest > 0 ? ` Без решения осталось: ${rest} — напомню завтра.` : "");
+  toast("Решения записаны");
+}
+el("#applied").innerHTML = APPLIED.map(([t, d]) =>
+  `<div class="li"><div><div style="font-weight:600">${t}</div><div class="sub">${d}</div></div></div>`).join("");
+
+/* ============================ Журнал изменений ============================ */
+const LOGS = [
+  ["26.09, 09:31", "Профиль «Руководитель ОТК» — вес географии 5 → 10",
+   "Скворцова М., рекрутер · основание: причина отказа по Ниязовой А. Р. · ждёт утверждения"],
+  ["25.09, 18:02", "Профиль «Менеджер проектных продаж» версия 2.0 утверждена",
+   "Приходько А., руководитель подбора · изменены ключевые слова и список доноров"],
+  ["24.09, 11:40", "Порог наблюдения по разработке ПО 60 → 55",
+   "Решение по сводке недели 15–19 сентября · применено ночью, затронуто 212 карточек"],
+  ["23.09, 16:15", "Источник «Авито Работа» включён в утренний обход",
+   "Волкова К., рекрутер · согласовано руководителем подбора"],
+  ["22.09, 02:10", "Вес географии для релокации 5 → 10 по всем инженерным профилям",
+   "Решение руководителя отдела персонала по сводке недели 15–19 сентября"],
+  ["20.09, 14:05", "Шаблон первого письма для ОТК создан",
+   "Приходько А. · основание: три сообщения в чате обучения про тон писем"]
+];
+function drawLogs(){
+  el("#loglist").innerHTML = LOGS.map(([t, what, who]) => `<div class="li" style="cursor:default">
+    <div><div style="font-weight:600">${what}</div><div class="sub">${t} · ${who}</div></div></div>`).join("");
+}
+drawLogs();
+
+/* ============================ Воронка по вертикали ============================ */
+const funnelTotal = BOARD.reduce((s, c) => s + c.items.length, 0) || 1;
+el("#board").innerHTML = BOARD.map(c => `<div class="stage${c.items.length ? "" : " empty"}">
+  <div class="top">
+    <span class="nm">${c.st}</span>
+    <span class="cnt">${c.items.length} чел.</span>
+    <span class="meter"><i style="width:${Math.round(c.items.length / funnelTotal * 100)}%"></i></span>
+    <span class="days">${c.items.length ? "в среднем " + (2 + c.items.length * 2) + " дн. на этапе" : "никого"}</span>
+  </div>
+  ${c.items.length ? `<div class="cards">${c.items.map(i =>
+      `<div class="mini" onclick="toast('Карточка: ${i[0]}')"><b>${i[0]}</b><span>${i[1]}</span></div>`).join("")}</div>` : ""}
+  </div>`).join("");
+
+/* ============================ решения с обязательным комментарием ============================ */
+const MIN_COMMENT = 200;
+const REASONS = {
+  postpone: ["недавно сменил работу", "ждём открытия ставки", "высокие ожидания сейчас", "вернуться после релокации"],
+  reject: ["нет профильного опыта", "частая смена работы", "не подходит география", "ожидания выше вилки", "опыт из другой отрасли"],
+  closeVacancy: ["человек вышел на работу", "потребность закрыта внутренним переводом", "заявка отозвана заказчиком",
+                 "ставка заморожена бюджетом", "требования изменились, нужен другой профиль"]
+};
+const SHEET_TITLES = {
+  postpone: p => `Отложить: ${p.fio}`,
+  reject: p => `Не наш: ${p.fio}`,
+  closeVacancy: v => `Закрыть вакансию: ${v.role}`
+};
+const SHEET_HINTS = {
+  postpone: "Напоминание через три месяца, наблюдение продолжается. Опишите, почему откладываем и что должно измениться, чтобы вернуться к человеку.",
+  reject: "Человек уходит из выдачи, причина пойдёт в настройку весов профиля. Опишите, что именно не подошло: по этому тексту агент учится не носить таких же.",
+  closeVacancy: "Опишите, чем закрыта потребность и что стоит учесть в следующий раз по этой должности. Важно: закрытие вакансии не останавливает подбор — профиль должности остаётся активным, агент продолжает копить подходящих в базу знаний на будущее."
+};
+let sheetCtx = null;
+function openSheet(targetId, kind){
+  const target = kind === "closeVacancy"
+    ? [...VACS, ...VACS_CLOSED].find(v => v.id === targetId)
+    : byId(targetId);
+  if (!target) return;
+  sheetCtx = {targetId, kind};
+  el("#sheetTitle").textContent = SHEET_TITLES[kind](target);
+  el("#sheetHint").textContent = SHEET_HINTS[kind];
+  el("#sheetReasons").innerHTML = REASONS[kind].map(r =>
+    `<button onclick="addReason('${r}')">+ ${r}</button>`).join("");
+  el("#sheetText").value = "";
+  updateSheetCount();
+  el("#scrim").classList.add("open");
+  setTimeout(() => el("#sheetText").focus(), 60);
+}
+function addReason(r){
+  const ta = el("#sheetText");
+  ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + r.charAt(0).toUpperCase() + r.slice(1) + ". ";
+  ta.focus(); updateSheetCount();
+}
+function updateSheetCount(){
+  const n = el("#sheetText").value.trim().length;
+  const c = el("#sheetCount");
+  c.textContent = `${n} из ${MIN_COMMENT} символов`;
+  c.classList.toggle("bad", n < MIN_COMMENT);
+  el("#sheetSave").disabled = n < MIN_COMMENT;
+}
+el("#sheetText").addEventListener("input", updateSheetCount);
+function closeSheet(){ el("#scrim").classList.remove("open"); sheetCtx = null; }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && sheetCtx) closeSheet(); });
+function saveSheet(){
+  if (!sheetCtx) return;
+  const text = el("#sheetText").value.trim();
+  if (text.length < MIN_COMMENT) return;
+  const kind = sheetCtx.kind;
+  const now = new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+
+  if (kind === "closeVacancy"){
+    const v = [...VACS, ...VACS_CLOSED].find(x => x.id === sheetCtx.targetId);
+    CHAT.push({who:"ДП", name:"Вы", time:`сегодня, ${now}`, tag:"закрытие вакансии",
+      text:`${v.role}: ${text}`});
+    CHAT.push({who:"АГ", name:"Агент", time:`сегодня, ${now}`, tag:"принято", agent:true,
+      text:`Вакансия «${v.role}» закрыта, причина записана. Профиль должности остаётся активным: продолжаю копить подходящих в базу знаний и сообщу, когда появится кто-то заметно лучше тех, кого мы смотрели.`});
+    drawChat();
+    const card = document.getElementById("vac_" + v.id);
+    if (card){
+      card.style.opacity = .6;
+      card.querySelectorAll("button").forEach(b => b.disabled = true);
+      card.insertAdjacentHTML("beforeend",
+        `<div class="t2">✓ Вакансия закрыта, комментарий на ${text.length} знаков записан.
+         Подбор по должности продолжается: профиль активен, наблюдение не остановлено.</div>`);
+    }
+    LOGS.unshift([`сегодня, ${now}`, `Вакансия «${v.role}» закрыта`,
+      `Вы · подбор по должности продолжается, профиль остаётся активным`]);
+    drawLogs();
+    closeSheet();
+    toast("Вакансия закрыта, подбор по позиции продолжается");
+    return;
+  }
+
+  const p = byId(sheetCtx.targetId);
+  CHAT.push({who:"ДП", name:"Вы", time:`сегодня, ${now}`, tag: kind === "reject" ? "причина отказа" : "причина отсрочки",
+    text:`${p.fio} (${p.role}): ${text}`});
+  CHAT.push({who:"АГ", name:"Агент", time:`сегодня, ${now}`, tag:"принято", agent:true,
+    text: kind === "reject"
+      ? `Записал причину отказа. Учту в весах профиля «${p.role}» и проверю, нет ли в выдаче похожих.`
+      : `Отложил ${p.fio} на три месяца, наблюдение продолжается. Верну карточку, если резюме изменится раньше.`});
+  drawChat();
+  const card = document.getElementById("card_" + p.id);
+  if (card){
+    card.classList.add("done");
+    card.querySelectorAll("button").forEach(b => b.disabled = true);
+    card.insertAdjacentHTML("beforeend",
+      `<div class="t2">✓ ${kind === "reject" ? "Помечен «не наш»" : "Отложен на три месяца"},
+       комментарий на ${text.length} символов записан и отправлен агенту</div>`);
+  }
+  closeSheet();
+  toast(kind === "reject" ? "Решение записано, агент учтёт причину" : "Отложено, наблюдение продолжается");
+}
+/* ---------------- «В работу»: что именно произошло ---------------- */
+function showInfo(title, hint, items, buttons){
+  el("#infoTitle").textContent = title;
+  el("#infoHint").textContent = hint;
+  el("#infoList").innerHTML = items.map(([t, d]) =>
+    `<div class="li" style="cursor:default"><div><div style="font-weight:600">${t}</div>
+     <div class="sub">${d}</div></div></div>`).join("");
+  el("#infoBtns").innerHTML = buttons;
+  el("#scrim3").classList.add("open");
+}
+function closeInfo(){ el("#scrim3").classList.remove("open"); }
+
+function takeIn(id, btn){
+  const p = byId(id);
+  const num = "К-" + (300 + Math.floor(Math.random() * 99));
+  p.state = "кандидат";
+  draw();
+  showInfo(`${p.fio} взят в работу`,
+    "«В работу» — это перевод человека из наблюдения в кандидаты. Вот что система сделала сейчас:",
+    [
+      ["Создана карточка кандидата " + num,
+       `Наблюдение ${p.id.toUpperCase()} превратилось в карточку с ФИО, статусом и историей. До этого в базе лежали только должность, опыт и ссылка на резюме.`],
+      ["Контакты открыты",
+       "Телефон и почта запрошены по оплаченной подписке hh и сохранены в карточке. Раньше их в системе не было — до этого момента платить за контакт не за что."],
+      ["Запись в журнале доступа",
+       "Зафиксировано: кто открыл контакт, когда и по какой вакансии. Это нужно, чтобы было видно, кто из рекрутеров уже работал с человеком."],
+      ["Статус: «Отобран агентом»",
+       "Человек встал в воронку. Дальше статусы меняете вы или нанимающий руководитель."],
+      ["Агент подготовил первое письмо",
+       "Оно лежит в блоке «Ждут подтверждения» и не уйдёт, пока вы не нажмёте «Одобрить». Текст можно править."]
+    ],
+    `<button class="b fill" onclick="closeInfo();openDossier('${p.id}')">Открыть карточку</button>
+     <button class="b" onclick="closeInfo();go('today')">Посмотреть письмо</button>
+     <button class="b ghost" onclick="closeInfo()">Понятно</button>`);
+  if (btn) done(btn, `Кандидат ${num}: карточка создана, контакты открыты, письмо ждёт вашего одобрения`);
+}
+
+/* ---------------- тема: день, ночь, как в системе ---------------- */
+const THEMES = [["light", "День"], ["dark", "Ночь"], ["auto", "Авто"]];
+function setTheme(mode){
+  if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+  try { localStorage.setItem("hrTheme", mode); } catch (e) {}
+  document.querySelectorAll("#theme button").forEach(b => b.classList.toggle("on", b.dataset.m === mode));
+}
+el("#theme").innerHTML = THEMES.map(([m, t]) =>
+  `<button data-m="${m}" onclick="setTheme('${m}')">${t}</button>`).join("");
+let savedTheme = "auto";
+try { savedTheme = localStorage.getItem("hrTheme") || "auto"; } catch (e) {}
+setTheme(savedTheme);
+function done(btn, text){
+  const box = btn.closest(".card");
+  box.classList.add("done");
+  box.querySelectorAll("button").forEach(b => b.disabled = true);
+  btn.closest(".btns").insertAdjacentHTML("afterend", `<div class="t2">✓ ${text}</div>`);
+}
+
+/* ============================ самопроверка ============================ */
+(function selfCheck(){
+  const errs = [];
+  if (document.querySelectorAll("main > section").length !== TABS.length) errs.push("экранов не по числу вкладок");
+  if (el("#alerts").querySelectorAll(":scope > .card").length !== ALERTS.length) errs.push("карточек «обратите внимание» не по данным");
+  if (el("#rows").children.length === 0) errs.push("таблица базы пуста");
+  // досье открывается по тому, на кого нажали
+  openDossier("p512");
+  if (!el("#dossier").textContent.includes("Ниязова")) errs.push("досье не переключается на выбранного человека");
+  openDossier("p1042");
+  if (!el("#dossier").textContent.includes("Карпов")) errs.push("досье не вернулось к первому человеку");
+  // «показать подходящих» ставит фильтры вакансии и сортирует по убыванию балла
+  showMatching("v1");
+  const shown = [...document.querySelectorAll("#rows tr")].map(tr => tr.children[4] && tr.children[4].textContent);
+  if (!shown.length || shown.some(v => v === undefined)) errs.push("фильтр по вакансии не дал строк");
+  const nums = shown.map(Number).filter(n => !isNaN(n));
+  if (nums.some((n, i) => i && n > nums[i - 1])) errs.push("подходящие отсортированы не по убыванию балла");
+  if (nums.some(n => n < 60)) errs.push("в подходящих оказались люди ниже порога вакансии");
+  if (!el("#vacbar").textContent.includes("вакансию")) errs.push("плашка активного фильтра не показана");
+  clearVacFilter();
+  if (el("#vacbar").textContent.trim()) errs.push("плашка фильтра не сбрасывается");
+  // закрытие вакансии тоже требует комментарий
+  openSheet("v1", "closeVacancy");
+  el("#sheetText").value = "мало"; updateSheetCount();
+  if (!el("#sheetSave").disabled) errs.push("закрытие вакансии проходит без комментария");
+  el("#sheetText").value = ""; updateSheetCount(); closeSheet();
+  // полное досье открывается по человеку, а не по первому в списке
+  fullDossier("p355");
+  if (!el("#dossier").textContent.includes("Савельев")) errs.push("полное досье открывается не по выбранному человеку");
+  openDossier("p1042");
+  // обязательный комментарий
+  openSheet("p380", "reject");
+  el("#sheetText").value = "коротко"; updateSheetCount();
+  if (!el("#sheetSave").disabled) errs.push("короткий комментарий не блокирует сохранение");
+  el("#sheetText").value = "x".repeat(MIN_COMMENT); updateSheetCount();
+  if (el("#sheetSave").disabled) errs.push("комментарий нужной длины не разблокирует сохранение");
+  el("#sheetText").value = ""; updateSheetCount(); closeSheet();
+  // сортировка
+  sortBy("fio"); const a = el("#rows").firstElementChild.textContent;
+  sortBy("fio"); const b = el("#rows").firstElementChild.textContent;
+  if (a === b) errs.push("повторный щелчок по заголовку не меняет порядок");
+  sortKey = "score"; sortDir = -1; draw();
+  go("today");
+  if (errs.length) console.error("прототип:", errs.join("; "));
+})();
+</script>
+</body>
+</html>
