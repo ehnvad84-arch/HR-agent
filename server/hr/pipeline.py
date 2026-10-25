@@ -216,6 +216,55 @@ def create_person(conn: psycopg.Connection, n: Norm, now: datetime) -> int:
                (label_of(n), n.city, name_variants(n.name), [x.lower() for x in n.nicknames], now, now))
 
 
+# ------------------------------------------------------------------ сшивка
+
+def stitch_candidates(conn: psycopg.Connection, n: Norm, exclude_obs: int) -> list[tuple[int, float, dict]]:
+    """Похожие люди с других наблюдений: ник — сразу 1,0; иначе взвешенное сходство (S14, S15)."""
+    nicks = [x.lower() for x in n.nicknames]
+    cands = rows(conn, """
+        SELECT p.id, p.nicknames, o.title, o.city, o.employers, o.exp_years
+        FROM person p JOIN observation o ON o.person_id = p.id
+        WHERE o.id <> %(obs)s AND p.watch <> 'dropped'
+          AND (o.employers && %(emp)s::text[] OR similarity(p.label, %(label)s) > 0.45
+               OR p.nicknames && %(nicks)s::text[])
+        LIMIT 100""", {"obs": exclude_obs, "emp": n.employers, "label": label_of(n), "nicks": nicks})
+    best: dict[int, tuple[float, dict]] = {}
+    for c in cands:
+        if nicks and set(nicks) & set(c["nicknames"]):
+            sim, ev = 1.0, {"nick": sorted(set(nicks) & set(c["nicknames"]))}
+        else:
+            ea, eb = {e.lower() for e in n.employers}, {e.lower() for e in c["employers"]}
+            emp = len(ea & eb) / len(ea | eb) if ea and eb else 0.0
+            title = scoring.trigram_sim(n.title, c["title"])
+            city = 1.0 if n.city and c["city"] and n.city.lower() == c["city"].lower() else 0.0
+            exp = 1.0 if (n.exp_years is not None and c["exp_years"] is not None
+                          and abs(n.exp_years - float(c["exp_years"])) <= 1) else 0.0
+            sim = round(0.5 * emp + 0.25 * title + 0.15 * city + 0.1 * exp, 3)
+            ev = {"employers": sorted(ea & eb), "title_sim": round(title, 2), "city": bool(city),
+                  "exp_close": bool(exp)}
+        if sim > best.get(c["id"], (-1.0, {}))[0]:
+            best[c["id"]] = (sim, ev)
+    return sorted(((pid, s, e) for pid, (s, e) in best.items()), key=lambda x: -x[1])
+
+
+def attach(conn: psycopg.Connection, person_id: int, obs_id: int, n: Norm) -> None:
+    run(conn, "SELECT id FROM person WHERE id = %s FOR UPDATE", (person_id,))
+    run(conn, "UPDATE observation SET person_id = %s WHERE id = %s", (person_id, obs_id))
+    run(conn, """UPDATE person SET
+                   name_variants = ARRAY(SELECT DISTINCT unnest(name_variants || %s::text[])),
+                   nicknames = ARRAY(SELECT DISTINCT unnest(nicknames || %s::text[]))
+                 WHERE id = %s""", (name_variants(n.name), [x.lower() for x in n.nicknames], person_id))
+
+
+def ask_merge(conn: psycopg.Connection, new_id: int, other: int, sim: float, ev: dict) -> None:
+    """Спорная сшивка не склеивается молча: вопрос рекрутеру в очередь действий."""
+    a, b = sorted((new_id, other))
+    mid = val(conn, """INSERT INTO person_merge_candidate (person_a, person_b, similarity, evidence)
+                       VALUES (%s, %s, %s, %s) RETURNING id""", (a, b, sim, j(ev)))
+    run(conn, "INSERT INTO action_queue (kind, person_id, payload) VALUES ('merge_persons', %s, %s)",
+        (new_id, j({"merge_candidate_id": mid, "person_a": a, "person_b": b, "similarity": sim, "evidence": ev})))
+
+
 # ------------------------------------------------------------------ шаг конвейера
 
 @dataclass
@@ -249,10 +298,21 @@ def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: dat
         best = passes_threshold(conn, n, profiles) if profiles else None
         if best is None:
             return res              # «увидел, но мимо»: наблюдение лежит до следующего изменения
-        res.person_id = create_person(conn, n, now)
-        res.person_created = True
-        run(conn, "UPDATE observation SET person_id = %s WHERE id = %s", (res.person_id, obs.id))
-        res.events = [("new", {"source": source["code"], "score": best})]
+        cands = stitch_candidates(conn, n, obs.id)
+        auto = float(setting(conn, "merge_auto_similarity", 0.92))
+        ask = float(setting(conn, "merge_ask_similarity", 0.6))
+        if cands and cands[0][1] >= auto:
+            res.person_id = cands[0][0]
+            attach(conn, res.person_id, obs.id, n)
+            res.events = [("resume_updated", {"new_source": source["code"], "similarity": cands[0][1]})]
+        else:
+            res.person_id = create_person(conn, n, now)
+            res.person_created = True
+            run(conn, "UPDATE observation SET person_id = %s WHERE id = %s", (res.person_id, obs.id))
+            res.events = [("new", {"source": source["code"], "score": best})]
+            if cands and cands[0][1] >= ask:
+                ask_merge(conn, res.person_id, *cands[0])
+                res.merge_question = True
     else:
         keywords = {k for pr in profiles for k in pr["keywords"] or []}
         res.events = events_from_diff(obs.diff, keywords) if obs.changed else [("resume_updated", {"reappeared": True})]
