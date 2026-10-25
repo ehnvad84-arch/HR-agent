@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import psycopg
 
-from . import scoring
+from . import alerts, scoring
 from .db import ConnFactory, j, one, rows, run, setting, val
 from .jobs import JobStats
 from .names import name_variants
@@ -316,6 +316,9 @@ def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profile
     for kind, detail in res.events:
         add_event(conn, res.observation_id, res.person_id, kind, detail, now)
     res.scores = rescore_person(conn, res.person_id, profiles)
+    res.alerts = alerts.evaluate(conn, res.person_id, res.events, res.scores, now)
+    run(conn, "UPDATE obs_event SET processed = true WHERE observation_id = %s AND NOT processed",
+        (res.observation_id,))
     return res
 
 
