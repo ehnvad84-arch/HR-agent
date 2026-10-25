@@ -9,7 +9,7 @@
 
 В ветке лежит черновой код (коммит `wip: черновой код MVP…`). Каждая задача берёт из него то, что совпадает со спекой, и переписывает остальное по TDD; расхождения черновика перечислены в progress.md. Тесты — `server/tests/test_<модуль>.py`, имена по сценариям (`test_s03_…`).
 
-- [ ] T1 — каркас: `pyproject.toml` (ruff, pytest), `requirements.txt`, `conftest.py` (база `*_test`, откат на тест, `conn_factory` на точках сохранения, запрет сети, фальшивые часы), `hr.cli migrate`, миграция `001_core.sql` вместо `001_mvp.sql` · сценарий: — · проверка: auto · исполнитель: main
+- [x] T1 — каркас: `pyproject.toml` (ruff, pytest), `requirements.txt`, `conftest.py` (база `*_test`, откат на тест, `conn_factory` на точках сохранения, запрет сети, фальшивые часы), `hr.cli migrate`, миграция `001_core.sql` вместо `001_mvp.sql` · сценарий: — · проверка: auto · исполнитель: main
   Готово, когда: `pytest` зелёный; тест проверяет в `public` 46 таблиц и 4 представления, в `ops` — `schema_migration`, `job_run`, `oauth_token`, `oauth_state`, `import_file`; строки `source` (hh, trudvsem выключен, habr, avito выключен, manual) и новые `settings` на месте; `ruff check server` чистый
 - [ ] T2 — `jobs.run` (журнал `ops.job_run`, блокировка от параллельного запуска, `JobBlocked`/`JobNotConfigured`/`JobBusy`) и `http.py` (ограничитель «1 запрос/с на площадку» с часами, `PageBudget`) · сценарий: S4 · проверка: auto · исполнитель: main
   Готово, когда: тесты: интервал между запросами к одной площадке ≥ 1 с по фальшивым часам; бюджет страниц останавливает и ставит `limit_reached`; второй параллельный запуск получает `JobBusy`; падение задачи пишет `ok=false` и класс ошибки без данных
