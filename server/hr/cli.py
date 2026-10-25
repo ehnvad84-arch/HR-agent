@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("gen-key", help="сгенерировать SECRETS_KEY для .env")
     sub.add_parser("hh-auth", help="одноразовая ссылка авторизации hh (действует 10 минут)")
     sub.add_parser("hh-selftest", help="проверить доступ к базе резюме hh")
+    sub.add_parser("reembed", help="пересчитать векторы поиска по смыслу текущим способом")
     args = parser.parse_args(argv)
 
     if args.cmd == "migrate":
@@ -31,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
         with db.tx() as conn:
             res = hh.selftest(conn, client(get_config().hh_user_agent), SYSTEM.now())
         print(f"hh отвечает: по запросу «инженер» в Краснодаре видно резюме: {res['found']}")
+    elif args.cmd == "reembed":
+        from . import search
+        print(f"пересчитано векторов: {search.reembed(db.tx).changed}")
     return 0
 
 

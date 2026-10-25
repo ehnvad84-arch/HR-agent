@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import psycopg
 
-from . import alerts, scoring
+from . import alerts, embed, scoring
 from .db import ConnFactory, j, one, rows, run, setting, val
 from .jobs import JobStats
 from .names import name_variants
@@ -202,6 +202,19 @@ def rescore_person(conn: psycopg.Connection, person_id: int, profiles: list[dict
     return out
 
 
+def person_text(p: scoring.Person) -> str:
+    return " ".join(filter(None, [p.title, p.city, " ".join(p.positions), " ".join(p.skills),
+                                  " ".join(p.employers), p.text[:4000]]))
+
+
+def write_embedding(conn: psycopg.Connection, person_id: int, vec: list[float], model: str, now: datetime) -> None:
+    run(conn, """INSERT INTO person_embedding (person_id, embedding, embed_model, updated_at)
+                 VALUES (%s, %s::vector, %s, %s)
+                 ON CONFLICT (person_id) DO UPDATE SET embedding = EXCLUDED.embedding,
+                     embed_model = EXCLUDED.embed_model, updated_at = EXCLUDED.updated_at""",
+        (person_id, embed.literal(vec), model, now))
+
+
 def add_event(conn: psycopg.Connection, obs_id: int, person_id: int | None, kind: str, detail: dict,
               now: datetime) -> int:
     eid = val(conn, """INSERT INTO obs_event (observation_id, person_id, kind, detail, happened_at)
@@ -316,6 +329,10 @@ def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profile
     for kind, detail in res.events:
         add_event(conn, res.observation_id, res.person_id, kind, detail, now)
     res.scores = rescore_person(conn, res.person_id, profiles)
+    if embed.method() == embed.HASH:
+        # вектор в коде считается сразу; у провайдера — задачей score, вне транзакции
+        write_embedding(conn, res.person_id, embed.hash_vector(person_text(person_data(conn, res.person_id))),
+                        embed.HASH, now)
     res.alerts = alerts.evaluate(conn, res.person_id, res.events, res.scores, now)
     run(conn, "UPDATE obs_event SET processed = true WHERE observation_id = %s AND NOT processed",
         (res.observation_id,))
