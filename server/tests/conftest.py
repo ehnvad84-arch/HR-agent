@@ -56,6 +56,9 @@ def _no_network(monkeypatch):
 def conn():
     """Одно соединение на тест; всё, что тест записал, откатывается."""
     c = psycopg.connect(DSN, row_factory=dict_row, autocommit=False)
+    # открываем транзакцию сразу: иначе первый conn.transaction() в тесте станет настоящей
+    # транзакцией и зафиксирует данные, а не точкой сохранения
+    c.execute("SELECT 1")
     try:
         yield c
     finally:
