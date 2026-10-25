@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 import httpx
 
 from . import hh, pipeline
 from .clock import SYSTEM, Clock
 from .config import get_config
-from .db import ConnFactory, j, one, run, setting, val
+from .db import ConnFactory, j, one, rows, run, setting, val
 from .http import PageBudget, RateLimiter, client
 from .jobs import JobBlocked, JobNotConfigured, JobStats
 from .normalize import normalize
@@ -102,4 +103,54 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
         except httpx.HTTPError as e:
             _finish(conn_factory, qid, False, f"hh не ответил: {type(e).__name__}")
             stats.errors += 1
+    return stats
+
+
+def _disappear(conn_factory: ConnFactory, obs_id: int, now) -> None:
+    with conn_factory() as conn:
+        o = one(conn, "UPDATE observation SET is_gone = true WHERE id = %s RETURNING person_id", (obs_id,))
+        if o and o["person_id"]:
+            eid = pipeline.add_event(conn, obs_id, o["person_id"], "disappeared", {}, now)
+            run(conn, "UPDATE obs_event SET processed = true WHERE id = %s", (eid,))
+
+
+def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
+              limiter: RateLimiter | None = None, **_) -> JobStats:
+    """Резюме не видно дольше stale_observation_days (S11). hh перепроверяется по id в пределах
+    hh_recheck_per_run: из-за предела страниц на профиль «не видели» ещё не значит «пропало»."""
+    clock = clock or SYSTEM
+    now = clock.now()
+    stats = JobStats()
+    with conn_factory() as conn:
+        days = int(setting(conn, "stale_observation_days", 45))
+        recheck = int(setting(conn, "hh_recheck_per_run", 100))
+        budget = PageBudget(int(setting(conn, "crawl_max_pages", 2000)), stats)
+        stale = rows(conn, """
+            SELECT o.id, o.external_id, s.code FROM observation o JOIN source s ON s.id = o.source_id
+            WHERE s.mode = 'api' AND NOT o.is_gone AND o.last_seen < %s
+            ORDER BY o.last_seen""", (now - timedelta(days=days),))
+    api = hh.Api(conn_factory, http or client(get_config().hh_user_agent), clock, limiter or _limiter, budget)
+    for o in stale:
+        stats.seen += 1
+        if o["code"] != "hh":
+            _disappear(conn_factory, o["id"], now)
+            stats.changed += 1
+            continue
+        if recheck <= 0:
+            stats.skipped += 1
+            continue
+        recheck -= 1
+        try:
+            api.get(f"/resumes/{o['external_id']}")
+        except hh.BudgetExhausted:
+            break
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (404, 410):
+                _disappear(conn_factory, o["id"], now)
+                stats.changed += 1
+            else:
+                stats.errors += 1
+            continue
+        with conn_factory() as conn:
+            run(conn, "UPDATE observation SET last_seen = %s WHERE id = %s", (now, o["id"]))
     return stats
