@@ -87,3 +87,18 @@ def test_s11_source_without_recheck_marked_by_last_seen(conn, conn_factory, cloc
     collect.mark_gone(conn_factory, http=http, clock=clock, limiter=RateLimiter(clock))
     assert db.val(conn, "SELECT is_gone FROM observation WHERE external_id = 'tv-1'") is True
     assert calls == []
+
+
+def test_view_limit_stops_recheck_without_marking_gone(conn, conn_factory, clock):
+    two_people(conn, clock)
+    clock.advance(days=50)
+    calls = []
+
+    def handler(req):
+        calls.append(req.url.path)
+        return httpx.Response(429, json={"errors": [{"type": "resumes", "value": "view_limit_exceeded"}]})
+
+    stats = collect.mark_gone(conn_factory, http=httpx.Client(transport=httpx.MockTransport(handler)), clock=clock,
+                              limiter=RateLimiter(clock))
+    assert len(calls) == 1 and stats.changed == 0 and "лимит просмотров" in stats.note
+    assert db.val(conn, "SELECT count(*) FROM observation WHERE is_gone") == 0

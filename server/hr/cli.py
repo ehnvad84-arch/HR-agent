@@ -8,6 +8,7 @@ from . import crypto, db, hh
 from .clock import SYSTEM
 from .config import get_config
 from .http import client
+from .jobs import JobError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,9 +33,28 @@ def main(argv: list[str] | None = None) -> int:
         with db.tx() as conn:
             print("Откройте под менеджером работодателя:\n" + hh.auth_link(conn, SYSTEM.now()))
     elif args.cmd == "hh-selftest":
-        with db.tx() as conn:
-            res = hh.selftest(conn, client(get_config().hh_user_agent), SYSTEM.now())
-        print(f"hh отвечает: по запросу «инженер» в Краснодаре видно резюме: {res['found']}")
+        try:
+            res = hh.selftest(db.tx, client(get_config().hh_user_agent), SYSTEM.now())
+        except JobError as e:
+            print(f"hh-selftest: {e}")
+            return 1
+        print("hh отвечает, токен действует.")
+        if not res["search_access"]:
+            print("Поиск по базе резюме через API: ЗАКРЫТ. Нужна услуга доступа к базе резюме с разделом "
+                  "«API и автоматизация процессов» (https://hh.ru/article/27029) — вопрос к менеджеру hh.")
+        else:
+            print("Поиск по базе резюме через API: открыт.")
+        for s in res["services"] or [{"type": None}]:
+            if s["type"] is None:
+                print("Платных услуг API нет.")
+            else:
+                bal = f", остаток {s['balance']}" if s["balance"] is not None else ""
+                print(f"Услуга API: {s['name']} ({s['type']}{bal}, до {s['expires_at']}).")
+        api_left = res["views_left"] if res["views_left"] is not None else "не предусмотрено"
+        print(f"Просмотров резюме на сегодня осталось: через API {api_left}, на сайте {res['views_left_site']}.")
+        if res["found"] is not None:
+            print(f"По запросу «инженер» в Краснодаре видно резюме: {res['found']}.")
+        return 0 if res["search_access"] else 1
     elif args.cmd == "run":
         from . import tasks
         res = tasks.run(args.task)

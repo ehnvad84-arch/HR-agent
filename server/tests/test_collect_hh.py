@@ -28,10 +28,21 @@ def search_view(item: dict) -> dict:
     return v
 
 
+def hh_error(status: int, value: str, **extra) -> httpx.Response:
+    """Ошибка в формате hh: {"errors": [{"type": ..., "value": ...}]}."""
+    return httpx.Response(status, json={"errors": [{"type": extra.pop("type", "x"), "value": value}], **extra})
+
+
+EXPIRED = httpx.Response(403, json={"oauth_error": "token-expired",
+                                    "errors": [{"type": "oauth", "value": "token_expired"}]})
+
+
 class FakeHH:
-    def __init__(self, items=None, captcha_on_page=None, error_on_page=None):
+    def __init__(self, items=None, captcha_on_page=None, error_on_page=None, search_reply=None, full_reply=None,
+                 search_access=True):
         self.items = items if items is not None else [hh_item(), weak_item()]
         self.captcha_on_page, self.error_on_page = captcha_on_page, error_on_page
+        self.search_reply, self.full_reply, self.search_access = search_reply, full_reply, search_access
         self.calls: list[str] = []
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
@@ -39,7 +50,24 @@ class FakeHH:
         self.calls.append(path)
         assert req.headers["Authorization"] == "Bearer AT"
         assert "RuwareHR" in req.headers["User-Agent"]
+        if path == "/me":
+            return httpx.Response(200, json={"is_employer": True, "employer": {"id": "777"}, "manager": {"id": "55"}})
+        if path == "/employers/777/managers/55/method_access":
+            return httpx.Response(200, json={"items": [
+                {"id": "3", "description": "резюме с откликом", "access": {"has_access": True}},
+                {"id": "4", "description": "просмотр резюме", "access": {"has_access": self.search_access}}]})
+        if path == "/employers/777/services/payable_api_actions/active":
+            return httpx.Response(200, json={"items": [
+                {"id": "1", "service_type": {"id": "API_LIMITED", "name": "Пакет запросов к API HH"},
+                 "balance": {"actual": 9000, "initial": 10000}, "activated_at": "2026-10-01T00:00:00+0300",
+                 "expires_at": "2027-10-01T00:00:00+0300"}]})
+        if path == "/employers/777/managers/55/limits/resume":
+            return httpx.Response(200, json={"limits": {"resume_view": 500, "resume_view_from_api": 300},
+                                             "spend": {"resume_view": 10, "resume_view_from_api": 120},
+                                             "left": {"resume_view": 490, "resume_view_from_api": 180}})
         if path == "/resumes":
+            if self.search_reply is not None:
+                return self.search_reply
             page = int(req.url.params.get("page", 0))
             if page == self.captcha_on_page:
                 return httpx.Response(403, json={"errors": [{"type": "captcha_required"}]})
@@ -48,6 +76,8 @@ class FakeHH:
             items = [search_view(i) for i in self.items] if page == 0 else []
             return httpx.Response(200, json={"items": items, "pages": 1, "found": len(self.items)})
         if path.startswith("/resumes/"):
+            if self.full_reply is not None:
+                return self.full_reply
             rid = path.rsplit("/", 1)[1]
             full = next(i for i in self.items if i["id"] == rid)
             return httpx.Response(200, json=full)
@@ -183,5 +213,123 @@ def test_expired_token_refreshed_before_crawl(conn, conn_factory, clock):
     assert fake.calls[0] == "/token"
 
 
-def test_selftest_reports_found(conn, clock):
-    assert hh.selftest(conn, FakeHH().client(), clock.now())["found"] == 2
+class ExpiresOnHH(FakeHH):
+    """hh считает токен истёкшим раньше нашего срока и отвечает 403, а не 401."""
+
+    def __call__(self, req):
+        if req.url.path == "/token":
+            self.calls.append("/token")
+            return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT2", "expires_in": 3600})
+        if req.headers["Authorization"] == "Bearer OLD":
+            self.calls.append(req.url.path)
+            return EXPIRED
+        return super().__call__(req)
+
+
+def test_403_token_expired_is_refreshed(conn, conn_factory, clock):
+    profile(conn)
+    hh.store_tokens(conn, {"access_token": "OLD", "refresh_token": "RT", "expires_in": 30 * 86400}, "777",
+                    clock.now())
+    fake = ExpiresOnHH()
+    res = jobs.run("collect_hh", collect.collect_hh, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert res.ok, res.error
+    assert fake.calls[:3] == ["/resumes", "/token", "/resumes"]
+    assert db.val(conn, "SELECT count(*) FROM observation") == 2
+
+
+def test_403_token_revoked_asks_for_auth(conn, conn_factory, clock):
+    profile(conn)
+    revoked = httpx.Response(403, json={"oauth_error": "token-revoked",
+                                        "errors": [{"type": "oauth", "value": "bad_authorization"}]})
+    fake = FakeHH(search_reply=revoked)
+    res = jobs.run("collect_hh", collect.collect_hh, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert not res.ok and isinstance(res.exc, jobs.JobNotConfigured) and "hh-auth" in res.error
+    assert "/token" not in fake.calls, "отозванный токен обновлением не лечится"
+
+
+def test_view_limit_continues_without_full_resumes(conn, conn_factory, clock):
+    profile(conn)
+    fake = FakeHH(full_reply=hh_error(429, "view_limit_exceeded", type="resumes"))
+    res = jobs.run("collect_hh", collect.collect_hh, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert res.ok, res.error
+    assert res.stats.new == 2 and "лимит просмотров" in res.stats.note
+    assert len(fake.full_fetches) == 1, "после лимита полные резюме больше не запрашиваются"
+
+
+@pytest.mark.parametrize("value", ["daily_resume_search_limit_exceeded",
+                                   "daily_resume_search_limit_without_services_exceeded"])
+def test_search_limit_is_not_captcha(conn, conn_factory, clock, value):
+    profile(conn)
+    fake = FakeHH(search_reply=hh_error(429, value, type="resumes"))
+    res = jobs.run("collect_hh", collect.collect_hh, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert not res.ok and isinstance(res.exc, jobs.JobLimit) and not res.retry
+    assert "лимит поиска" in res.error and "робот" not in res.error
+    run_stats = db.val(conn, "SELECT stats FROM ops.job_run WHERE job = 'collect_hh' ORDER BY id DESC LIMIT 1")
+    assert not run_stats.get("blocked")
+
+
+def test_403_without_paid_access(conn, conn_factory, clock):
+    profile(conn)
+    fake = FakeHH(search_reply=hh_error(403, "action_must_be_payed", type="api_access_payment"))
+    res = jobs.run("collect_hh", collect.collect_hh, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert not res.ok and isinstance(res.exc, jobs.JobNotConfigured) and "оплач" in res.error
+
+
+def test_selftest_reports_access_services_and_limits(conn, conn_factory, clock):
+    fake = FakeHH()
+    res = hh.selftest(conn_factory, fake.client(), clock.now(), limiter=RateLimiter(clock))
+    assert res["search_access"] is True and res["found"] == 2
+    assert res["views_left"] == 180 and res["views_left_site"] == 490
+    assert res["services"] == [{"type": "API_LIMITED", "name": "Пакет запросов к API HH", "balance": 9000,
+                                "expires_at": "2027-10-01T00:00:00+0300"}]
+    assert all(s >= 0.99 for s in clock.slept), "не чаще запроса в секунду"
+
+
+def test_selftest_without_search_access_skips_search(conn, conn_factory, clock):
+    fake = FakeHH(search_access=False)
+    res = hh.selftest(conn_factory, fake.client(), clock.now(), limiter=RateLimiter(clock))
+    assert res["search_access"] is False and res["found"] is None
+    assert "/resumes" not in fake.calls
+
+
+def test_selftest_keeps_refreshed_token_when_later_request_fails(conn, conn_factory, clock):
+    """refresh_token одноразовый: новый токен сохраняется до проверок, даже если они упадут."""
+    hh.store_tokens(conn, {"access_token": "OLD", "refresh_token": "RT", "expires_in": 1}, "777",
+                    clock.now() - timedelta(hours=1))
+
+    class Broken(ExpiresOnHH):
+        def __call__(self, req):
+            if req.url.path.endswith("/method_access"):
+                return httpx.Response(500)
+            return super().__call__(req)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        hh.selftest(conn_factory, Broken().client(), clock.now(), limiter=RateLimiter(clock))
+    assert hh.access_token(conn, Broken().client(), clock.now()) == "AT"
+
+
+def test_token_refresh_respects_rate_limit(conn, conn_factory, clock):
+    profile(conn)
+    hh.store_tokens(conn, {"access_token": "OLD", "refresh_token": "RT", "expires_in": 30 * 86400}, "777",
+                    clock.now())
+    fake = ExpiresOnHH()
+    run(conn_factory, fake, clock)
+    assert "/token" in fake.calls
+    assert len(clock.slept) == len(fake.calls) - 1 and all(s >= 0.99 for s in clock.slept), \
+        "POST /token тоже не чаще запроса в секунду"
+
+
+def test_resume_saved_after_view_limit_gets_full_text_next_run(conn, conn_factory, clock):
+    profile(conn)
+    fake = FakeHH(full_reply=hh_error(429, "view_limit_exceeded", type="resumes"))
+    run(conn_factory, fake, clock)
+    fake.full_reply, fake.calls = None, []
+    clock.advance(days=1)
+    run(conn_factory, fake, clock)
+    assert fake.full_fetches == ["/resumes/a1b2c3d4e5"], "недобранное полное резюме запрашивается снова"
+    assert "Altium Designer" in db.val(conn, "SELECT skills FROM observation WHERE external_id = 'a1b2c3d4e5'")

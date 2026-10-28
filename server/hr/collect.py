@@ -11,7 +11,7 @@ from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
 from .http import PageBudget, RateLimiter, client
-from .jobs import JobBlocked, JobNotConfigured, JobStats
+from .jobs import JobError, JobNotConfigured, JobStats
 from .normalize import normalize
 
 log = logging.getLogger(__name__)
@@ -47,13 +47,19 @@ class _HHItems:
             # выдача поиска без навыков: накладываем её на сохранённое полное резюме, чтобы не было ложных изменений
             merged = {**old["raw"], **item} if old else item
             updated = not old or old["raw"].get("updated_at") != item.get("updated_at")
-            want = updated and (bool(old and old["person_id"]) or
+            # skill_set есть только в полном резюме: без него полное ещё не получено (например, упёрлись в лимит)
+            want = (updated or "skill_set" not in old["raw"]) and (bool(old and old["person_id"]) or
                                 pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles) is not None)
         raw = merged
         if want and self.full_left > 0:
-            full = self.api.get(f"/resumes/{item['id']}")
-            self.full_left -= 1
-            raw = {**merged, **full}
+            try:
+                full = self.api.get(f"/resumes/{item['id']}")
+            except hh.ViewLimitExceeded as e:
+                self.full_left = 0
+                self.stats.note = f"{e} — дальше по выдаче поиска, без полных резюме"
+            else:
+                self.full_left -= 1
+                raw = {**merged, **full}
         with self.cf() as conn:
             r = pipeline.process(conn, self.src, normalize("hh", raw), raw, self.clock.now())
         self.stats.new += int(r.new)
@@ -86,7 +92,7 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
                 for item in data.get("items", []):
                     try:
                         items.handle(item)
-                    except (hh.BudgetExhausted, JobBlocked, JobNotConfigured):
+                    except (hh.BudgetExhausted, JobError):
                         raise
                     except Exception:  # noqa: BLE001 — одно битое резюме не роняет обход
                         log.exception("резюме hh не принято")
@@ -97,7 +103,7 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
         except hh.BudgetExhausted:
             _finish(conn_factory, qid, True, stats.note)
             break
-        except (JobBlocked, JobNotConfigured) as e:
+        except JobError as e:
             _finish(conn_factory, qid, False, str(e))
             raise
         except httpx.HTTPError as e:
@@ -143,6 +149,10 @@ def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, cl
             api.get(f"/resumes/{o['external_id']}")
         except hh.BudgetExhausted:
             break
+        except hh.ViewLimitExceeded as e:
+            stats.note = f"{e} — перепроверка продолжится в следующий прогон"
+            recheck = 0   # остальные hh — в следующий прогон, другие API-источники обрабатываются дальше
+            continue
         except httpx.HTTPStatusError as e:
             if e.response.status_code in (404, 410):
                 _disappear(conn_factory, o["id"], now)

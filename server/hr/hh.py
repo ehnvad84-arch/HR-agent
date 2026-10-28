@@ -18,10 +18,12 @@ from .clock import Clock
 from .config import get_config
 from .db import ConnFactory, one, run, setting
 from .http import PageBudget, RateLimiter
-from .jobs import JobBlocked, JobNotConfigured
+from .jobs import JobBlocked, JobLimit, JobNotConfigured
 
 STATE_TTL = timedelta(minutes=10)
 AUTH_NEEDED = "нет токена hh, пройдите авторизацию: python -m hr.cli hh-auth"
+REAUTH_NEEDED = "hh не принял токен — пройдите авторизацию: python -m hr.cli hh-auth"
+SEARCH_GROUP = "4"   # method_access: просмотр резюме, найденных поиском по базе
 
 
 class StateError(ValueError):
@@ -94,8 +96,10 @@ def store_tokens(conn: psycopg.Connection, data: dict, account_id: str | None, n
             updated_at = EXCLUDED.updated_at""", (access, refresh, expires, account_id, now))
 
 
-def access_token(conn: psycopg.Connection, http: httpx.Client, now: datetime, force_refresh: bool = False) -> str:
-    """Действующий access_token; просроченный (или отвергнутый hh, force_refresh) обновляется один раз."""
+def access_token(conn: psycopg.Connection, http: httpx.Client, now: datetime, force_refresh: bool = False,
+                 limiter: RateLimiter | None = None) -> str:
+    """Действующий access_token; просроченный (или отвергнутый hh, force_refresh) обновляется один раз.
+    limiter — общий с обходом, чтобы POST /token тоже шёл не чаще запроса в секунду."""
     row = one(conn, "SELECT * FROM ops.oauth_token WHERE provider = 'hh' FOR UPDATE")
     if row and not force_refresh and row["expires_at"] > now:
         return crypto.decrypt(row["access_token_enc"])
@@ -103,6 +107,8 @@ def access_token(conn: psycopg.Connection, http: httpx.Client, now: datetime, fo
         get_config().hh_refresh_token
     if not refresh:
         raise JobNotConfigured(AUTH_NEEDED)
+    if limiter:
+        limiter.wait("hh")
     try:
         data = _token_request(http, {"grant_type": "refresh_token", "refresh_token": refresh})
     except httpx.HTTPError:
@@ -117,11 +123,56 @@ class BudgetExhausted(Exception):
     """Бюджет страниц прогона исчерпан — прогон завершается с пометкой."""
 
 
+class ViewLimitExceeded(JobLimit):
+    """Суточный лимит просмотров резюме исчерпан: искать можно, открывать полные резюме — нет."""
+
+
 RETRY_DELAYS = (5, 15)
+
+# коды из errors[].type, errors[].value и oauth_error ответа hh
+TOKEN_EXPIRED = {"token_expired", "token-expired"}
+TOKEN_DEAD = {"token-revoked", "token_revoked", "bad_authorization", "bad-auth-type", "client-id-deleted",
+              "application_not_found", "used_manager_account_forbidden"}
+SEARCH_LIMIT = {"daily_resume_search_limit_exceeded", "daily_resume_search_limit_without_services_exceeded"}
+NOT_PAID = {"api_access_payment", "action_must_be_payed"}
+
+
+def error_codes(r: httpx.Response) -> set[str]:
+    try:
+        body = r.json()
+    except ValueError:
+        return set()
+    if not isinstance(body, dict):
+        return set()
+    codes = {str(e[k]) for e in body.get("errors") or [] if isinstance(e, dict) for k in ("type", "value") if e.get(k)}
+    if body.get("oauth_error"):
+        codes.add(str(body["oauth_error"]))
+    return codes
+
+
+def raise_for_hh(r: httpx.Response) -> None:
+    """Отказ hh — в понятную причину: лимит, капча, токен, оплата. Остальное — HTTPStatusError."""
+    if r.status_code not in (401, 403, 429):
+        r.raise_for_status()
+        return
+    codes = error_codes(r)
+    if r.status_code == 401 or codes & (TOKEN_EXPIRED | TOKEN_DEAD):
+        raise JobNotConfigured(REAUTH_NEEDED)
+    if "view_limit_exceeded" in codes:
+        raise ViewLimitExceeded("исчерпан суточный лимит просмотров резюме hh")
+    if codes & SEARCH_LIMIT:
+        raise JobLimit("исчерпан суточный лимит поиска резюме hh — обход продолжится в следующий прогон")
+    if "captcha_required" in codes:
+        raise JobBlocked("hh просит пройти проверку на робота — обход остановлен")
+    if r.status_code == 429:
+        raise JobBlocked("hh ограничил частоту запросов — обход остановлен")
+    if codes & NOT_PAID:
+        raise JobNotConfigured("hh: у работодателя нет оплаченного доступа к базе резюме через API")
+    raise JobNotConfigured("hh: нет доступа к базе резюме у этой учётной записи")
 
 
 class Api:
-    """GET к api.hh.ru: лимит 1 запрос/с, бюджет страниц, токен с обновлением, остановка на капче."""
+    """GET к api.hh.ru: лимит 1 запрос/с, бюджет страниц, токен с обновлением, остановка на капче и лимитах."""
 
     def __init__(self, conn_factory: ConnFactory, http: httpx.Client, clock: Clock, limiter: RateLimiter,
                  budget: PageBudget):
@@ -129,7 +180,7 @@ class Api:
 
     def _token(self, force: bool = False) -> str:
         with self.cf() as conn:
-            return access_token(conn, self.http, self.clock.now(), force_refresh=force)
+            return access_token(conn, self.http, self.clock.now(), force_refresh=force, limiter=self.limiter)
 
     def get(self, path: str, params: dict | None = None) -> dict:
         token = self._token()
@@ -140,17 +191,14 @@ class Api:
             self.limiter.wait("hh")
             r = self.http.get(f"{get_config().hh_api}{path}", params=params,
                               headers={"Authorization": f"Bearer {token}"})
-            if r.status_code == 401 and not refreshed:
+            # истёкший токен hh отдаёт как 403 token_expired, а не 401
+            if not refreshed and (r.status_code == 401 or error_codes(r) & TOKEN_EXPIRED):
                 token, refreshed = self._token(force=True), True
                 continue
-            if r.status_code == 429 or (r.status_code == 403 and "captcha" in r.text.lower()):
-                raise JobBlocked("hh просит пройти проверку на робота или ограничил частоту — обход остановлен")
-            if r.status_code == 403:
-                raise JobNotConfigured("hh: нет доступа к базе резюме у этой учётной записи")
             if r.status_code >= 500 and attempt < len(RETRY_DELAYS):
                 self.clock.sleep(RETRY_DELAYS[attempt])
                 continue
-            r.raise_for_status()
+            raise_for_hh(r)
             return r.json()
         r.raise_for_status()
         return r.json()
@@ -172,10 +220,35 @@ def search_params(conn: psycopg.Connection, profile: dict) -> dict:
     return params
 
 
-def selftest(conn: psycopg.Connection, http: httpx.Client, now: datetime) -> dict:
-    """Проверка из ТЗ 5.2, шаг 4: сколько резюме видно по тестовому запросу."""
-    token = access_token(conn, http, now)
-    r = http.get(f"{get_config().hh_api}/resumes", params={"text": "инженер", "area": "53", "per_page": 1},
-                 headers={"Authorization": f"Bearer {token}"})
-    r.raise_for_status()
-    return {"found": r.json().get("found")}
+def selftest(conn_factory: ConnFactory, http: httpx.Client, now: datetime,
+             limiter: RateLimiter | None = None) -> dict:
+    """Проверка из ТЗ 5.2, шаг 4: открыт ли поиск по базе через API, платные услуги API,
+    остаток просмотров на сегодня и сколько резюме видно по тестовому запросу.
+    Токен берётся в своей транзакции: обновлённый (refresh_token одноразовый) не откатится, если проверка упадёт."""
+    limiter = limiter or RateLimiter()
+    with conn_factory() as conn:
+        token = access_token(conn, http, now, limiter=limiter)
+
+    def get(path: str, params: dict | None = None) -> dict:
+        limiter.wait("hh")
+        r = http.get(f"{get_config().hh_api}{path}", params=params, headers={"Authorization": f"Bearer {token}"})
+        raise_for_hh(r)
+        return r.json()
+
+    me = get("/me")
+    eid, mid = (me.get("employer") or {}).get("id"), (me.get("manager") or {}).get("id")
+    if not (me.get("is_employer") and eid and mid):
+        raise JobNotConfigured("токен hh выдан не менеджеру работодателя — "
+                               "пройдите авторизацию: python -m hr.cli hh-auth")
+    groups = get(f"/employers/{eid}/managers/{mid}/method_access").get("items") or []
+    search_access = any(str(g.get("id")) == SEARCH_GROUP and (g.get("access") or {}).get("has_access")
+                        for g in groups)
+    services = [{"type": (s.get("service_type") or {}).get("id"), "name": (s.get("service_type") or {}).get("name"),
+                 "balance": (s.get("balance") or {}).get("actual"), "expires_at": s.get("expires_at")}
+                for s in get(f"/employers/{eid}/services/payable_api_actions/active").get("items") or []]
+    left = get(f"/employers/{eid}/managers/{mid}/limits/resume").get("left") or {}
+    found = None
+    if search_access:
+        found = get("/resumes", {"text": "инженер", "area": "53", "per_page": 1}).get("found")
+    return {"search_access": search_access, "services": services, "views_left": left.get("resume_view_from_api"),
+            "views_left_site": left.get("resume_view"), "found": found}

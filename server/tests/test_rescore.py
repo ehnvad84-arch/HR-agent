@@ -49,7 +49,8 @@ def test_s20_unapproved_version_is_refused(conn, conn_factory, clock):
 def test_s20_expired_observation_not_rechecked(conn, conn_factory, clock):
     profile(conn, version="1.0", title="Инженер ОТК", keywords=["AQL"], donor_companies=[], salary_max=90000)
     r = ingest(conn, hh_item(), clock)
-    db.run(conn, "UPDATE observation SET retention_until = current_date - 1 WHERE id = %s", (r.observation_id,))
+    db.run(conn, "UPDATE observation SET retention_until = %s::date - 1 WHERE id = %s",
+           (clock.now(), r.observation_id))
     v2 = profile(conn, version="1.1")
     rescore_profile(conn_factory, v2["id"], now=clock.now())
     assert db.val(conn, "SELECT person_id FROM observation WHERE id = %s", (r.observation_id,)) is None
