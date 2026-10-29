@@ -1,9 +1,10 @@
-"""Пробный сбор с настоящего hh: одна должность, маленькие пределы. Запускает человек.
+"""Пробный сбор с настоящего hh по двум открытым вакансиям, до 50 человек на каждую. Запускает человек.
 
     cd server && set -a; source .env; set +a; python scripts/trial_hh.py
 
-Заводит и утверждает (с подтверждения запускающего) профиль «Ведущий инженер-электронщик»,
-ставит пределы прогона, замеряет остаток пакета API hh до и после и печатает итог.
+Заводит и утверждает (с подтверждения запускающего) профили «Ведущий инженер-электронщик»
+и «Менеджер проектных продаж», ставит пределы прогона, замеряет остаток пакета API hh до и после
+и печатает итог. Контакты не открываются: это отдельная платная операция.
 Имён и контактов не печатает: только ярлык карточки (должность, город) и балл.
 """
 from __future__ import annotations
@@ -20,11 +21,18 @@ from hr.config import get_config  # noqa: E402
 from hr.http import client  # noqa: E402
 from hr.jobs import JobError  # noqa: E402
 
-PROFILE = {"dept": "rnd_hw", "dept_title": "Инженерные разработки", "code": "engineer_hw_lead",
-           "title": "Ведущий инженер-электронщик", "version": "0.1-проба",
-           "keywords": ["Altium", "схемотехника", "трассировка", "ЭМС"], "donors": [],
-           "salary_min": 150000, "salary_max": 200000}
-LIMITS = {"crawl_max_pages": "10", "crawl_per_profile_pages": "2", "hh_full_resume_per_run": "5"}
+PROFILES = [
+    {"dept": "rnd_hw", "dept_title": "Инженерные разработки", "code": "engineer_hw_lead",
+     "title": "Ведущий инженер-электронщик", "version": "0.1-проба",
+     "keywords": ["Altium", "схемотехника", "трассировка", "ЭМС"], "donors": [],
+     "salary_min": 150000, "salary_max": 200000},
+    {"dept": "sales", "dept_title": "Продажи", "code": "sales_project",
+     "title": "Менеджер проектных продаж", "version": "0.1-проба",
+     "keywords": ["44-ФЗ", "CRM", "проектные продажи"], "donors": [],
+     "salary_min": 120000, "salary_max": 160000},
+]
+# одна страница поиска (50 резюме) на вакансию; каждый запрос полного резюме — тоже страница бюджета
+LIMITS = {"crawl_max_pages": "110", "crawl_per_profile_pages": "1", "hh_full_resume_per_run": "100"}
 NOTE = "пробный сбор scripts/trial_hh.py, утвердил запускающий"
 
 
@@ -37,35 +45,44 @@ def balance(http) -> int | None:
 
 
 def prepare() -> None:
-    p = PROFILE
     with db.tx() as conn:
-        d = db.val(conn, "SELECT id FROM department WHERE code = %s", (p["dept"],)) or db.val(
-            conn, "INSERT INTO department (code, title) VALUES (%s, %s) RETURNING id", (p["dept"], p["dept_title"]))
-        if not db.val(conn, "SELECT id FROM role_profile WHERE code = %s AND version = %s", (p["code"], p["version"])):
-            # approved_by = 0: учётных записей из 1С ещё нет; кто утвердил — в agent_change.note
-            db.run(conn, """INSERT INTO role_profile (department_id, code, title, version, salary_min, salary_max,
-                                keywords, donor_companies, approved_by, approved_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, now())""",
-                   (d, p["code"], p["title"], p["version"], p["salary_min"], p["salary_max"], p["keywords"],
-                    p["donors"]))
-            db.run(conn, "INSERT INTO agent_change (kind, after, note) VALUES ('profile', %s, %s)",
-                   (db.j({k: p[k] for k in ("code", "title", "version", "keywords")}), NOTE))
-        before = {r["key"]: r["value"] for r in db.rows(conn, "SELECT key, value FROM settings WHERE key = ANY(%s)",
-                                                        (list(LIMITS),))}
-        if before != LIMITS:
-            for k, v in LIMITS.items():
-                db.run(conn, "UPDATE settings SET value = %s WHERE key = %s", (v, k))
-            db.run(conn, "INSERT INTO agent_change (kind, before, after, note) VALUES ('source', %s, %s, %s)",
-                   (db.j(before), db.j(LIMITS), NOTE))
+        for p in PROFILES:
+            _profile(conn, p)
+        _limits(conn)
+
+
+def _profile(conn, p: dict) -> None:
+    d = db.val(conn, "SELECT id FROM department WHERE code = %s", (p["dept"],)) or db.val(
+        conn, "INSERT INTO department (code, title) VALUES (%s, %s) RETURNING id", (p["dept"], p["dept_title"]))
+    if not db.val(conn, "SELECT id FROM role_profile WHERE code = %s AND version = %s", (p["code"], p["version"])):
+        # approved_by = 0: учётных записей из 1С ещё нет; кто утвердил — в agent_change.note
+        db.run(conn, """INSERT INTO role_profile (department_id, code, title, version, salary_min, salary_max,
+                            keywords, donor_companies, approved_by, approved_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, now())""",
+               (d, p["code"], p["title"], p["version"], p["salary_min"], p["salary_max"], p["keywords"],
+                p["donors"]))
+        db.run(conn, "INSERT INTO agent_change (kind, after, note) VALUES ('profile', %s, %s)",
+               (db.j({k: p[k] for k in ("code", "title", "version", "keywords")}), NOTE))
+
+
+def _limits(conn) -> None:
+    before = {r["key"]: r["value"] for r in db.rows(conn, "SELECT key, value FROM settings WHERE key = ANY(%s)",
+                                                    (list(LIMITS),))}
+    if before != LIMITS:
+        for k, v in LIMITS.items():
+            db.run(conn, "UPDATE settings SET value = %s WHERE key = %s", (v, k))
+        db.run(conn, "INSERT INTO agent_change (kind, before, after, note) VALUES ('source', %s, %s, %s)",
+               (db.j(before), db.j(LIMITS), NOTE))
 
 
 def main() -> int:
-    rub = [f"{PROFILE[k]:,}".replace(",", " ") for k in ("salary_min", "salary_max")]
-    print(f"Профиль: «{PROFILE['title']}», Краснодар, ключевые слова: {', '.join(PROFILE['keywords'])}, "
-          f"вилка {rub[0]}–{rub[1]} ₽.")
-    print(f"Пределы: не больше {LIMITS['crawl_max_pages']} запросов к hh, "
-          f"{LIMITS['hh_full_resume_per_run']} полных резюме.")
-    if input("Утвердить профиль и запустить сбор? Напишите «да»: ").strip().lower() != "да":
+    for p in PROFILES:
+        rub = [f"{p[k]:,}".replace(",", " ") for k in ("salary_min", "salary_max")]
+        print(f"Профиль: «{p['title']}», Краснодар, ключевые слова: {', '.join(p['keywords'])}, "
+              f"вилка {rub[0]}–{rub[1]} ₽.")
+    print(f"Пределы: до 50 резюме на вакансию, не больше {LIMITS['hh_full_resume_per_run']} полных резюме "
+          f"и {LIMITS['crawl_max_pages']} запросов к hh. Контакты не открываются.")
+    if input("Утвердить профили и запустить сбор? Напишите «да»: ").strip().lower() != "да":
         print("Отменено.")
         return 1
     calls: Counter = Counter()
@@ -98,6 +115,9 @@ def main() -> int:
             print(f"  {r['score']:>3}  {r['label']}")
         below = db.val(conn, "SELECT count(*) FROM observation WHERE person_id IS NULL")
         print(f"  ниже порога, без карточки: {below}")
+        n = db.one(conn, """SELECT count(*) AS total, count(*) FILTER (WHERE raw ? 'photo' AND raw->'photo' <> 'null')
+                                AS photo FROM observation o JOIN source s ON s.id = o.source_id WHERE s.code = 'hh'""")
+        print(f"  всего резюме с hh в базе: {n['total']}, из них с фото: {n['photo']}")
         print("\nОбратите внимание:")
         for r in db.rows(conn, "SELECT reason, headline FROM alert WHERE state = 'new' ORDER BY id DESC LIMIT 5"):
             print(f"  [{r['reason']}] {r['headline']}")
