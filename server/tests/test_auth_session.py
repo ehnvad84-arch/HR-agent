@@ -39,7 +39,7 @@ def web(conn_factory, clock):
 
     app.dependency_overrides[get_conn_factory] = lambda: conn_factory
     app.dependency_overrides[get_clock] = lambda: clock
-    return app, TestClient(app, base_url="http://localhost:8000")
+    return app, TestClient(app, base_url="https://localhost:8000")
 
 
 def login_as(conn, clock, client, role="head_recruiter", **kw):

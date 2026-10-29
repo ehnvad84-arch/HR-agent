@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 
-from . import crypto, db, hh
+from . import auth, crypto, db, hh
 from .clock import SYSTEM
 from .config import get_config
 from .http import client
@@ -18,6 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("gen-key", help="сгенерировать SECRETS_KEY для .env")
     sub.add_parser("hh-auth", help="одноразовая ссылка авторизации hh (действует 10 минут)")
     sub.add_parser("hh-selftest", help="проверить доступ к базе резюме hh")
+    uc = sub.add_parser("user-create", help="временная учётная запись рабочего места; пароль спросит без эха")
+    uc.add_argument("login")
+    uc.add_argument("--name", required=True, help="ФИО для журнала действий")
+    uc.add_argument("--role", default="head_recruiter",
+                    choices=["recruiter", "head_recruiter", "hiring_manager", "director"])
     sub.add_parser("reembed", help="пересчитать векторы поиска по смыслу текущим способом")
     from .tasks import TASKS
     run_p = sub.add_parser("run", help="запустить фоновую задачу вручную")
@@ -63,6 +69,18 @@ def main(argv: list[str] | None = None) -> int:
               f"карточек {res.stats.persons}, сигналов {res.stats.alerts}, страниц {res.stats.pages}"
               + (f"; {res.stats.note}" if res.stats.note else ""))
         return 0 if res.ok else 1
+    elif args.cmd == "user-create":
+        pw = getpass.getpass("Пароль (не короче 10 знаков): ")
+        if pw != getpass.getpass("Ещё раз: "):
+            print("Пароли не совпали, учётная запись не создана")
+            return 1
+        try:
+            with db.tx() as conn:
+                uid = auth.create_user(conn, args.login, args.name, args.role, pw)
+        except auth.PasswordError as e:
+            print(f"Учётная запись не создана: {e}")
+            return 1
+        print(f"Учётная запись {args.login} ({args.role}) готова, id {uid}")
     elif args.cmd == "reembed":
         from . import search
         print(f"пересчитано векторов: {search.reembed(db.tx).changed}")

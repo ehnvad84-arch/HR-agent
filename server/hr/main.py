@@ -1,4 +1,4 @@
-"""HTTP-приложение. В фиче core — только обратный вызов OAuth hh; рабочее место — фича workplace."""
+"""HTTP-приложение: обратный вызов OAuth hh и API рабочего места (фича workplace)."""
 from __future__ import annotations
 
 import logging
@@ -9,13 +9,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from . import db, hh
+from .api import session as session_api
 from .clock import Clock
 from .deps import get_clock, get_conn_factory, get_hh_http
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Агент подбора", docs_url=None, redoc_url=None, openapi_url=None)
-
-
+for _r in (session_api.router,):
+    app.include_router(_r)
 
 
 @app.get("/api/oauth/hh/callback", response_class=HTMLResponse)

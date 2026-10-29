@@ -13,11 +13,12 @@ from datetime import datetime, timedelta
 from typing import Annotated
 from urllib.parse import urlparse
 
+import bcrypt
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
 
-from .clock import Clock
+from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, one, rows, run, setting
 from .deps import get_clock, get_conn_factory
@@ -97,6 +98,76 @@ def revoke(conn: psycopg.Connection, cookie: str | None, now: datetime) -> None:
     if token:
         run(conn, "UPDATE ops.web_session SET revoked_at = %s WHERE token_hash = %s AND revoked_at IS NULL",
             (now, _sha(token)))
+
+
+# ------------------------------------------------------------- пароль
+
+PASSWORD_MIN = 10
+BCRYPT_COST = 12
+
+
+class PasswordError(ValueError):
+    pass
+
+
+class LoginLocked(RuntimeError):
+    def __init__(self, minutes: int):
+        super().__init__(minutes)
+        self.minutes = minutes
+
+
+def _hash_password(password: str) -> str:
+    if len(password) < PASSWORD_MIN:
+        raise PasswordError(f"пароль не короче {PASSWORD_MIN} знаков")
+    if len(password.encode()) > 72:
+        raise PasswordError("пароль длиннее 72 байт: bcrypt его не примет")
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(BCRYPT_COST)).decode()
+
+
+def create_user(conn: psycopg.Connection, login: str, full_name: str, role: str, password: str) -> int:
+    """Временная учётная запись до входа из 1С (Решения): пользователь и хеш пароля."""
+    uid = one(conn, """INSERT INTO app_user (login, full_name, role) VALUES (%s, %s, %s)
+                       ON CONFLICT (login) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role
+                       RETURNING id""", (login, full_name, role))["id"]
+    run(conn, """INSERT INTO ops.user_password (user_id, hash) VALUES (%s, %s)
+                 ON CONFLICT (user_id) DO UPDATE SET hash = EXCLUDED.hash, changed_at = now(),
+                     failed_count = 0, locked_until = NULL""", (uid, _hash_password(password)))
+    return uid
+
+
+def check_password(conn: psycopg.Connection, login: str, password: str, now: datetime | None = None) -> int | None:
+    """id пользователя при верном пароле; None — неверно (логин и пароль не различаются).
+    После login_max_failures ошибок подряд — LoginLocked на login_lock_minutes."""
+    now = now or SYSTEM.now()
+    r = one(conn, """SELECT u.id, u.is_active, p.hash, p.failed_count, p.locked_until
+                     FROM app_user u JOIN ops.user_password p ON p.user_id = u.id
+                     WHERE u.login = %s FOR UPDATE OF p""", (login,))
+    if not r or not r["is_active"]:
+        return None
+    if r["locked_until"] and r["locked_until"] > now:
+        raise LoginLocked(max(1, int((r["locked_until"] - now).total_seconds() // 60) + 1))
+    raw = password.encode()
+    if len(raw) <= 72 and bcrypt.checkpw(raw, r["hash"].encode()):
+        run(conn, "UPDATE ops.user_password SET failed_count = 0, locked_until = NULL WHERE user_id = %s", (r["id"],))
+        return r["id"]
+    failed = r["failed_count"] + 1
+    lock = None
+    if failed >= int(setting(conn, "login_max_failures", 5)):
+        lock, failed = now + timedelta(minutes=int(setting(conn, "login_lock_minutes", 15))), 0
+    run(conn, "UPDATE ops.user_password SET failed_count = %s, locked_until = %s WHERE user_id = %s",
+        (failed, lock, r["id"]))
+    return None
+
+
+def rotate_csrf(conn: psycopg.Connection, token_hash: str) -> str:
+    """Новый CSRF-токен сессии: в базе только хеш, поэтому после перезагрузки страницы выдаётся новый."""
+    csrf = secrets.token_urlsafe(32)
+    run(conn, "UPDATE ops.web_session SET csrf_hash = %s WHERE token_hash = %s", (_sha(csrf), token_hash))
+    return csrf
+
+
+def same_origin(request: Request) -> bool:
+    return _same_origin(request)
 
 
 def _same_origin(request: Request) -> bool:
