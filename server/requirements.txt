@@ -7,6 +7,7 @@ cryptography==50.0.2
 openpyxl==3.1.5
 defusedxml==0.7.1
 bcrypt==5.0.0
+Pillow==13.0.0
 # разработка
 pytest==9.1.1
 ruff==0.17.2

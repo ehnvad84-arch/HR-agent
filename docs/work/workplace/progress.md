@@ -27,3 +27,4 @@
 - 2026-10-29 · T3 · `web.py`: раздача `server/web/`, CSP и заголовки, TrustedHost по `WEB_HOSTS`, ошибки `{error, message}`, необработанное — без текста исключения, журнал доступа без query · pytest зелёный
 - 2026-10-29 · T4 · `views.py` (карточка: имя из кандидата или hh, иначе ярлык; фото — флаг), `GET /api/today`; фикстура `api` в conftest для тестов API · pytest зелёный
 - 2026-10-29 · T5 · `views.dossier`, `GET /api/person/{id}` и `/dossier`: места работы из raw по белому списку полей, контакты не выдаются, просмотр `hiring_manager` → `audit_log view` · pytest зелёный
+- 2026-10-29 · T6 · `photos.py`: задача `photos` (только https-хосты hh, ≤ 2 МБ, 1 запрос/с, 3 попытки, JPEG ≤ 10 КБ без EXIF, защита от бомбы распаковки), `GET /api/person/{id}/photo`; зависимость Pillow 13.0.0, pip-audit чисто · pytest зелёный

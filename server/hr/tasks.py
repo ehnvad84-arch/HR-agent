@@ -1,10 +1,10 @@
-"""Реестр фоновых задач core. Имена — из раздела 8 ТЗ; расписание задаёт фича deploy."""
+"""Реестр фоновых задач core и workplace. Имена — из раздела 8 ТЗ; расписание задаёт фича deploy."""
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from . import alerts, collect, explain, files, jobs, pipeline, search, social
+from . import alerts, collect, explain, files, jobs, photos, pipeline, search, social
 from .clock import SYSTEM, Clock
 from .db import ConnFactory, rows
 from .db import run as sql
@@ -50,6 +50,7 @@ TASKS: dict[str, Task] = {
     "score": Task(score),
     "alerts": Task(alerts_pass),
     "collect_social": Task(social.collect_social, ("source:github",)),
+    "photos": Task(photos.fetch_photos, ("source:hh",)),
 }
 
 

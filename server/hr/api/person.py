@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
-from .. import auth, views
+from .. import auth, photos, views
 from ..db import ConnFactory, j, run
 from ..deps import get_conn_factory
 
@@ -34,3 +34,13 @@ def person(person_id: int, user: Annotated[auth.User, Depends(auth.require("base
 def dossier(person_id: int, user: Annotated[auth.User, Depends(auth.require("base.read"))],
             conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)]):
     return _read(person_id, user, conn_factory, full=True)
+
+
+@router.get("/api/person/{person_id}/photo")
+def photo(person_id: int, user: Annotated[auth.User, Depends(auth.require("base.read"))],
+          conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)]):
+    with conn_factory() as conn:
+        data = photos.photo_of(conn, person_id)
+    if data is None:
+        raise HTTPException(404, {"error": "not_found", "message": "Фото нет"})
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
