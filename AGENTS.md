@@ -34,6 +34,7 @@
 - Схема и миграции: `python -m hr.cli migrate`
 - Тесты: `DATABASE_URL=postgresql://…/ruware_hr_test pytest` — имя базы обязано оканчиваться на `_test`, фикстура пересоздаёт её схемы · один тест: `pytest tests/test_migrate.py::test_sources_seeded`
 - Линтер: `ruff check .` (настройки в `pyproject.toml`)
+- Проверка зависимостей: `pip-audit -r requirements.txt` — до каждого мержа и при новой зависимости
 - Фоновая задача вручную: `python -m hr.cli run <collect_hh|import_files|mark_gone|score|alerts|collect_social>`
 - hh: `python -m hr.cli gen-key` → `SECRETS_KEY` в `.env`; `python -m hr.cli hh-auth` — ссылка авторизации; `python -m hr.cli hh-selftest` — проверка
 - Сквозной прогон без сети на вымышленных данных: `DATABASE_URL=postgresql://…/ruware_hr_demo python scripts/demo_core.py`
