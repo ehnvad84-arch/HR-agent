@@ -110,3 +110,18 @@ def test_parse_requirement_structured():
         "feature": "avg_tenure_months", "op": "<", "value": 12,
         "text": "Средняя длительность места работы меньше года"}
     assert parse_requirement("Altium Designer") == {"text": "Altium Designer"}
+
+
+def test_empty_donor_list_is_neutral():
+    f = score(engineer(), profile(donor_companies=[]), P).features["donor_company"]
+    assert f["points"] == f["max"] // 2 and "не задан" in f["detail"]
+
+
+def test_partial_view_keywords_neutral_until_full_resume():
+    """В выдаче поиска hh навыков нет: решение «качать ли полное резюме» не штрафует за них."""
+    bare = engineer(skills=[])
+    assert score(bare, profile(), P).features["keywords"]["points"] == 0
+    f = score(bare, profile(), P, partial=True).features["keywords"]
+    assert f["points"] == round(f["max"] / 2) and "полном резюме" in f["detail"]
+    assert score(engineer(), profile(), P, partial=True).features["keywords"]["points"] == \
+        score(engineer(), profile(), P).features["keywords"]["points"], "найденное не урезается"

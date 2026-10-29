@@ -333,3 +333,16 @@ def test_resume_saved_after_view_limit_gets_full_text_next_run(conn, conn_factor
     run(conn_factory, fake, clock)
     assert fake.full_fetches == ["/resumes/a1b2c3d4e5"], "недобранное полное резюме запрашивается снова"
     assert "Altium Designer" in db.val(conn, "SELECT skills FROM observation WHERE external_id = 'a1b2c3d4e5'")
+
+
+def test_search_sorted_by_relevance(conn):
+    assert hh.search_params(conn, {"title": "Инженер ОТК", "keywords": ["AQL"]})["order_by"] == "relevance"
+
+
+def test_full_resume_fetched_when_only_skills_missing(conn, conn_factory, clock):
+    """Выдача без навыков даёт балл ниже порога, но с навыками человек проходит: полное резюме запрашивается."""
+    profile(conn, donor_companies=[])
+    db.run(conn, "UPDATE settings SET value = '75' WHERE key = 'watch_threshold'")
+    fake = FakeHH()
+    run(conn_factory, fake, clock)
+    assert fake.full_fetches == ["/resumes/a1b2c3d4e5"]

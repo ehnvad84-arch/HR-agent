@@ -228,7 +228,9 @@ def _f_donor(person: Person, profile: Profile) -> tuple[float, str]:
         dl = d.lower().strip()
         if dl and any(dl in e or trigram_sim(dl, e) > 0.55 for e in emps):
             return 1.0, f"работал в «{d}»"
-    return 0.0, "в донорах не работал" if profile.donor_companies else "список доноров пуст"
+    if not profile.donor_companies:
+        return 0.5, "список доноров не задан"
+    return 0.0, "в донорах не работал"
 
 
 def _f_tenure(person: Person) -> tuple[float, str]:
@@ -276,7 +278,14 @@ class Score:
     default_weights: bool = False
 
 
-def score(person: Person, profile: Profile, params: Params) -> Score:
+def _f_keywords_partial(profile: Profile, hay: str) -> tuple[float, str]:
+    """Выдача поиска без навыков: не найденное ещё не значит «нет», решит полное резюме."""
+    ratio, detail = _f_keywords(profile, hay)
+    return (ratio, detail) if ratio >= 0.5 else (0.5, "навыки видны только в полном резюме")
+
+
+def score(person: Person, profile: Profile, params: Params, partial: bool = False) -> Score:
+    """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме."""
     use_defaults = not profile.weights
     weights = default_weights(profile.dept_code) if use_defaults else \
         {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS}
@@ -285,7 +294,7 @@ def score(person: Person, profile: Profile, params: Params) -> Score:
     hay = person.haystack()
     parts = {
         "exp_years": lambda: _f_exp(person, profile),
-        "keywords": lambda: _f_keywords(profile, hay),
+        "keywords": lambda: (_f_keywords_partial if partial else _f_keywords)(profile, hay),
         "title_match": lambda: _f_title(person, profile),
         "donor_company": lambda: _f_donor(person, profile),
         "tenure": lambda: _f_tenure(person),

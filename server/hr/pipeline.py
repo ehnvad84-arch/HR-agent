@@ -294,10 +294,12 @@ class ProcessResult:
     scores: list[dict] = field(default_factory=list)
 
 
-def passes_threshold(conn: psycopg.Connection, n: Norm, profiles: list[dict]) -> int | None:
-    """Лучший балл резюме, если он не ниже watch_threshold; иначе None (S12, S13)."""
+def passes_threshold(conn: psycopg.Connection, n: Norm, profiles: list[dict], partial: bool = False) -> int | None:
+    """Лучший балл резюме, если он не ниже watch_threshold; иначе None (S12, S13).
+    partial — выдача поиска без навыков: решаем, запрашивать ли полное резюме."""
     prm = params(conn)
-    best = max((scoring.score(norm_person(n), scoring.Profile.from_row(pr), prm).score for pr in profiles), default=0)
+    best = max((scoring.score(norm_person(n), scoring.Profile.from_row(pr), prm, partial=partial).score
+                for pr in profiles), default=0)
     return best if best >= int(setting(conn, "watch_threshold", 60)) else None
 
 

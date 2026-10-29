@@ -209,7 +209,7 @@ def search_params(conn: psycopg.Connection, profile: dict) -> dict:
     text = profile["title"]
     if kws:
         text += " OR " + " OR ".join(f'"{k}"' if " " in k else k for k in kws)
-    params: dict = {"text": text, "per_page": 50, "order_by": "publication_time"}
+    params: dict = {"text": text, "per_page": 50, "order_by": "relevance"}
     geo = profile.get("geo") or "krasnodar"
     if geo == "remote_ru":
         params |= {"area": str(setting(conn, "hh_area_relocation", 113)), "schedule": "remote"}

@@ -29,7 +29,7 @@ def test_s20_all_people_rescored_including_dropped(conn, conn_factory, clock):
 
 
 def test_s20_observation_below_threshold_gets_card_under_new_version(conn, conn_factory, clock):
-    profile(conn, version="1.0", title="Инженер ОТК", keywords=["AQL", "8D", "ПСИ"], donor_companies=[],
+    profile(conn, version="1.0", title="Инженер ОТК", keywords=["AQL", "8D", "ПСИ"], donor_companies=["ОТК-Пример"],
             salary_max=90000)
     r = ingest(conn, hh_item(), clock)
     assert r.person_id is None
@@ -47,7 +47,8 @@ def test_s20_unapproved_version_is_refused(conn, conn_factory, clock):
 
 
 def test_s20_expired_observation_not_rechecked(conn, conn_factory, clock):
-    profile(conn, version="1.0", title="Инженер ОТК", keywords=["AQL"], donor_companies=[], salary_max=90000)
+    profile(conn, version="1.0", title="Инженер ОТК", keywords=["AQL"], donor_companies=["ОТК-Пример"],
+            salary_max=90000)
     r = ingest(conn, hh_item(), clock)
     db.run(conn, "UPDATE observation SET retention_until = %s::date - 1 WHERE id = %s",
            (clock.now(), r.observation_id))

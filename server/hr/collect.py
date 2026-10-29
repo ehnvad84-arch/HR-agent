@@ -49,7 +49,8 @@ class _HHItems:
             updated = not old or old["raw"].get("updated_at") != item.get("updated_at")
             # skill_set есть только в полном резюме: без него полное ещё не получено (например, упёрлись в лимит)
             want = (updated or "skill_set" not in old["raw"]) and (bool(old and old["person_id"]) or
-                                pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles) is not None)
+                                pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles,
+                                                          partial="skill_set" not in merged) is not None)
         raw = merged
         if want and self.full_left > 0:
             try:
