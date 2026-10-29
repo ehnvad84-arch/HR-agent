@@ -315,6 +315,20 @@ details summary{cursor:pointer;font-size:14px}
 .chip.tip:hover::after,.chip.tip:focus-visible::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);
   width:max-content;max-width:260px;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12.5px;z-index:5}
 
+/* --------------------------------- профили должностей --------------------------------- */
+.chipbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border:1px solid var(--field-line);
+  border-radius:12px;background:var(--card2);cursor:text}
+.chipbox:focus-within{outline:2px solid var(--blue-ink);outline-offset:2px}
+.chiplist{display:contents}
+.field .chipbox input{flex:1 1 140px;width:auto;min-width:100px;border:0;padding:4px 2px;background:transparent;border-radius:0}
+.field .chipbox input:focus-visible{outline:none}
+.chip.removable{display:inline-flex;align-items:center;gap:2px;background:var(--card);box-shadow:0 0 0 1px var(--sep)}
+.chip.removable button{border:0;background:none;color:inherit;cursor:pointer;padding:0 2px 0 6px;font:inherit;font-size:15px;line-height:1}
+.weights{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media (max-width:720px){.weights{grid-template-columns:1fr}}
+.weightsum{margin:8px 0 0;font-size:14px}
+.diff .num{white-space:nowrap}
+
 /* --------------------------------- вакансии --------------------------------- */
 .sectionbar{display:flex;align-items:flex-end;gap:12px;margin-bottom:8px}
 .sectionbar .sechead{margin-bottom:0}

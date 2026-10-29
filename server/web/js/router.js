@@ -11,7 +11,7 @@ const ROUTES = [
   { name: "person", pattern: ["person", ":id?"] },
   { name: "base", pattern: ["base"] },
   { name: "vacancies", pattern: ["vacancies"] },
-  { name: "profiles", pattern: ["profiles"] },
+  { name: "profiles", pattern: ["profiles", ":id?"] },
   { name: "learn", pattern: ["learn"] },
   { name: "logs", pattern: ["logs"] },
   { name: "funnel", pattern: ["vacancy", ":id", "funnel"] },
