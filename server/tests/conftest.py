@@ -81,3 +81,35 @@ def conn_factory(conn):
 @pytest.fixture
 def clock():
     return FakeClock()
+
+
+ORIGIN = {"Origin": "http://localhost:8000"}
+
+
+@pytest.fixture
+def api(conn, conn_factory, clock, monkeypatch):
+    """Клиент рабочего места под руководителем подбора: (client, headers для POST, user_id).
+    Роль меняется вызовом api_as(role)."""
+    from fastapi.testclient import TestClient
+
+    from hr import auth, config
+    from hr.main import app, get_clock, get_conn_factory
+
+    monkeypatch.setenv("SESSION_KEY", "k" * 40)
+    config.get_config.cache_clear()
+    app.dependency_overrides[get_conn_factory] = lambda: conn_factory
+    app.dependency_overrides[get_clock] = lambda: clock
+
+    def as_role(role="head_recruiter", login=None):
+        login = login or role
+        uid = db.val(conn, """INSERT INTO app_user (login, full_name, role) VALUES (%s, %s, %s)
+                              ON CONFLICT (login) DO UPDATE SET role = EXCLUDED.role RETURNING id""",
+                     (login, f"Проверочный {role}", role))
+        cookie, csrf = auth.create_session(conn, uid, clock.now())
+        c = TestClient(app, base_url="https://localhost:8000")
+        c.cookies.set(auth.COOKIE, cookie)
+        return c, {**ORIGIN, auth.CSRF_HEADER: csrf}, uid
+
+    yield as_role
+    app.dependency_overrides.clear()
+    config.get_config.cache_clear()
