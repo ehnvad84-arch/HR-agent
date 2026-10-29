@@ -118,3 +118,36 @@ def test_no_basis_blocks_draft(conn, api, cand):
     c, h, _ = api()
     r = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "first_message"}, headers=h)
     assert r.status_code == 409
+
+
+def test_get_action_gives_draft_text_to_the_window(conn, api, cand):
+    """Окно черновика на «Сегодня» берёт текст и «по шаблону» из действия; чужих полей payload в ответе нет."""
+    cid, vid = cand
+    c, h, uid = api()
+    made = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "first_message"}, headers=h).json()
+    r = c.get(f"/api/action/{made['action_id']}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == made["action_id"] and body["kind"] == "first_message" and body["state"] == "proposed"
+    assert body["candidate_id"] == cid
+    assert body["payload"] == {"text": made["text"], "by": "template"}
+    assert "by_user" not in r.text
+
+
+def test_get_action_after_decision_shows_state(conn, api, cand):
+    cid, vid = cand
+    c, h, _ = api()
+    made = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "follow_up"}, headers=h)
+    aid = made.json()["action_id"]
+    c.post(f"/api/action/{aid}/decline", json={"reason": "не сейчас"}, headers=h)
+    assert c.get(f"/api/action/{aid}").json()["state"] == "declined"
+
+
+def test_get_action_unknown_and_forbidden(conn, api, cand):
+    cid, vid = cand
+    c, h, _ = api()
+    assert c.get("/api/action/999999").status_code == 404
+    made = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "first_message"}, headers=h)
+    aid = made.json()["action_id"]
+    manager, _, _ = api("hiring_manager")
+    assert manager.get(f"/api/action/{aid}").status_code == 403

@@ -42,6 +42,14 @@ def draft(candidate_id: int, body: DraftIn, user: Taker, conn_factory: Conn, clo
                                          vacancy_id=body.vacancy_id, http=http))
 
 
+@router.get("/api/action/{action_id}")
+def action(action_id: int, user: Taker, conn_factory: Conn):
+    def go():
+        with conn_factory() as conn:
+            return actions.get(conn, action_id)
+    return _errors(go)
+
+
 class ApproveIn(BaseModel):
     text: str | None = None
 

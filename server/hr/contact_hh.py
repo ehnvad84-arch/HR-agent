@@ -63,10 +63,18 @@ def prepare(conn, candidate_id: int, user_id: int, now: datetime) -> dict:
     already = bool(rows(conn, "SELECT 1 FROM contact WHERE candidate_id = %s LIMIT 1", (candidate_id,)))
     blocked = BLOCKING <= set(hidden)
     will_spend = not already and not blocked and raw.get("contact_view_status") != "FULL"
-    aid = one(conn, """INSERT INTO action_queue (kind, person_id, candidate_id, payload, proposed_at)
-                       SELECT 'open_contact', person_id, id, %s, %s FROM candidate WHERE id = %s RETURNING id""",
-              (j({"resume_id": r["external_id"], "hidden": hidden, "blocked": blocked, "by_user": user_id}),
-               now, candidate_id))["id"]
+    payload = j({"resume_id": r["external_id"], "hidden": hidden, "blocked": blocked, "will_spend": will_spend,
+                 "already_open": already, "by_user": user_id})
+    # «Открыть контакт» и «Отмена» несколько раз подряд — одно ждущее действие, а не новое каждый раз
+    waiting = one(conn, """SELECT id FROM action_queue WHERE kind = 'open_contact' AND candidate_id = %s
+                           AND state = 'proposed' ORDER BY id DESC LIMIT 1 FOR UPDATE""", (candidate_id,))
+    if waiting:
+        run(conn, "UPDATE action_queue SET payload = %s WHERE id = %s", (payload, waiting["id"]))
+        aid = waiting["id"]
+    else:
+        aid = one(conn, """INSERT INTO action_queue (kind, person_id, candidate_id, payload, proposed_at)
+                           SELECT 'open_contact', person_id, id, %s, %s FROM candidate WHERE id = %s RETURNING id""",
+                  (payload, now, candidate_id))["id"]
     return {"action_id": aid, "hidden": hidden, "already_open": already, "will_spend": will_spend}
 
 

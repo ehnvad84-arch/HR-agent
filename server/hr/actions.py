@@ -125,6 +125,20 @@ def draft(conn_factory: ConnFactory, candidate_id: int, kind: str, user_id: int,
     return {"action_id": aid, "text": text, "by": by}
 
 
+# что из payload видно в окне: текст письма и решение по контакту; идентификатор резюме hh и автор остаются на сервере
+VISIBLE_PAYLOAD = ("text", "by", "hidden", "blocked", "will_spend", "already_open")
+
+
+def get(conn, action_id: int) -> dict:
+    """Действие для окна на «Сегодня»: вид, состояние, текст черновика или решение по контакту."""
+    a = one(conn, """SELECT id, kind::text AS kind, state::text AS state, candidate_id, person_id, payload
+                     FROM action_queue WHERE id = %s""", (action_id,))
+    if not a:
+        raise NotFound
+    a["payload"] = {k: v for k, v in (a["payload"] or {}).items() if k in VISIBLE_PAYLOAD}
+    return a
+
+
 def _proposed(conn, action_id: int) -> dict:
     a = one(conn, "SELECT *, kind::text AS kind_s, state::text AS state_s FROM action_queue WHERE id = %s FOR UPDATE",
             (action_id,))

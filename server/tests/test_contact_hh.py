@@ -155,3 +155,22 @@ def test_busy_during_hh_collect(conn, api, cand):
         lock.execute("SELECT pg_advisory_lock(hashtextextended('source:hh', 0))")
         r = c.post(f"/api/action/{aid}/approve", json={}, headers=h)
     assert r.status_code == 409 and "сбор" in r.json()["message"] and fake.calls == []
+
+
+def test_repeated_prepare_reuses_the_waiting_action(conn, api, cand):
+    """«Открыть контакт» и «Отмена» несколько раз подряд не плодят действия в «Ждут подтверждения»."""
+    c, h, _ = client_with(api, FakeHH())
+    first = prepare(c, h, cand).json()["action_id"]
+    assert prepare(c, h, cand).json()["action_id"] == first
+    rows = db.rows(conn, "SELECT id FROM action_queue WHERE candidate_id = %s AND kind = 'open_contact'", (cand,))
+    assert len(rows) == 1
+
+
+def test_prepare_remembers_spend_for_the_queue_card(conn, api, cand):
+    """Карточка в «Сегодня» знает, спишется ли контакт: решение берётся из payload, без нового запроса prepare."""
+    c, h, _ = client_with(api, FakeHH())
+    aid = prepare(c, h, cand).json()["action_id"]
+    shown = c.get(f"/api/action/{aid}").json()
+    assert shown["kind"] == "open_contact"
+    assert shown["payload"] == {"hidden": [], "blocked": False, "will_spend": True, "already_open": False}
+    assert "resume_id" not in str(shown) and RID not in str(shown)

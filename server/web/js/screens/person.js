@@ -2,18 +2,20 @@
 // Данные — GET /api/person/{id}/dossier. Разбор моделью приходит отдельно (POST …/explain) и не задерживает досье.
 // Всё из ответа выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
+import { COPY_FALLBACK, copyText, selectText } from "../clipboard.js";
+import { fetchContacts, startContact } from "../contact-ui.js";
+import { actionOutcome, contactKindTitle, draftKind } from "../contacts-model.js";
 import { TOASTS } from "../decisions-model.js";
 import { openDecisionSheet, takePerson } from "../decisions.js";
 import { absoluteDay, dateTimeLabel, moneyText, statusTitle, yearsText } from "../format.js";
-import { chip, face, personName, scoreBadge } from "../people.js";
+import { draftSheet } from "../letter-ui.js";
+import { chip, face, personName, scoreBadge, templateChip } from "../people.js";
 import { hashFor } from "../router.js";
-import { downloadBlob, emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
+import { announce, downloadBlob, emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
 import {
   bestScore, confidenceInfo, decisionTitle, explainTargets, explanationBlocks, featureRows, headerTitle, periodText,
   personState, socialInfo, timeline,
 } from "./person-model.js";
-
-const TEMPLATE_TIP = "Модель недоступна или кончился пакет";
 
 // ------------------------------------------------------------------ мелкие части
 
@@ -25,12 +27,6 @@ const hint = (text) => h("div.t2", { style: "margin-top:8px" }, text);
 function kv(rows) {
   return h("table.kv", rows.filter(([, v]) => v !== null && v !== undefined && v !== "" && v !== false)
     .map(([k, v]) => h("tr", h("td", k), h("td", v))));
-}
-
-/** Пометка «по шаблону» с подсказкой при наведении и фокусе (S8). */
-function templateChip() {
-  return h("span.chip.tip", { tabindex: 0, "data-tip": TEMPLATE_TIP, title: TEMPLATE_TIP },
-    "разбор по шаблону", h("span.sr-only", ` — ${TEMPLATE_TIP}`));
 }
 
 function explanationNodes(text) {
@@ -75,6 +71,29 @@ function exportSheet(person, env) {
   });
 }
 
+// ------------------------------------------------------------------ письмо кандидату (S18)
+
+/** «Написать»: агент готовит черновик (модель или шаблон), человек правит, копирует и одобряет в окне. */
+function writeButton(data, env, act) {
+  const { person, candidate } = data;
+  const kind = draftKind(candidate.status);
+  const button = h("button.b.tint", { type: "button", onClick: async () => {
+    button.disabled = true;
+    button.textContent = "Готовлю черновик…";
+    try {
+      await act(async () => {
+        const draft = await env.api.post(`/api/candidate/${encodeURIComponent(candidate.id)}/draft`, { kind }, { signal: env.signal });
+        return draftSheet({ api: env.api, signal: env.signal, person,
+          action: { action_id: draft.action_id, kind, text: draft.text, by: draft.by } });
+      }, (outcome) => actionOutcome(outcome, kind).toast);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Написать";
+    }
+  } }, "Написать");
+  return button;
+}
+
 // ------------------------------------------------------------------ шапка
 
 function headerCard(data, env) {
@@ -110,6 +129,7 @@ function headerCard(data, env) {
     }, () => "Взят в работу") }, "В работу") : null,
     open ? h("button.b", { type: "button", onClick: decide("postpone") }, "Отложить") : null,
     open && person.watch !== "dropped" ? h("button.b.danger", { type: "button", onClick: decide("reject") }, "Не наш") : null,
+    canTake && candidate ? writeButton(data, env, act) : null,
     canTake && person.watch !== "dropped" ? h("button.b", { type: "button", "aria-pressed": watched, onClick: () =>
       act(() => env.api.post(`/api/person/${id}/watch`, { on: !watched }, { signal: env.signal }),
         watched ? "Особое наблюдение снято" : "Веду особо: сигнал придёт на любое изменение резюме") },
@@ -243,6 +263,75 @@ function matchCard(match, slot) {
     h("div.t2", { style: "margin-top:8px" }, `Веса признаков задаются в профиле должности «${match.role_title}» — экран «База должностей», правит любой рекрутер.`));
 }
 
+/** Строка контакта: значение текстом и «Скопировать»; без буфера значение выделяется и звучит «Нажмите Ctrl+C». */
+function contactRow(contact) {
+  const value = h("span.cval", contact.value);
+  const note = h("span.hint", { role: "status" });
+  const button = h("button.b", { type: "button", onClick: async () => {
+    if (await copyText(contact.value)) {
+      note.textContent = "";
+      button.textContent = "Скопировано";
+      announce("Скопировано");
+      setTimeout(() => { button.textContent = "Скопировать"; }, 2000);
+    } else {
+      selectText(value);
+      note.textContent = COPY_FALLBACK;
+      announce(COPY_FALLBACK);
+    }
+  } }, "Скопировать");
+  return h("div.contactrow", h("div", h("div.t2", `${contactKindTitle(contact.kind)}${contact.is_primary ? " · основной" : ""}`), value),
+    button, note);
+}
+
+/**
+ * Блок «Контакты» (S16): значения только здесь и только текстом; в карточках, таблице и воронке контактов нет.
+ * «Открыть контакт» — платное действие с окном подтверждения; «Показать контакты» читает уже открытые (запись в журнал доступа).
+ * Блок не печатается и не уходит в выгрузку.
+ */
+function contactsCard(data, env) {
+  const { candidate, person } = data;
+  const status = errorLine();
+  const shown = env.contacts;
+  const act = async (job) => {
+    status.clear();
+    try {
+      if (await job()) await env.refresh();
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      status.show(error);
+    }
+  };
+  let content;
+  let button;
+  if (shown) {
+    content = shown.length ? shown.map(contactRow) : h("div.t2", "Контактов нет: hh не отдал ни телефона, ни почты.");
+    button = h("button.b", { type: "button", onClick: () => act(async () => { env.contacts = null; return true; }) }, "Скрыть контакты");
+  } else {
+    content = h("div.t2", candidate.contact_opened
+      ? "Контакты открыты. Каждый показ записывается в журнал доступа."
+      : "Контакты не открыты. Открытие списывает один контакт hh; перед этим будет окно подтверждения.");
+    button = h("button.b.fill", { type: "button", onClick: async () => {
+      button.disabled = true;
+      try {
+        await act(async () => {
+          if (candidate.contact_opened) {
+            env.contacts = await fetchContacts(env.api, candidate.id, env.signal);
+            return true;
+          }
+          const result = await startContact({ api: env.api, signal: env.signal, candidateId: candidate.id, person });
+          if (!result) return false;
+          env.contacts = result.contacts;
+          toast(result.opened ? "Контакт открыт, запись в журнале доступа" : "Контакт уже был открыт");
+          return true;
+        });
+      } finally {
+        button.disabled = false;
+      }
+    } }, candidate.contact_opened ? "Показать контакты" : "Открыть контакт");
+  }
+  return h("section.card.noprint", title("Контакты"), content, h("div.btns", button), status.el);
+}
+
 function candidateCard(candidate) {
   return card("Кандидат", kv([
     ["Статус", statusTitle(candidate.status)],
@@ -286,7 +375,8 @@ export function view(data, env) {
         h("div.stack", data.observations.length ? data.observations.map((o, i) => resumeCard(o, i, data))
           : card("Резюме", h("div.t2", "Резюме площадок для этого человека нет.")),
         experienceCard(first), skillsCard(data.observations), socialCard(data.social, env)),
-        h("div.stack", matchCards, data.candidate ? candidateCard(data.candidate) : null, timelineCard(data), decisionsCard(data))),
+        h("div.stack", matchCards, data.candidate ? candidateCard(data.candidate) : null,
+          data.candidate && env.session.can("contact.open") ? contactsCard(data, env) : null, timelineCard(data), decisionsCard(data))),
     ],
   };
 }
@@ -313,7 +403,7 @@ export function render(box, ctx) {
   const explained = new Map();   // role_profile_id → {text, by}: разбор моделью просим один раз за открытие
   let generation = 0;
   const env = {
-    api, signal, session: ctx.session, explained, print: () => window.print(),
+    api, signal, session: ctx.session, explained, contacts: null, print: () => window.print(),
     async refresh() {
       try {
         const data = await load();

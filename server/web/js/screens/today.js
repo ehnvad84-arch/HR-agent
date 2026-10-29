@@ -2,8 +2,11 @@
 // Данные — GET /api/today. Всё из ответа выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
+import { blockedSheet, contactSheet, quietDecline } from "../contact-ui.js";
+import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
 import { TOASTS, resultText, takenText } from "../decisions-model.js";
 import { openDecisionSheet, takePerson } from "../decisions.js";
+import { declineSheet, draftSheet } from "../letter-ui.js";
 import { chip, face, personHref, personName, scoreBadge } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
@@ -18,7 +21,8 @@ import { normalizeToday } from "./today-model.js";
  */
 function actionCard(layout, buttons) {
   const status = errorLine();
-  const parts = { btns: h("div.btns", buttons), status: status.el };
+  const list = buttons.filter(Boolean);
+  const parts = { btns: list.length ? h("div.btns", list) : null, status: status.el };
   const result = h("p.result", { role: "status", tabindex: -1 });
   const el = h("div.card", h("div.cardbody", layout(parts)), result);
   const acting = () => [...el.querySelectorAll("button[data-act]")];
@@ -93,18 +97,76 @@ function signalCard(row, env) {
   return card.el;
 }
 
+/** Карточка «Ждут подтверждения»: письма — «Одобрить» (окно черновика) и «Отклонить», контакт — «Открыть контакт». */
 function approvalCard(row, env) {
   const title = [actionTitle(row.kind), row.person_id ? personName(row) : null].filter(Boolean).join(" — ");
   const heading = row.person_id
     ? h("div.namewrap", face(row, { small: true }), h("div.t1", h("a", { href: personHref(row.person_id) }, title)))
     : h("div.t1", title);
-  // «Одобрить» и «Отклонить» появятся в задаче про письма; здесь — список и переход в досье
-  return h("div.card", h("div.cardbody", heading,
+  const id = encodeURIComponent(row.action_id);
+  const letter = isLetter(row.kind);
+  const contact = row.kind === "open_contact" && env.session.can("contact.open");
+  const canAct = (letter || contact) && env.session.can("person.take");
+  const gone = (text) => { card.finish(text); env.resolved(); };
+  const alreadyDecided = (action) => {
+    if (action.state === "proposed") return false;
+    card.status.show("Это действие уже решено. Обновите экран.");
+    card.busy(false);
+    return true;
+  };
+
+  const review = () => perform(card, () => env.api.get(`/api/action/${id}`, { signal: env.signal }), async (action) => {
+    if (alreadyDecided(action)) return;
+    const outcome = await draftSheet({ api: env.api, signal: env.signal, person: row,
+      action: { action_id: row.action_id, kind: row.kind, text: action.payload.text || "", by: action.payload.by } });
+    const result = actionOutcome(outcome, row.kind);
+    toast(result.toast);
+    if (result.resolved) gone(result.card);
+    else card.busy(false);
+  });
+
+  const openContact = () => perform(card, () => env.api.get(`/api/action/${id}`, { signal: env.signal }), async (action) => {
+    if (alreadyDecided(action)) return;
+    const plan = contactPlan(action.payload);
+    if (plan.mode === "blocked") {   // hh скрыл все каналы: открывать нечего, действие снимается
+      await quietDecline(env.api, env.signal, row.action_id, "Автоматически: соискатель скрыл контакты");
+      await blockedSheet(plan, row);
+      gone("Контакты скрыты соискателем: открывать нечего");
+      return;
+    }
+    if (plan.mode === "show") {
+      await quietDecline(env.api, env.signal, row.action_id, "Автоматически: контакт уже открыт");
+      gone("Контакт уже открыт: значения — в досье кандидата");
+      return;
+    }
+    const outcome = await contactSheet({ api: env.api, signal: env.signal, actionId: row.action_id, plan, person: row });
+    if (outcome === "opened") {
+      toast("Контакт открыт, запись в журнале доступа");
+      gone("Контакт открыт: значения — в досье кандидата");
+    } else {
+      card.busy(false);   // «Отмена»: действие остаётся в очереди
+    }
+  });
+
+  const reject = async () => {
+    const done = await declineSheet({ api: env.api, signal: env.signal, actionId: row.action_id,
+      title: contact ? "Отклонить открытие контакта" : "Отклонить черновик",
+      hint: contact ? "Причина сохранится в очереди; контакт не спишется." : undefined });
+    if (done) {
+      toast("Отклонено, причина записана");
+      gone("Отклонено, причина записана");
+    }
+  };
+
+  const card = actionCard(({ btns, status }) => [heading,
     h("div.t2", [row.vacancy_title ? `Вакансия: ${row.vacancy_title}` : null, `подготовлено ${whenLabel(row.proposed_at)}`]
-      .filter(Boolean).join(" · ")),
-    row.person_id
-      ? h("div.btns", h("button.b.tint", { type: "button", onClick: () => env.go("person", { id: row.person_id }) }, "Открыть досье"))
-      : null));
+      .filter(Boolean).join(" · ")), btns, status], [
+    canAct && letter ? actBtn("fill", "Одобрить", review) : null,
+    canAct && contact ? actBtn("fill", "Открыть контакт", openContact) : null,
+    canAct ? actBtn("danger", "Отклонить", reject) : null,
+    row.person_id ? h("button.b.tint", { type: "button", onClick: () => env.go("person", { id: row.person_id }) }, "Открыть досье") : null,
+  ]);
+  return card.el;
 }
 
 function closeSheet(row, card, env) {
@@ -201,7 +263,7 @@ export function render(box, ctx) {
   const load = async () => normalizeToday(await api.get("/api/today", { signal }));
 
   const env = {
-    api, signal, go: ctx.go,
+    api, signal, go: ctx.go, session: ctx.session,
     /** Сигнал разобран (взят, отложен, «не наш»): число на вкладке уменьшается. */
     resolved() { badge = Math.max(0, badge - 1); showBadge(); },
     /** Перерисовать без экрана «Загружаю…»: данные уже на месте, обновляется только список. */

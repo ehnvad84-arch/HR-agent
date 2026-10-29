@@ -297,6 +297,14 @@ details summary{cursor:pointer;font-size:14px}
 .chip.tip:hover::after,.chip.tip:focus-visible::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);
   width:max-content;max-width:260px;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12.5px;z-index:5}
 
+/* --------------------------------- письмо и контакты --------------------------------- */
+.sheet textarea.tall{min-height:240px}
+.contactrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:.5px solid var(--sep)}
+.contactrow:last-of-type{border-bottom:0}
+.contactrow > div{flex:1 1 200px;min-width:0}
+.cval{font-weight:600;font-size:16px;word-break:break-all;user-select:all}
+.contactrow .hint{flex-basis:100%}
+
 /* --------------------------------- чат (П:229–246) --------------------------------- */
 .chat{display:flex;flex-direction:column;gap:10px;max-height:460px;overflow-y:auto;padding-right:4px}
 .msg{display:flex;gap:10px;align-items:flex-start}
@@ -389,7 +397,7 @@ svg{width:100%;height:auto;display:block}
     --red-tint:rgba(255,59,48,.12); --violet-tint:rgba(175,82,222,.14);
     --green-ink:#1a7431; --blue-ink:#005bb8; --orange-ink:#9a5200; --red-ink:#c0201a; --violet-ink:#8a35b0;
   }
-  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only{display:none !important}
+  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only,.noprint{display:none !important}   /* .noprint — контакты в бумагу не идут */
   main{padding:0;max-width:none}
   body{background:#fff;color:#000}
   .card,.list{box-shadow:none;border:1px solid #ccc}   /* длинная карточка может идти на следующую страницу */

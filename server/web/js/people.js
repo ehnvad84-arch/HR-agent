@@ -47,3 +47,11 @@ export function scoreBadge(score) {
 }
 
 export const chip = (text, tone = "") => h("span.chip", { class: tone || null }, text);
+
+const TEMPLATE_TIP = "Модель недоступна или кончился пакет";
+
+/** Пометка «по шаблону» (S8): нейтральный значок с подсказкой при наведении и фокусе. */
+export function templateChip(text = "разбор по шаблону") {
+  return h("span.chip.tip", { tabindex: 0, "data-tip": TEMPLATE_TIP, title: TEMPLATE_TIP },
+    text, h("span.sr-only", ` — ${TEMPLATE_TIP}`));
+}
