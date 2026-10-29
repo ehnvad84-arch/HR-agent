@@ -67,3 +67,63 @@ def today(conn: psycopg.Connection, now: datetime) -> dict:
     for r in signals + actions + stalled + meetings:
         r.update(_card(people.get(r["person_id"])))
     return {"signals": signals, "actions": actions, "stalled": stalled, "meetings": meetings}
+
+
+# ------------------------------------------------------------------ досье
+
+def _experience(raw: dict) -> list[dict]:
+    """Места работы из ответа площадки — только поля резюме, без контактов (белый список)."""
+    out = []
+    for e in raw.get("experience") or []:
+        if isinstance(e, dict):
+            out.append({"company": e.get("company") or (e.get("employer") or {}).get("name"),
+                        "position": e.get("position"), "start": e.get("start"), "end": e.get("end"),
+                        "description": e.get("description")})
+    return out
+
+
+def dossier(conn: psycopg.Connection, person_id: int, full: bool = True) -> dict | None:
+    """S6: карточка, баллы с разбором, резюме по источникам; full — ещё версии, следы в сети, решения."""
+    card = cards(conn, [person_id]).get(person_id)
+    if not card:
+        return None
+    matches = rows(conn, """
+        SELECT m.role_profile_id, rp.title AS role_title, rp.code AS role_code, m.profile_version, m.score,
+               m.features, m.explanation, m.model, m.scored_at
+        FROM match m JOIN role_profile rp ON rp.id = m.role_profile_id
+        WHERE m.person_id = %s ORDER BY m.score DESC""", (person_id,))
+    obs = rows(conn, """
+        SELECT o.id, s.code AS source, s.title AS source_title, o.url, o.title, o.city, o.employer_current,
+               o.employers, o.skills, o.exp_years, o.avg_tenure_months, o.salary_expect, o.relocation_ready,
+               o.open_for_search, o.updated_at_src, o.first_seen, o.last_seen, o.is_gone,
+               o.raw->'education' AS education_raw, o.raw->>'skills' AS about, o.raw
+        FROM observation o JOIN source s ON s.id = o.source_id
+        WHERE o.person_id = %s ORDER BY o.last_seen DESC""", (person_id,))
+    for o in obs:
+        raw = o.pop("raw") or {}
+        o["experience"] = _experience(raw)
+        edu = o.pop("education_raw")
+        o["education"] = ((edu.get("level") or {}).get("name") if isinstance(edu, dict) else None)
+    events = rows(conn, """SELECT kind::text AS kind, detail, happened_at FROM obs_event
+                           WHERE person_id = %s ORDER BY happened_at DESC LIMIT 100""", (person_id,))
+    cand = None
+    if card["candidate_id"]:
+        cand = rows(conn, """
+            SELECT c.id, c.status::text AS status, c.created_at, c.last_contact_at,
+                   EXISTS (SELECT 1 FROM contact k WHERE k.candidate_id = c.id) AS contact_opened
+            FROM candidate c WHERE c.id = %s""", (card["candidate_id"],))[0]
+    out = {"person": card, "matches": matches, "observations": obs, "events": events, "candidate": cand}
+    if full:
+        out["versions"] = rows(conn, """
+            SELECT v.observation_id, v.captured_at, v.diff FROM obs_version v
+            JOIN observation o ON o.id = v.observation_id
+            WHERE o.person_id = %s ORDER BY v.captured_at DESC LIMIT 50""", (person_id,))
+        out["social"] = rows(conn, """
+            SELECT id, kind::text AS kind, url, handle, confidence::text AS confidence, matched_by, summary,
+                   topics, last_activity, confirmed_at
+            FROM social_profile WHERE person_id = %s ORDER BY confidence, id""", (person_id,))
+        out["decisions"] = rows(conn, """
+            SELECT d.kind, d.comment, d.created_at, u.full_name AS author, d.role_profile_id
+            FROM decision_log d JOIN app_user u ON u.id = d.author_id
+            WHERE d.person_id = %s ORDER BY d.created_at DESC""", (person_id,))
+    return out

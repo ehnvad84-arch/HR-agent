@@ -26,3 +26,4 @@
 - 2026-10-29 · T2b · вход: bcrypt (cost 12, 10–72 байт), `/api/login|logout|me`, блокировка с фиксацией неудач, `hr.cli user-create`; `/api/me` выдаёт новый CSRF-токен (в базе только хеш) · pytest зелёный, pip-audit чисто
 - 2026-10-29 · T3 · `web.py`: раздача `server/web/`, CSP и заголовки, TrustedHost по `WEB_HOSTS`, ошибки `{error, message}`, необработанное — без текста исключения, журнал доступа без query · pytest зелёный
 - 2026-10-29 · T4 · `views.py` (карточка: имя из кандидата или hh, иначе ярлык; фото — флаг), `GET /api/today`; фикстура `api` в conftest для тестов API · pytest зелёный
+- 2026-10-29 · T5 · `views.dossier`, `GET /api/person/{id}` и `/dossier`: места работы из raw по белому списку полей, контакты не выдаются, просмотр `hiring_manager` → `audit_log view` · pytest зелёный
