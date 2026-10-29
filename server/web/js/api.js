@@ -83,7 +83,9 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
   async function once(method, path, { query, body, form, signal, as = "json", timeoutMs: limit = timeoutMs } = {}) {
     const headers = { Accept: as === "json" ? "application/json" : "*/*" };
     if (session.csrf) headers["X-CSRF-Token"] = session.csrf;
-    const init = { method, headers, credentials: "same-origin", cache: "no-store" };
+    // Referrer-Policy сервера — no-referrer, а браузер не шлёт Origin с GET; серверу для GET …/export нужен Origin
+    // или Referer своего хоста (CSRF), поэтому своему же серверу Referer разрешён. Чужим адресам этот клиент не пишет.
+    const init = { method, headers, credentials: "same-origin", cache: "no-store", referrerPolicy: "same-origin" };
     if (form) {
       init.body = form;   // multipart: границу и Content-Type выставляет браузер
     } else if (method !== "GET") {

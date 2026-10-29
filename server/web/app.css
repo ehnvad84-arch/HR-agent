@@ -281,6 +281,21 @@ a.mini,button.mini{display:block}
 .soc .ha{background:#2b7a9f}.soc .fo{background:#5c5c61}.soc .ok{background:#a85a00}
 .soc .in{background:#0a66c2}.soc .fb{background:#5a6a85}.soc .ig{background:#9b5d8f}
 .soc .x{background:#1c1c1e;border:1px solid var(--sep)}.soc .yt{background:#c4302b}.soc .dz{background:#2b2b2b}
+.soc .gl{background:#b2481c}.soc .tt{background:#2b2b2b}.soc .cf{background:#6e4aa3}.soc .ot{background:#5c5c61}
+
+/* --------------------------------- досье: места работы, разбор, подсказка --------------------------------- */
+h2.t1{margin:0 0 10px}
+.row h2.t1,.grow h2.t1{margin:0}
+.feat .detail{font-size:12.5px;color:var(--muted);margin-top:4px}
+.exp{padding:10px 0;border-bottom:.5px solid var(--sep)}
+.exp:first-of-type{padding-top:0}
+.exp:last-child{border-bottom:0;padding-bottom:0}
+.lines{white-space:pre-line}
+.explain{margin-top:8px}
+details summary{cursor:pointer;font-size:14px}
+.chip.tip{position:relative;cursor:help}
+.chip.tip:hover::after,.chip.tip:focus-visible::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);
+  width:max-content;max-width:260px;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12.5px;z-index:5}
 
 /* --------------------------------- чат (П:229–246) --------------------------------- */
 .chat{display:flex;flex-direction:column;gap:10px;max-height:460px;overflow-y:auto;padding-right:4px}
@@ -359,9 +374,19 @@ svg{width:100%;height:auto;display:block}
 
 /* --------------------------------- печать досье в PDF (П:275–282) --------------------------------- */
 @media print{
-  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip{display:none !important}
+  /* бумага всегда светлая, даже если на экране ночная тема */
+  :root:root:root{
+    --bg:#ffffff; --card:#ffffff; --card2:#f2f2f4; --ink:#000000; --ink2:#222222; --muted:#4a4a4e; --sep:#bbbbbb;
+    --green-tint:rgba(52,199,89,.14); --blue-tint:rgba(0,122,255,.12); --orange-tint:rgba(255,149,0,.14);
+    --red-tint:rgba(255,59,48,.12); --violet-tint:rgba(175,82,222,.14);
+    --green-ink:#1a7431; --blue-ink:#005bb8; --orange-ink:#9a5200; --red-ink:#c0201a; --violet-ink:#8a35b0;
+  }
+  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only{display:none !important}
   main{padding:0;max-width:none}
   body{background:#fff;color:#000}
-  .card,.list{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
+  .card,.list{box-shadow:none;border:1px solid #ccc}   /* длинная карточка может идти на следующую страницу */
+  .bar,.bar i,.soc .ico,.chip,.badge-score,.tl .ev::before{-webkit-print-color-adjust:exact;print-color-adjust:exact}   /* полосы и значки — и без галочки «Фон» в окне печати */
+  .feat,.exp,.soc,.ev,.kv tr,h2{break-inside:avoid}
+  h2{break-after:avoid}
   .split{grid-template-columns:1fr}
 }

@@ -80,6 +80,21 @@ export async function mountAsync(box, load, render, { signal, delayMs = 300 } = 
   }
 }
 
+// ------------------------------------------------------------------ файлы
+
+/** Сохранить Blob как файл (выгрузка досье в Word): адрес живёт только до конца клика. */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 // ------------------------------------------------------------------ ошибка под кнопкой (в окне и в форме)
 
 /**

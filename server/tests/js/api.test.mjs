@@ -35,6 +35,8 @@ test("post шлёт JSON и X-CSRF-Token, cookie той же страницы", 
   assert.equal(init.body, JSON.stringify({ person_id: 5, comment: "текст" }));
   assert.equal(init.credentials, "same-origin");
   assert.equal(init.cache, "no-store");
+  // GET …/export проверяет Origin или Referer; при Referrer-Policy: no-referrer браузер не прислал бы ни того, ни другого
+  assert.equal(init.referrerPolicy, "same-origin");
 });
 
 test("get собирает query без пустых значений и не шлёт тело", async () => {

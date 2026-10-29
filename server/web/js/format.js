@@ -21,6 +21,14 @@ const toDate = (value) => {
 const dayStart = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const dayDiff = (date, now) => Math.round((dayStart(date) - dayStart(now)) / 86400000);
 
+/** «3 ноября»; с годом, если год другой. */
+export function absoluteDay(value, now = new Date()) {
+  const date = toDate(value);
+  if (!date) return "";
+  const text = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return date.getFullYear() === now.getFullYear() ? text : `${text} ${date.getFullYear()}`;
+}
+
 /** «сегодня», «завтра», «вчера» или «3 ноября» (с годом, если год другой). */
 export function dayLabel(value, now = new Date()) {
   const date = toDate(value);
@@ -29,8 +37,19 @@ export function dayLabel(value, now = new Date()) {
   if (diff === 0) return "сегодня";
   if (diff === 1) return "завтра";
   if (diff === -1) return "вчера";
-  const text = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  return date.getFullYear() === now.getFullYear() ? text : `${text} ${date.getFullYear()}`;
+  return absoluteDay(date, now);
+}
+
+/** «октябрь 2026». */
+export function monthYear(value) {
+  const date = toDate(value);
+  return date ? `${date.toLocaleDateString("ru-RU", { month: "long" })} ${date.getFullYear()}` : "";
+}
+
+/** «29 октября, 13:05» — для ленты изменений и истории решений. */
+export function dateTimeLabel(value, now = new Date()) {
+  const date = toDate(value);
+  return date ? `${absoluteDay(date, now)}, ${timeLabel(date)}` : "";
 }
 
 /** «15:00». */
@@ -43,6 +62,18 @@ export function timeLabel(value) {
 export function whenLabel(value, now = new Date()) {
   const date = toDate(value);
   return date ? `${dayLabel(date, now)}, ${timeLabel(date)}` : "";
+}
+
+// ------------------------------------------------------------------ числа
+
+/** «190 000» (обычные пробелы: строка переносится как текст). */
+export const numText = (n) => (typeof n === "number" ? n.toLocaleString("ru-RU").replace(/[\u00a0\u202f]/g, " ") : "");
+export const moneyText = (n) => (typeof n === "number" ? `${numText(n)} ₽` : "");
+
+/** «9 лет», «1 год», «21,8 года». */
+export function yearsText(n) {
+  if (typeof n !== "number") return "";
+  return Number.isInteger(n) ? `${n} ${plural(n, "год", "года", "лет")}` : `${String(n).replace(".", ",")} года`;
 }
 
 // ------------------------------------------------------------------ названия

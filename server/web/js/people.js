@@ -23,7 +23,9 @@ export function face(person, { small = false } = {}) {
   const box = h("div.face", { class: small ? "sm" : null });
   const fallback = () => {
     box.title = "Фото к резюме не приложено";
-    mount(box, (person.name && initials(person.name)) || silhouette());
+    // у кандидата без имени в name лежит ярлык «должность, город»: инициалы из него бессмысленны
+    const realName = person.name && person.name !== person.label ? person.name : "";
+    mount(box, (realName && initials(realName)) || silhouette());
   };
   if (person.photo && person.person_id) {
     box.title = "Фото из резюме";
