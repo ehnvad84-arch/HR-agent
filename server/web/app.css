@@ -158,19 +158,26 @@ a.li:focus-visible,button.li:focus-visible{outline-offset:-2px}
   max-height:calc(100vh - 230px);min-height:200px}
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
 th,td{text-align:left;padding:10px 14px;border-bottom:.5px solid var(--sep)}
+.tablewrap th,.tablewrap td{padding:10px 10px}
+table.base thead th:nth-child(5){min-width:76px}
 thead th{position:sticky;top:0;z-index:2;background:var(--card);font-size:12.5px;color:var(--muted);
-  font-weight:600;cursor:pointer;white-space:nowrap;user-select:none}
-thead th button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;font-weight:inherit}
+  font-weight:600;cursor:pointer;user-select:none;vertical-align:bottom}
+thead th button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;font-weight:inherit;text-align:left}
 thead th .dir{opacity:.6;font-size:11px}
 thead th.sorted{color:var(--green-ink)}
 thead th.sorted .dir{opacity:1}
 thead tr.filters th{top:40px;padding:6px 10px;cursor:default}
-thead tr.filters input,thead tr.filters select{width:100%;font:inherit;font-size:13px;padding:6px 9px;
+thead tr.filters input,thead tr.filters select{width:0;min-width:100%;font:inherit;font-size:13px;padding:6px 9px;
   border:1px solid var(--field-line);border-radius:9px;background:var(--card2);color:var(--ink)}
 tbody tr:hover{background:var(--card2)}
 td.name{font-weight:600}
 td.name .link{color:var(--ink)}
 td.name .link:hover{color:var(--blue-ink)}
+td.name a.link{text-decoration:none}
+td.name a.link:hover{text-decoration:underline}
+tbody tr.trow{cursor:pointer}
+.pager{display:flex;gap:12px;align-items:center;justify-content:center;margin:14px 0 0}
+.pager:empty{display:none}
 .pill{font-size:12.5px;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--muted);white-space:nowrap}
 .pill.obs{background:var(--blue-tint);color:var(--blue-ink)}
 .pill.watch{background:var(--violet-tint);color:var(--violet-ink)}
