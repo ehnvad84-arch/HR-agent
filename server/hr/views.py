@@ -21,7 +21,10 @@ _CARD = """
                             ORDER BY o.last_seen DESC LIMIT 1)) AS name,
            EXISTS (SELECT 1 FROM ops.person_photo ph JOIN observation o ON o.id = ph.observation_id
                    WHERE o.person_id = p.id AND ph.state = 'ok') AS photo,
-           (SELECT max(m.score) FROM match m WHERE m.person_id = p.id) AS best_score
+           (SELECT max(m.score) FROM match m WHERE m.person_id = p.id AND m.role_profile_id IN (
+                SELECT DISTINCT ON (x.code) x.id FROM role_profile x
+                WHERE x.is_active AND x.approved_at IS NOT NULL ORDER BY x.code, x.approved_at DESC, x.id DESC))
+               AS best_score
     FROM person p LEFT JOIN candidate c ON c.id = p.candidate_id
     WHERE p.id = ANY(%s)"""
 
@@ -131,6 +134,11 @@ def dossier(conn: psycopg.Connection, person_id: int, full: bool = True) -> dict
 
 # ------------------------------------------------------------------ база
 
+# действующие версии профилей — как pipeline.current_profiles: оценки прежних версий остаются историей
+CURRENT = """SELECT DISTINCT ON (x.code) x.id FROM role_profile x
+             WHERE x.is_active AND x.approved_by IS NOT NULL AND x.approved_at IS NOT NULL
+             ORDER BY x.code, x.approved_at DESC, x.id DESC"""
+
 SORTS = {"name": "name", "city": "city", "role": "role_title", "dept": "dept", "score": "score", "where": "where_",
          "source": "sources", "socn": "socn", "upd": "updated"}
 
@@ -139,7 +147,7 @@ WITH best AS (
     SELECT DISTINCT ON (m.person_id) m.person_id, m.score, rp.code AS role_code, rp.title AS role_title,
            d.code AS dept_code, d.title AS dept
     FROM match m JOIN role_profile rp ON rp.id = m.role_profile_id JOIN department d ON d.id = rp.department_id
-    WHERE (%(code)s::text IS NULL OR rp.code = %(code)s)
+    WHERE (%(code)s::text IS NULL OR rp.code = %(code)s) AND rp.id IN (CURRENT)
     ORDER BY m.person_id, m.score DESC
 ), people AS (
     SELECT p.id AS person_id, p.label, p.city, p.last_event_at AS updated, p.candidate_id,
@@ -176,7 +184,8 @@ def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min
     if sort not in SORTS or direction not in ("asc", "desc"):
         raise ValueError("сортировка")
     size = int(setting(conn, "base_page_size", 50))
-    sql = _BASE.format(join="JOIN" if role_code else "LEFT JOIN", order=SORTS[sort], dir=direction)
+    sql = _BASE.replace("(CURRENT)", f"({CURRENT})").format(join="JOIN" if role_code else "LEFT JOIN",
+                                                             order=SORTS[sort], dir=direction)
     items = rows(conn, sql, {"code": role_code, "dept": dept, "city": city, "role": role, "score_min": score_min,
                              "where": where, "source": source, "limit": size, "offset": max(page, 0) * size})
     total = items[0]["total"] if items else 0
