@@ -22,10 +22,10 @@ export function openCommentSheet({ title, hint, reasons, send, before = null, wi
   const win = sheet({ title, hint, width });
   const counterId = uid("counter");
   const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", required: true, placeholder,
-    describedBy: counterId });
+    describedBy: counterId, tip: "comment" });
   const counter = h("span.counter.bad", { id: counterId }, counterText("", minChars));
   const status = errorLine();
-  const save = h("button.b.fill", { type: "submit", disabled: true }, saveLabel);
+  const save = h("button.b.fill", { type: "submit", disabled: true, "data-tip": saveLabel }, saveLabel);
 
   let busy = false;
   const update = () => {
@@ -36,7 +36,7 @@ export function openCommentSheet({ title, hint, reasons, send, before = null, wi
   };
 
   const chips = h("div.reasons", reasons.map((reason) =>
-    h("button", { type: "button", onClick: () => {
+    h("button", { type: "button", "data-tip": "reason-chip", onClick: () => {
       comment.input.value = appendReason(comment.input.value, reason);
       comment.input.focus();
       update();

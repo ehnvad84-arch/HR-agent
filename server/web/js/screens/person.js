@@ -138,7 +138,7 @@ function headerCard(data, env) {
       "Выгрузить в Word или PDF") : null,
   ].filter(Boolean);
   const chips = [
-    chip(state.text, state.tone),
+    chip(state.text, state.tone, "pill-where"),
     first.open_for_search === true ? chip("открыл резюме для поиска", "b") : null,
     first.relocation_ready === true ? chip("готов к переезду", "o") : null,
     first.is_gone ? chip("резюме снято", "r") : null,

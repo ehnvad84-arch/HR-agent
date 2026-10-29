@@ -21,7 +21,7 @@ export function silhouette() {
  */
 export function face(person, { small = false, size = null } = {}) {
   // size: "lg" — портрет 96×120 у карточки сигнала, "md" — 56 px в таблице «Базы»
-  const box = h("div.face", { class: size || (small ? "sm" : null) });
+  const box = h("div.face", { class: size || (small ? "sm" : null), "data-tip": "face" });
   const fallback = () => {
     box.title = "Фото к резюме не приложено";
     // у кандидата без имени в name лежит ярлык «должность, город»: инициалы из него бессмысленны
@@ -43,16 +43,16 @@ export function face(person, { small = false, size = null } = {}) {
 /** Значок балла «88 из 100» (П:945). */
 export function scoreBadge(score) {
   const band = scoreBand(score);
-  return h("div.badge-score", { class: band || null },
+  return h("div.badge-score", { class: band || null, "data-tip": "score" },
     h("b", typeof score === "number" ? score : "—"), h("span", "из 100"));
 }
 
-export const chip = (text, tone = "") => h("span.chip", { class: tone || null }, text);
+export const chip = (text, tone = "", tip = null) => h("span.chip", { class: tone || null, "data-tip": tip }, text);
 
 const TEMPLATE_TIP = "Модель недоступна или кончился пакет";
 
 /** Пометка «по шаблону» (S8): нейтральный значок с подсказкой при наведении и фокусе. */
 export function templateChip(text = "разбор по шаблону") {
-  return h("span.chip.tip", { tabindex: 0, "data-tip": TEMPLATE_TIP, title: TEMPLATE_TIP },
+  return h("span.chip.tip", { tabindex: 0, "data-tip": "template" },
     text, h("span.sr-only", ` — ${TEMPLATE_TIP}`));
 }

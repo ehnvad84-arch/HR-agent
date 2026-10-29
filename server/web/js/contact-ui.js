@@ -38,7 +38,7 @@ export function contactSheet({ api, signal, actionId, plan, person }) {
   const win = sheet({ title: "Открыть контакт?", hint: texts.text, width: "460px" });
   const status = errorLine();
   const cancel = h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена");
-  const open = h("button.b.fill", { type: "button", onClick: async () => {
+  const open = h("button.b.fill", { type: "button", "data-tip": texts.button, onClick: async () => {
     status.clear();
     cancel.disabled = true;
     open.disabled = true;

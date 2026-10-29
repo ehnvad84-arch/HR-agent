@@ -312,8 +312,11 @@ h2.t1{margin:0 0 10px}
 .explain{margin-top:8px}
 details summary{cursor:pointer;font-size:14px}
 .chip.tip{position:relative;cursor:help}
-.chip.tip:hover::after,.chip.tip:focus-visible::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);
-  width:max-content;max-width:260px;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12.5px;z-index:5}
+
+/* --------------------------------- подсказки (S42) --------------------------------- */
+.tooltip{position:fixed;inset:auto;margin:0;max-width:320px;width:max-content;padding:9px 12px;border:0;border-radius:12px;
+  background:var(--ink);color:var(--bg);font-size:13.5px;line-height:1.4;letter-spacing:0;box-shadow:0 8px 24px rgba(0,0,0,.3);
+  pointer-events:none;overflow:visible}
 
 /* --------------------------------- профили должностей --------------------------------- */
 .chipbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border:1px solid var(--field-line);
@@ -435,7 +438,7 @@ svg{width:100%;height:auto;display:block}
     --red-tint:rgba(255,59,48,.12); --violet-tint:rgba(175,82,222,.14);
     --green-ink:#1a7431; --blue-ink:#005bb8; --orange-ink:#9a5200; --red-ink:#c0201a; --violet-ink:#8a35b0;
   }
-  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only,.noprint{display:none !important}   /* .noprint — контакты в бумагу не идут */
+  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only,.noprint,.tooltip{display:none !important}   /* .noprint — контакты в бумагу не идут */
   main{padding:0;max-width:none}
   body{background:#fff;color:#000}
   .card,.list{box-shadow:none;border:1px solid #ccc}   /* длинная карточка может идти на следующую страницу */

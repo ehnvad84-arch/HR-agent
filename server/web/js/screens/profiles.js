@@ -101,7 +101,7 @@ function listScreen(box, ctx) {
   let timer = null;
 
   const heading = h("div.t1");
-  const search = h("input.search", { id: "profile-q", type: "search", placeholder: "Поиск должности: электронщик, ОТК, продажи, бухгалтер…", autocomplete: "off",
+  const search = h("input.search", { id: "profile-q", type: "search", "data-tip": "profile-search", placeholder: "Поиск должности: электронщик, ОТК, продажи, бухгалтер…", autocomplete: "off",
     onInput: () => { clearTimeout(timer); timer = setTimeout(() => { q = search.value.trim(); load(); }, DEBOUNCE_MS); } });
   const deptSelect = h("select.search", { "aria-label": "Подразделение", style: "flex:0 0 240px", onChange: () => { dept = deptSelect.value; draw(); } });
   const found = h("span.hint", { role: "status" });
@@ -210,7 +210,7 @@ function editorScreen(box, ctx, id) {
     const max = field({ label: "Вилка до, ₽", kind: "number", name: "salary_max", value: form0.salary_max });
     for (const f of [min, max]) f.input.min = "0";
     const weightInputs = Object.fromEntries(FEATURES.map(([key, label]) => {
-      const f = field({ label, kind: "number", name: `w_${key}`, value: String(form0.weights[key] ?? 0) });
+      const f = field({ label, kind: "number", name: `w_${key}`, value: String(form0.weights[key] ?? 0), tip: "weight" });
       f.input.min = "0";
       f.input.max = "100";
       f.input.step = "1";

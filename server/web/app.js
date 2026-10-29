@@ -8,6 +8,7 @@ import { SCREENS } from "./js/screens/index.js";
 import { session } from "./js/session.js";
 import { buildTabs, renderUser } from "./js/shell.js";
 import { initTheme } from "./js/theme.js";
+import { installTooltips } from "./js/tooltip.js";
 import { closeAllSheets, errorCard, errorText, noAccess, toast } from "./js/ui.js";
 
 const el = {
@@ -136,5 +137,6 @@ async function start() {
 }
 
 initTheme($("#theme"));
+installTooltips();
 api.setReauth(requestLogin);
 start();

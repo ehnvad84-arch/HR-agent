@@ -76,7 +76,7 @@ function moveSheet({ api, signal, vacancyId, person, current, stages, preselect 
 
 function chooseVacancy({ open, current, onPick }) {
   const win = sheet({ title: "Другая вакансия", width: "520px", hint: "Выберите вакансию: воронка откроется по ней." });
-  const rows = open.map((v) => h("button.li", { type: "button", onClick: () => { win.close("picked"); onPick(v.id); } },
+  const rows = open.map((v) => h("button.li", { type: "button", "data-tip": "vacancy-pick", onClick: () => { win.close("picked"); onPick(v.id); } },
     h("div", h("div", { style: "font-weight:600" }, v.title, v.id === current ? " · сейчас" : ""),
       h("div.sub", `${openText(v)}`))));
   win.body.append(open.length ? h("div.list", { style: "box-shadow:none" }, rows) : h("p.t2", "Открытых вакансий нет."),
@@ -172,7 +172,7 @@ export function render(box, ctx) {
       },
       onDragend: () => { dragged = null; box.querySelectorAll(".droptarget").forEach((el) => el.classList.remove("droptarget")); },
     },
-    h("a.open", { href: personHref(person.person_id), title: "Открыть досье" },
+    h("a.open", { href: personHref(person.person_id), title: "Открыть досье", "data-tip": "Открыть досье" },
       h("div.namewrap", face(person, { small: true }), h("b", personName(person))),
       h("span", dayText(person.days))),
     canMove ? h("button.b.sm", { type: "button", onClick: () => openMove(stages, person, stage.status) }, "Перевести") : null);

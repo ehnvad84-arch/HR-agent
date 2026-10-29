@@ -27,7 +27,7 @@ export function render(box, ctx) {
 
   // ---------------------------------------------------------------- каркас
 
-  const search = h("input.search", { id: "base-q", type: "search", name: "q", value: state.q,
+  const search = h("input.search", { id: "base-q", type: "search", name: "q", value: state.q, "data-tip": "search",
     placeholder: "Поиск по имени, должности, навыку, городу", autocomplete: "off" });
   const found = h("span.hint", { role: "status" });
   const vacancyBar = h("div");
@@ -54,7 +54,7 @@ export function render(box, ctx) {
   const headerCells = COLUMNS.map((column) => {
     const arrow = h("span.dir", { "aria-hidden": "true" }, "↕");
     const th = h("th", { scope: "col", "aria-sort": "none", onClick: () => sortBy(column.sort) },
-      h("button", { type: "button" }, column.title, " ", arrow));
+      h("button", { type: "button", "data-tip": "sort" }, column.title, " ", arrow));
     return { column, th, arrow };
   });
   mount(headerRow, headerCells.map((c) => c.th));
@@ -74,14 +74,14 @@ export function render(box, ctx) {
     return [h("option", { value: "" }, "все"), ...items.map(([id, label]) => h("option", { value: id }, label))];
   };
 
-  const deptSelect = h("select", { "aria-label": "Фильтр: Подразделение", onChange: (e) => setFilter("dept", e.target.value) });
-  const roleSelect = h("select", { "aria-label": "Фильтр: Должность", onChange: (e) => setFilter("role", e.target.value) });
-  const whereSelect = h("select", { "aria-label": "Фильтр: Где числится", onChange: (e) => setFilter("where", e.target.value) });
-  const sourceSelect = h("select", { "aria-label": "Фильтр: Источник", onChange: (e) => setFilter("source", e.target.value) });
+  const deptSelect = h("select", { "aria-label": "Фильтр: Подразделение", "data-tip": "filter", onChange: (e) => setFilter("dept", e.target.value) });
+  const roleSelect = h("select", { "aria-label": "Фильтр: Должность", "data-tip": "filter", onChange: (e) => setFilter("role", e.target.value) });
+  const whereSelect = h("select", { "aria-label": "Фильтр: Где числится", "data-tip": "filter", onChange: (e) => setFilter("where", e.target.value) });
+  const sourceSelect = h("select", { "aria-label": "Фильтр: Источник", "data-tip": "filter", onChange: (e) => setFilter("source", e.target.value) });
   const cityList = h("datalist", { id: "base-cities" });
-  const cityInput = h("input", { type: "text", list: "base-cities", placeholder: "город", autocomplete: "off", "aria-label": "Фильтр: Город",
+  const cityInput = h("input", { type: "text", list: "base-cities", placeholder: "город", autocomplete: "off", "aria-label": "Фильтр: Город", "data-tip": "filter",
     onInput: (e) => typed(() => setFilter("city", e.target.value.trim())) });
-  const scoreInput = h("input", { type: "number", min: 0, max: 100, placeholder: "от", "aria-label": "Фильтр: Балл от",
+  const scoreInput = h("input", { type: "number", min: 0, max: 100, placeholder: "от", "aria-label": "Фильтр: Балл от", "data-tip": "filter",
     onInput: (e) => typed(() => setFilter("score_min", /^\d{1,3}$/.test(e.target.value) ? e.target.value : "")) });
   const controls = { dept: deptSelect, role: roleSelect, where: whereSelect, source: sourceSelect, city: cityInput, score: scoreInput };
   mount(filterRow,
@@ -170,7 +170,7 @@ export function render(box, ctx) {
     }
   }
 
-  const pill = (where) => h("span.pill", { class: WHERE_PILLS[where] || null }, whereTitle(where));
+  const pill = (where) => h("span.pill", { class: WHERE_PILLS[where] || null, "data-tip": "pill-where" }, whereTitle(where));
   const dash = (value) => (value === null || value === undefined || value === "" ? "—" : value);
 
   function rowFor(row) {

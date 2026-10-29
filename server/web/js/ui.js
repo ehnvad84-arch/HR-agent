@@ -116,12 +116,12 @@ export function errorLine() {
  * Поле с видимой подписью: {root, input, error(text)}. kind: "text" | "password" | "textarea".
  * Ошибка проверки (422) показывается у поля и связана с ним через aria-describedby.
  */
-export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint, describedBy } = {}) {
+export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint, describedBy, tip } = {}) {
   const id = uid(name || "field");
   const errId = `${id}-err`;
   // describedBy — id других подсказок поля (например счётчика знаков): читаются вместе с текстом ошибки
   const common = { id, name, autocomplete, required, placeholder, "aria-describedby": [describedBy, errId].filter(Boolean).join(" "),
-    "aria-invalid": false };
+    "aria-invalid": false, "data-tip": tip };
   const input = kind === "textarea"
     ? h("textarea", { ...common }, value)
     : h("input", { ...common, type: kind, value });
@@ -212,8 +212,8 @@ export function sheet({ title, hint, width, dismissible = true, className = "" }
  */
 export function confirmSheet({ title, hint, confirmText, cancelText = "Отмена", width = "440px" }) {
   const win = sheet({ title, hint, width });
-  const cancel = h("button.b", { type: "button", onClick: () => win.close("cancel") }, cancelText);
-  const ok = h("button.b.fill", { type: "button", onClick: () => win.close("ok") }, confirmText);
+  const cancel = h("button.b", { type: "button", "data-tip": cancelText, onClick: () => win.close("cancel") }, cancelText);
+  const ok = h("button.b.fill", { type: "button", "data-tip": confirmText, onClick: () => win.close("ok") }, confirmText);
   win.body.append(h("div.sheetfoot.end", cancel, ok));
   win.show(cancel);
   return win.closed.then((outcome) => outcome === "ok");

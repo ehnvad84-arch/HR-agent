@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 export function declineSheet({ api, signal, actionId, title = "Отклонить черновик",
   hint = "Причина сохранится в очереди: по ней агент учится готовить такие письма лучше." }) {
   const win = sheet({ title, hint, width: "480px" });
-  const reason = field({ label: "Причина", kind: "textarea", name: "reason", required: true });
+  const reason = field({ label: "Причина", kind: "textarea", name: "reason", required: true, tip: "reason" });
   const status = errorLine();
   const save = h("button.b.danger", { type: "submit", disabled: true }, "Отклонить");
   const form = h("form", { novalidate: true }, reason.root, status.el,
@@ -49,7 +49,7 @@ export function declineSheet({ api, signal, actionId, title = "Отклонит�
 export function draftSheet({ api, signal, action, person }) {
   const win = sheet({ title: `Письмо: ${personName(person)}`, width: "640px",
     hint: "Агент подготовил черновик. Правьте текст как нужно: итоговый вариант сохранится в истории кандидата. Письмо само не уходит: вы копируете его и отправляете сами." });
-  const letter = field({ label: "Текст письма", kind: "textarea", name: "letter", value: action.text || "", required: true });
+  const letter = field({ label: "Текст письма", kind: "textarea", name: "letter", value: action.text || "", required: true, tip: "letter" });
   letter.input.classList.add("tall");
   const note = h("p.hint", { role: "status", style: "margin:8px 0 0" });
   const status = errorLine();

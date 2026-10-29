@@ -9,12 +9,12 @@ export function chipsInput({ label, values = [], placeholder = "", hint = "", di
   let items = [...values];
   const listeners = [];
   const list = h("span.chiplist", { role: "list" });
-  const input = h("input", { id, type: "text", placeholder, autocomplete: "off", disabled, "aria-describedby": hintId });
+  const input = h("input", { id, type: "text", placeholder, autocomplete: "off", disabled, "data-tip": "chips", "aria-describedby": hintId });
   const box = h("div.chipbox", { onClick: () => input.focus() }, list, input);
 
   const draw = () => {
     mount(list, items.map((item) => h("span.chip.removable", { role: "listitem" }, item,
-      disabled ? null : h("button", { type: "button", "aria-label": `Убрать «${item}»`, onClick: (event) => { event.stopPropagation(); remove(item); } }, "×"))));
+      disabled ? null : h("button", { type: "button", "data-tip": "chips-remove", "aria-label": `Убрать «${item}»`, onClick: (event) => { event.stopPropagation(); remove(item); } }, "×"))));
     listeners.forEach((fn) => fn(items));
   };
   function add(text) {
