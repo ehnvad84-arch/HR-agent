@@ -9,24 +9,13 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from . import db, hh
-from .clock import SYSTEM, Clock
-from .config import get_config
-from .http import client
+from .clock import Clock
+from .deps import get_clock, get_conn_factory, get_hh_http
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Агент подбора", docs_url=None, redoc_url=None, openapi_url=None)
 
 
-def get_conn_factory() -> db.ConnFactory:
-    return db.tx
-
-
-def get_hh_http() -> httpx.Client:
-    return client(get_config().hh_user_agent)
-
-
-def get_clock() -> Clock:
-    return SYSTEM
 
 
 @app.get("/api/oauth/hh/callback", response_class=HTMLResponse)

@@ -13,7 +13,7 @@
 
 - [x] T1 — миграция `002_workplace.sql`: таблицы `ops` из раздела «Данные», права `contact.open`, `vacancy.edit`, `feedback.write`, настройки из раздела «Данные», индекс «не наш» · сценарий: S1, S9, S7, S24 · проверка: auto · исполнитель: main
   Готово, когда: `test_migrate` зелёный, в `public` по-прежнему 46 таблиц и 4 представления, у новых прав есть запись в `agent_change`.
-- [ ] T2 — `auth.py`, сессия: `ops.web_session`, подпись cookie `SESSION_KEY` (в `.env.example`), CSRF и `Origin`, зависимость `require(право)` по `role_permission` · сценарий: S2, S3 · проверка: auto · исполнитель: main
+- [x] T2 — `auth.py`, сессия: `ops.web_session`, подпись cookie `SESSION_KEY` (в `.env.example`), CSRF и `Origin`, зависимость `require(право)` по `role_permission` · сценарий: S2, S3 · проверка: auto · исполнитель: main
   Готово, когда: тесты 401 без сессии, 403 без права и отказа без CSRF зелёные. Тест обхода `app.routes` падает на маршруте без объявленного права.
 - [ ] T2b — вход: bcrypt, `/api/login|logout|me`, блокировка после `login_max_failures`, `hr.cli user-create` (пароль без эха) · сценарий: S1 · проверка: auto · исполнитель: main
   Готово, когда: тесты входа, выхода, одинакового текста для неверного логина и пароля и блокировки зелёные, пароль в базе только хешем.

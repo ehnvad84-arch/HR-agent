@@ -51,6 +51,11 @@ class Config:
     github_token: str = field(default_factory=lambda: _env("GITHUB_TOKEN"))
     import_dir: str = field(default_factory=lambda: _env("IMPORT_DIR", "./data/import"))
 
+    session_key: str = field(default_factory=lambda: _env("SESSION_KEY"))
+    # хосты, с которых открывают рабочее место: проверка Origin и TrustedHost (AD-6, через туннель)
+    web_hosts: tuple[str, ...] = field(default_factory=lambda: tuple(
+        h.strip() for h in _env("WEB_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()))
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.llm_base_url and self.llm_model)
