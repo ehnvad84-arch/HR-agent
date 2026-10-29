@@ -25,12 +25,13 @@ PROFILES = [
     {"dept": "rnd_hw", "dept_title": "Инженерные разработки", "code": "engineer_hw_lead",
      "title": "Ведущий инженер-электронщик", "version": "0.1-проба",
      "keywords": ["Altium", "схемотехника", "трассировка", "ЭМС"], "donors": [],
-     "salary_min": 150000, "salary_max": 200000},
+     "salary_min": None, "salary_max": None},
     {"dept": "sales", "dept_title": "Продажи", "code": "sales_project",
      "title": "Менеджер проектных продаж", "version": "0.1-проба",
      "keywords": ["44-ФЗ", "CRM", "проектные продажи"], "donors": [],
-     "salary_min": 120000, "salary_max": 160000},
+     "salary_min": None, "salary_max": None},
 ]
+# вилка пока не задана: признак «ожидания против вилки» у всех нейтральный, 0.5
 # одна страница поиска (50 резюме) на вакансию; каждый запрос полного резюме — тоже страница бюджета
 LIMITS = {"crawl_max_pages": "110", "crawl_per_profile_pages": "1", "hh_full_resume_per_run": "100"}
 NOTE = "пробный сбор scripts/trial_hh.py, утвердил запускающий"
@@ -77,9 +78,7 @@ def _limits(conn) -> None:
 
 def main() -> int:
     for p in PROFILES:
-        rub = [f"{p[k]:,}".replace(",", " ") for k in ("salary_min", "salary_max")]
-        print(f"Профиль: «{p['title']}», Краснодар, ключевые слова: {', '.join(p['keywords'])}, "
-              f"вилка {rub[0]}–{rub[1]} ₽.")
+        print(f"Профиль: «{p['title']}», Краснодар, ключевые слова: {', '.join(p['keywords'])}; вилка не задана.")
     print(f"Пределы: до 50 резюме на вакансию, не больше {LIMITS['hh_full_resume_per_run']} полных резюме "
           f"и {LIMITS['crawl_max_pages']} запросов к hh. Контакты не открываются.")
     if input("Утвердить профили и запустить сбор? Напишите «да»: ").strip().lower() != "да":
