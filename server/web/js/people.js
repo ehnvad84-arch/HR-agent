@@ -17,10 +17,11 @@ export function silhouette() {
 
 /**
  * Кружок с фото из резюме (S9): /api/person/<id>/photo. Нет фото или оно не загрузилось — инициалы, если есть имя,
- * иначе силуэт. person: {person_id, name, photo}. small — 28 px вместо 44.
+ * иначе силуэт. person: {person_id, name, photo}. small — 28 px вместо 44; size — "md" 56 px, "lg" 96×120.
  */
-export function face(person, { small = false } = {}) {
-  const box = h("div.face", { class: small ? "sm" : null });
+export function face(person, { small = false, size = null } = {}) {
+  // size: "lg" — портрет 96×120 у карточки сигнала, "md" — 56 px в таблице «Базы»
+  const box = h("div.face", { class: size || (small ? "sm" : null) });
   const fallback = () => {
     box.title = "Фото к резюме не приложено";
     // у кандидата без имени в name лежит ярлык «должность, город»: инициалы из него бессмысленны

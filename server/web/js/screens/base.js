@@ -176,7 +176,7 @@ export function render(box, ctx) {
   function rowFor(row) {
     const open = () => ctx.go("person", { id: row.person_id });
     const tr = h("tr.trow", { onClick: (event) => { if (!event.target.closest("a, button")) open(); } },
-      h("td.name", h("span.namewrap", face(row, { small: true }), h("a.link", { href: personHref(row.person_id) }, personName(row)))),
+      h("td.name", h("span.namewrap", face(row, { size: "md" }), h("a.link", { href: personHref(row.person_id) }, personName(row)))),
       h("td", dash(row.city)), h("td", dash(row.role_title)), h("td.hint", dash(row.dept)),
       h("td.num", dash(row.score)), h("td", pill(row.where)),
       h("td", (row.sources || []).map(sourceTitle).join(", ") || "—"),
@@ -222,7 +222,7 @@ export function render(box, ctx) {
     found.textContent = items.length ? `Найдено по смыслу: ${items.length}` : "";
     mount(searchBox, items.length
       ? h("div.list", items.map((row) => h("a.li", { href: personHref(row.person_id) },
-        face(row, { small: true }),
+        face(row, { size: "md" }),
         h("div", h("div", { style: "font-weight:600" }, personName(row)), h("div.sub", dash(row.city))),
         h("span.chev", { style: "font-size:13px" }, similarityText(row.similarity)))))
       : emptyCard("Похожих нет, попробуйте другими словами"));

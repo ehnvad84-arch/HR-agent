@@ -213,6 +213,9 @@ tbody tr.trow{cursor:pointer}
 .face svg{width:100%;height:100%}
 .face img{width:100%;height:100%;object-fit:cover;display:block}
 .face.sm{width:28px;height:28px;font-size:11px}
+.face.md{width:56px;height:56px;font-size:16px}
+/* портрет у карточки сигнала: фото из резюме — вертикальное, сжатое до 320 px */
+.face.lg{width:96px;height:120px;border-radius:14px;font-size:26px;align-self:flex-start}
 .namewrap{display:flex;align-items:center;gap:10px}
 
 /* --------------------------------- переключатель темы (П:164–168) --------------------------------- */

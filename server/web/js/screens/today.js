@@ -31,8 +31,8 @@ function signalCard(row, env) {
     toast(TOASTS[kind]);
   };
   const card = actionCard(({ btns, status }) =>
-    h("div.row", scoreBadge(row.score),
-      h("div.grow", nameLine(row),
+    h("div.row", scoreBadge(row.score), face(row, { size: "lg" }),
+      h("div.grow", h("div.t1", h("a", { href: personHref(row.person_id) }, personName(row))),
         h("div.t2", [row.role_title, row.city].filter(Boolean).join(" · ")),
         h("div.t2", { style: "color:var(--ink2)" }, row.headline),
         h("div.chips", chip(reason.title, reason.tone)),
