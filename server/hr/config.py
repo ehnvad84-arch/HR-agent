@@ -50,6 +50,8 @@ class Config:
                                                             "https://opendata.trudvsem.ru/api/v1/integration"))
     github_token: str = field(default_factory=lambda: _env("GITHUB_TOKEN"))
     import_dir: str = field(default_factory=lambda: _env("IMPORT_DIR", "./data/import"))
+    # файлы ДИ до объектного хранилища (фича deploy): ключ — sha256, имя файла в путь не идёт
+    storage_dir: str = field(default_factory=lambda: _env("STORAGE_DIR", "./data/storage"))
 
     # GigaChat (решение человека 2026-10-29): ключ авторизации из личного кабинета, токен на 30 минут
     gigachat_auth_key: str = field(default_factory=lambda: _env("GIGACHAT_AUTH_KEY"))

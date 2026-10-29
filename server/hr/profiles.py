@@ -4,12 +4,15 @@
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime
+from pathlib import Path, PurePath
 
 import psycopg
 
 from . import pipeline, scoring
+from .config import get_config
 from .db import j, one, rows, run, setting, val
 from .scoring import FEATURE_LABELS
 
@@ -34,7 +37,7 @@ class Invalid(ValueError):
 def state(p: dict) -> str:
     if p["approved_at"]:
         return "approved"
-    return "draft" if p.get("di_uploaded_at") and not p.get("edited") else "pending"
+    return "draft" if p.get("di_uploaded_at") else "pending"   # draft — собрана из новой ДИ, человек не правил
 
 
 _LIST = """
@@ -121,7 +124,7 @@ def edit(conn: psycopg.Connection, profile_id: int, changes: dict, user_id: int,
                 %(di_file)s, %(di_key)s, %(di_rev)s, %(di_at)s, %(di_by)s) RETURNING id""",  # noqa: S608
               {**params, "dept": base["department_id"], "code": base["code"], "version": version,
                "today": now.date(), "di_file": base["di_file"], "di_key": base["di_storage_key"],
-               "di_rev": base["di_revision"], "di_at": base["di_uploaded_at"], "di_by": base["di_uploaded_by"]})
+               "di_rev": base["di_revision"], "di_at": None, "di_by": None})
     before = {k: base[k] for k in changes}
     run(conn, """INSERT INTO agent_change (kind, before, after, applied_by, applied_at, note)
                  VALUES ('profile', %s, %s, %s, %s, %s)""",
@@ -188,3 +191,44 @@ def approvers(conn: psycopg.Connection) -> dict:
     users = rows(conn, """SELECT id, login, full_name, role::text AS role FROM app_user
                           WHERE is_active AND role::text = ANY(%s) ORDER BY full_name""", (roles,))
     return {"roles": roles, "users": users}
+
+
+# ------------------------------------------------------------------ ДИ
+
+SIGNATURES = {".docx": b"PK\x03\x04", ".pdf": b"%PDF"}
+
+
+def upload_doc(conn: psycopg.Connection, profile_id: int, file_name: str, data: bytes, revision: str | None,
+               user_id: int, now: datetime) -> dict:
+    """S28 (пункт 29): файл в хранилище по sha256, запись job_doc, черновая версия профиля «по новой ДИ» —
+    это и есть предложение правок в очереди: в работу она пойдёт только после правки и утверждения."""
+    base = get(conn, profile_id)
+    ext = PurePath(file_name).suffix.lower()
+    limit = int(setting(conn, "import_max_file_mb", 20)) * 1024 * 1024
+    if ext not in SIGNATURES or not data.startswith(SIGNATURES[ext]):
+        raise Invalid("нужен файл .docx или .pdf")
+    if len(data) > limit:
+        raise Invalid("файл больше допустимого размера")
+    digest = hashlib.sha256(data).hexdigest()
+    key = f"di/{digest}{ext}"
+    path = Path(get_config().storage_dir) / key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_bytes(data)
+    doc_id = val(conn, """INSERT INTO job_doc (role_profile_id, file_name, storage_key, revision, sha256, uploaded_by,
+                                               uploaded_at) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                 (profile_id, PurePath(file_name).name[:200], key, revision, digest, user_id, now))
+    version = _next_version(conn, base["code"], base["version"])
+    cols = list(EDITABLE)
+    draft_id = val(conn, f"""
+        INSERT INTO role_profile (department_id, code, version, valid_from, {", ".join(cols)},
+                                  di_file, di_storage_key, di_revision, di_uploaded_at, di_uploaded_by)
+        SELECT department_id, code, %s, %s, {", ".join(cols)}, %s, %s, %s, %s, %s
+        FROM role_profile WHERE id = %s RETURNING id""",  # noqa: S608 — колонки из константы EDITABLE
+                   (version, now.date(), PurePath(file_name).name[:200], key, revision, now, user_id, profile_id))
+    run(conn, """INSERT INTO agent_change (kind, before, after, applied_by, applied_at, note)
+                 VALUES ('profile', %s, %s, %s, %s, %s)""",
+        (j({"id": profile_id, "version": base["version"]}),
+         j({"id": draft_id, "version": version, "state": "draft", "job_doc_id": doc_id}), user_id, now,
+         f"новая ДИ для «{base['title']}»: черновая версия ждёт правки и утверждения"))
+    return {"job_doc_id": doc_id, "draft_version_id": draft_id}

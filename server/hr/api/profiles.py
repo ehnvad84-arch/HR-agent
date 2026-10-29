@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from .. import auth, jobs, pipeline, profiles
@@ -80,3 +80,15 @@ def preview(profile_id: int, user: Annotated[auth.User, Depends(auth.require("pr
 def approvers(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
     with conn_factory() as conn:
         return profiles.approvers(conn)
+
+
+@router.post("/api/profile/{profile_id}/doc")
+def upload_doc(profile_id: int, user: Annotated[auth.User, Depends(auth.require("profile.edit"))],
+               conn_factory: Conn, clock: Now, file: Annotated[UploadFile, File()],
+               revision: Annotated[str | None, Form()] = None):
+    data = file.file.read(64 * 1024 * 1024 + 1)   # предел размера проверяет profiles.upload_doc
+
+    def go():
+        with conn_factory() as conn:
+            return profiles.upload_doc(conn, profile_id, file.filename or "ДИ", data, revision, user.id, clock.now())
+    return _errors(go)
