@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -73,6 +74,16 @@ class JobResult:
 
 def _key(name: str) -> str:
     return f"job:{name}"
+
+
+@contextmanager
+def try_lock(key: str) -> Iterator[bool]:
+    """Та же блокировка, что у задач (например, source:hh): True — взяли, False — занята."""
+    conn = psycopg.connect(get_config().database_url, autocommit=True)
+    try:
+        yield conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]
+    finally:
+        conn.close()   # закрытие соединения снимает блокировку
 
 
 def run(name: str, func: Callable[..., JobStats], conn_factory: db.ConnFactory | None,

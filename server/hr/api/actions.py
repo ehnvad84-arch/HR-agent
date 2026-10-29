@@ -7,10 +7,11 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import actions, auth
+from .. import actions, auth, contact_hh
 from ..clock import Clock
-from ..db import ConnFactory
-from ..deps import get_clock, get_conn_factory, get_llm_http
+from ..db import ConnFactory, val
+from ..deps import get_clock, get_conn_factory, get_hh_http, get_llm_http
+from .contacts import errors as contact_errors
 
 router = APIRouter()
 Taker = Annotated[auth.User, Depends(auth.require("person.take"))]
@@ -46,7 +47,15 @@ class ApproveIn(BaseModel):
 
 
 @router.post("/api/action/{action_id}/approve")
-def approve(action_id: int, body: ApproveIn, user: Taker, conn_factory: Conn, clock: Now):
+def approve(action_id: int, body: ApproveIn, user: Taker, conn_factory: Conn, clock: Now,
+            hh_http: Annotated[httpx.Client, Depends(get_hh_http)]):
+    with conn_factory() as conn:
+        kind = val(conn, "SELECT kind::text FROM action_queue WHERE id = %s", (action_id,))
+    if kind == "open_contact":   # платный контакт: отдельное право (48)
+        if "contact.open" not in user.permissions:
+            raise HTTPException(403, {"error": "forbidden", "message": "Недостаточно прав"})
+        return contact_errors(lambda: contact_hh.open_contact(conn_factory, action_id, user.id, hh_http, clock))
+
     def go():
         with conn_factory() as conn:
             return actions.approve(conn, action_id, user.id, clock.now(), body.text)
