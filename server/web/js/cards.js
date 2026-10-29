@@ -30,7 +30,7 @@ export function actionCard(layout, buttons) {
   };
 }
 
-export const actBtn = (cls, text, onClick) => h("button.b", { class: cls, type: "button", dataset: { act: 1 }, onClick }, text);
+export const actBtn = (cls, text, onClick, tip) => h("button.b", { class: cls, type: "button", dataset: { act: 1 }, "data-tip": tip, onClick }, text);
 
 /** Выполнить запрос от кнопки карточки: ошибка — под кнопками, карточка остаётся как была. */
 export async function perform(card, request, onDone) {

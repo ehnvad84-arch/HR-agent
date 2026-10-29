@@ -15,11 +15,11 @@ export function bestScore(person, matches) {
   return scores.length ? Math.max(...scores) : null;
 }
 
-/** Состояние для строки под именем и для значка: кандидат, веду особо, не наш, наблюдение. */
+/** Состояние для строки под именем и для значка: кандидат, веду особо, категорически нет, наблюдение. */
 export function personState(person, candidate) {
   if (candidate) return { text: `кандидат: ${statusTitle(candidate.status)}`, tone: "g" };
   if (person.watch === "watched") return { text: "веду особо", tone: "v" };
-  if (person.watch === "dropped") return { text: "не наш: вне выдачи", tone: "r" };
+  if (person.watch === "dropped") return { text: "категорически нет: вне выдачи", tone: "r" };
   return { text: "наблюдение", tone: "b" };
 }
 
@@ -71,7 +71,7 @@ const FIELD_LABELS = {
 const LIST_LIMIT = 5;
 
 export const eventTitle = (kind) => EVENT_TITLES[kind] || "Событие";
-export const decisionTitle = (kind) => ({ postpone: "Отложил", reject: "Отметил «не наш»" }[kind] || String(kind));
+export const decisionTitle = (kind) => ({ postpone: "Временно отложил", reject: "Отметил «категорически нет»" }[kind] || String(kind));
 
 function value(field, v) {
   if (v === null || v === undefined || v === "") return "—";

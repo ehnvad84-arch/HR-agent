@@ -126,9 +126,9 @@ function headerCard(data, env) {
     open ? h("button.b.fill", { type: "button", onClick: () => act(async () => {
       const result = await takePerson({ api: env.api, signal: env.signal, person, matches });
       return result.taken ? result : false;
-    }, () => "Взят в работу") }, "В работу") : null,
-    open ? h("button.b", { type: "button", onClick: decide("postpone") }, "Отложить") : null,
-    open && person.watch !== "dropped" ? h("button.b.danger", { type: "button", onClick: decide("reject") }, "Не наш") : null,
+    }, () => "Взят в работу"), "data-tip": "take" }, "Сохранить") : null,
+    open ? h("button.b", { type: "button", onClick: decide("postpone") }, "Временно отложить") : null,
+    open && person.watch !== "dropped" ? h("button.b.danger", { type: "button", onClick: decide("reject") }, "Категорически нет") : null,
     canTake && candidate ? writeButton(data, env, act) : null,
     canTake && person.watch !== "dropped" ? h("button.b", { type: "button", "aria-pressed": watched, onClick: () =>
       act(() => env.api.post(`/api/person/${id}/watch`, { on: !watched }, { signal: env.signal }),
@@ -161,7 +161,7 @@ function resumeCard(o, index, data) {
   const tenure = o.avg_tenure_months ? `в среднем ${o.avg_tenure_months} мес. на месте` : "";
   const contacts = index === 0
     ? (candidate ? (candidate.contact_opened ? "открыты, журнал доступа ведётся" : "не открыты")
-      : chip("откроются после «взять в работу»"))
+      : chip("откроются после «Сохранить»"))
     : null;
   return h("section.card", title(data.observations.length > 1 ? `Резюме — ${o.source_title}` : "Резюме"),
     kv([

@@ -210,10 +210,10 @@ export function sheet({ title, hint, width, dismissible = true, className = "" }
 /**
  * Окно «да / нет». Фокус — на «Отмена»: случайный Enter ничего не подтверждает. Возвращает Promise<boolean>.
  */
-export function confirmSheet({ title, hint, confirmText, cancelText = "Отмена", width = "440px" }) {
+export function confirmSheet({ title, hint, confirmText, confirmTip, cancelText = "Отмена", width = "440px" }) {
   const win = sheet({ title, hint, width });
   const cancel = h("button.b", { type: "button", "data-tip": cancelText, onClick: () => win.close("cancel") }, cancelText);
-  const ok = h("button.b.fill", { type: "button", "data-tip": confirmText, onClick: () => win.close("ok") }, confirmText);
+  const ok = h("button.b.fill", { type: "button", "data-tip": confirmTip || confirmText, onClick: () => win.close("ok") }, confirmText);
   win.body.append(h("div.sheetfoot.end", cancel, ok));
   win.show(cancel);
   return win.closed.then((outcome) => outcome === "ok");

@@ -1,6 +1,7 @@
 // Человек на экранах: имя или ярлык, фото или заглушка, значок балла. Общее для «Сегодня», «Досье», «Базы», воронки.
 import { h, initials, mount } from "./dom.js";
 import { scoreBand } from "./format.js";
+import { summaryView } from "./summary-model.js";
 import { hashFor } from "./router.js";
 
 /** Имя, если hh его отдал, иначе ярлык «должность, город». */
@@ -55,4 +56,16 @@ const TEMPLATE_TIP = "Модель недоступна или кончился 
 export function templateChip(text = "разбор по шаблону") {
   return h("span.chip.tip", { tabindex: 0, "data-tip": "template" },
     text, h("span.sr-only", ` — ${TEMPLATE_TIP}`));
+}
+
+/**
+ * Короткая сводка резюме справа на карточке: опыт, ожидания, место работы, переезд, дата обновления, до пяти навыков.
+ * summary — поле summary человека из API; нет данных — null (блока нет).
+ */
+export function summaryBlock(summary, now = new Date()) {
+  const view = summaryView(summary, now);
+  if (!view) return null;
+  return h("aside.summary", { "aria-label": "Коротко из резюме", "data-tip": "summary" },
+    h("dl", view.rows.flatMap(([label, value]) => [h("dt", label), h("dd", value)])),
+    view.skills.length ? h("div.chips", view.skills.map((skill) => chip(skill))) : null);
 }

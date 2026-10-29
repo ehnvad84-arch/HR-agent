@@ -216,6 +216,15 @@ tbody tr.trow{cursor:pointer}
 .face.md{width:56px;height:56px;font-size:16px}
 /* портрет у карточки сигнала: фото из резюме — вертикальное, сжатое до 320 px */
 .face.lg{width:96px;height:120px;border-radius:14px;font-size:26px;align-self:flex-start}
+/* сводка резюме справа на карточке сигнала: на узкой ширине (≈ 640 px) уходит под текст */
+.sigrow{flex-wrap:wrap}
+.sigrow .grow{flex:1 1 300px}
+.summary{flex:1 1 230px;max-width:290px;min-width:0;padding-left:14px;border-left:.5px solid var(--sep);font-size:13.5px}
+.summary dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.summary dt{color:var(--muted)}
+.summary dd{margin:0;color:var(--ink2);overflow-wrap:anywhere}
+.summary .chips{margin-top:10px}
+@media (max-width:720px){.summary{flex-basis:100%;max-width:none;padding-left:0;border-left:0;padding-top:10px;border-top:.5px solid var(--sep)}}
 .namewrap{display:flex;align-items:center;gap:10px}
 
 /* --------------------------------- переключатель темы (П:164–168) --------------------------------- */

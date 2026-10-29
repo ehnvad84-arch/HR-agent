@@ -68,7 +68,7 @@ test("заголовок: имя и ярлык, а без имени — оди�
 test("состояние человека: кандидат, веду особо, наблюдение", () => {
   assert.deepEqual(personState({ watch: "observed" }, null), { text: "наблюдение", tone: "b" });
   assert.deepEqual(personState({ watch: "watched" }, null), { text: "веду особо", tone: "v" });
-  assert.deepEqual(personState({ watch: "dropped" }, null), { text: "не наш: вне выдачи", tone: "r" });
+  assert.deepEqual(personState({ watch: "dropped" }, null), { text: "категорически нет: вне выдачи", tone: "r" });
   assert.deepEqual(personState({ watch: "observed" }, { status: "first_message_sent" }), { text: "кандидат: Написали", tone: "g" });
 });
 
@@ -105,8 +105,8 @@ test("названия событий и решений по-русски, не�
   assert.equal(eventDetail({ kind: "salary_changed", detail: { from: 150000, to: 190000 } }), "150 000 → 190 000");
   assert.equal(eventDetail({ kind: "opened_for_search", detail: {} }), null);
   assert.equal(eventDetail({ kind: "x", detail: null }), null);
-  assert.equal(decisionTitle("postpone"), "Отложил");
-  assert.equal(decisionTitle("reject"), "Отметил «не наш»");
+  assert.equal(decisionTitle("postpone"), "Временно отложил");
+  assert.equal(decisionTitle("reject"), "Отметил «категорически нет»");
   assert.equal(decisionTitle("q"), "q");
 });
 

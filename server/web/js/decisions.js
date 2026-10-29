@@ -1,4 +1,4 @@
-// Окна решений по человеку: «Отложить» и «Не наш» (общее окно комментария), «В работу» с выбором вакансии (S11–S13).
+// Окна решений по человеку: «Временно отложить» и «Категорически нет» (общее окно комментария), «Сохранить» (в кандидаты) с выбором вакансии (S11–S13).
 // Используется на «Сегодня» и в «Досье». Всё из API выводится только текстом.
 import {
   DEFAULT_MIN, HINTS, PLACEHOLDER, REASONS, TITLES, appendReason, canSave, counterText, countChars,
@@ -13,7 +13,7 @@ let minChars = DEFAULT_MIN;   // порог из ответа сервера (42
 
 /**
  * Общее окно комментария (S13): подсказки-причины, счётчик знаков, «Сохранить решение» только с порога.
- * Используется для «Отложить», «Не наш» и закрытия вакансии. Ошибка сервера — под кнопками, окно не закрывается,
+ * Используется для «Временно отложить», «Категорически нет» и закрытия вакансии. Ошибка сервера — под кнопками, окно не закрывается,
  * текст остаётся; порог из ответа 422 запоминается.
  *   send(text) — запрос на сервер (бросает ApiError); before — поля над подсказками (например выбор профиля).
  * Возвращает Promise<{saved, length}>.
@@ -76,7 +76,7 @@ export function openCommentSheet({ title, hint, reasons, send, before = null, wi
 }
 
 /**
- * Окно «Отложить» / «Не наш» по человеку: общее окно комментария и выбор профиля.
+ * Окно «Временно отложить» / «Категорически нет» по человеку: общее окно комментария и выбор профиля.
  *   person: {person_id, name, label}; matches: [{role_profile_id, role_title, score}] — профили на выбор.
  * Возвращает Promise<{saved, length, roleProfileId}>.
  */
@@ -101,10 +101,10 @@ export async function openDecisionSheet({ api, signal, kind, person, matches }) 
   return result.saved ? { ...result, roleProfileId } : result;
 }
 
-// ------------------------------------------------------------------ «В работу»
+// ------------------------------------------------------------------ «Сохранить» человека в кандидаты
 
 function chooseVacancy(options, person) {
-  const win = sheet({ title: `В работу: ${personName(person)}`, width: "520px",
+  const win = sheet({ title: `Сохранить: ${personName(person)}`, width: "520px",
     hint: "По профилю несколько открытых вакансий. Выберите, в чью воронку поставить человека: он встанет на этапе «Отобран агентом»." });
   const group = uid("vacancy");
   const radios = options.map((v, index) => {
@@ -115,7 +115,7 @@ function chooseVacancy(options, person) {
   });
   const form = h("form", h("fieldset.choices", h("legend", "Вакансия"), radios),
     h("div.sheetfoot.end", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"),
-      h("button.b.fill", { type: "submit" }, "В работу")));
+      h("button.b.fill", { type: "submit", "data-tip": "take" }, "Сохранить")));
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     win.close("ok");
@@ -130,7 +130,7 @@ function chooseVacancy(options, person) {
 }
 
 /**
- * «В работу» (S11): вакансию определяет профиль человека. Одна подходящая — сразу, несколько — выбор в окне,
+ * «Сохранить» в кандидаты (S11): вакансию определяет профиль человека. Одна подходящая — сразу, несколько — выбор в окне,
  * ни одной — подтверждение «в резерв без вакансии». Ошибки API уходят вызывающему.
  *   person: {person_id, name, label}; matches — если уже известны (в досье), иначе подгружаются.
  * Возвращает {taken, vacancy, candidateId}; отмена в окне — {taken: false}.
@@ -149,7 +149,7 @@ export async function takePerson({ api, signal, person, matches }) {
     vacancy = await chooseVacancy(options, person);
     if (!vacancy) return { taken: false };
   } else {
-    const agreed = await confirmSheet({ title: `В работу: ${personName(person)}`, confirmText: "В работу",
+    const agreed = await confirmSheet({ title: `Сохранить: ${personName(person)}`, confirmText: "Сохранить", confirmTip: "take",
       hint: "По профилю человека нет открытой вакансии. Он станет кандидатом в резерве без вакансии — привязать к вакансии можно позже." });
     if (!agreed) return { taken: false };
   }

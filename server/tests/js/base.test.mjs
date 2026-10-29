@@ -116,7 +116,7 @@ test("страницы: «Показано 50 из 55», доступность 
 test("«Где числится» и источник — русскими словами", () => {
   assert.equal(whereTitle("observed"), "наблюдение");
   assert.equal(whereTitle("watched"), "ведётся особо");
-  assert.equal(whereTitle("dropped"), "не наш");
+  assert.equal(whereTitle("dropped"), "категорически нет");
   assert.equal(whereTitle("candidate"), "кандидат");
   assert.equal(whereTitle("zzz"), "zzz");
   assert.equal(sourceTitle("hh"), "hh.ru");

@@ -132,7 +132,7 @@ test("значки без подписи (data-tip) в коде ссылаютс
   assert.ok(keys.length >= 8, "ожидаются значки, фото, поля и заголовки с data-tip");
   for (const [file, key] of keys) assert.ok(key.length > 0, file);
   const used = new Set(keys.map(([, key]) => key));
-  for (const key of ["face", "score", "search", "comment", "pill-where", "sort", "filter", "template"]) assert.ok(used.has(key), `data-tip="${key}" нигде не стоит`);
+  for (const key of ["face", "score", "search", "comment", "pill-where", "sort", "filter", "template", "take", "summary"]) assert.ok(used.has(key), `data-tip="${key}" нигде не стоит`);
 });
 
 test("словарь: подсказки короткие, простыми словами, без разметки", () => {
@@ -150,7 +150,9 @@ const el = (attrs = {}, text = "") => ({ getAttribute: (name) => (name in attrs 
 test("tipFor: data-tip → подпись → aria-label; нет в словаре — пусто", () => {
   assert.equal(tipFor(el({ "data-tip": "face" })), TIPS.face);
   assert.equal(tipFor(el({ "data-tip": "Свой текст подсказки" })), "Свой текст подсказки");
-  assert.equal(tipFor(el({}, "  В работу ")), TIPS["В работу"]);
+  assert.equal(tipFor(el({}, "  Временно отложить ")), TIPS["Временно отложить"]);
+  assert.equal(tipFor(el({ "data-tip": "take" }, "Сохранить")), TIPS.take);   // «Сохранить» у человека — свой текст, у форм — общий
+  assert.equal(tipFor(el({}, "Сохранить")), TIPS["Сохранить"]);
   assert.equal(tipFor(el({ "aria-label": "Сбросить" }, "×")), TIPS["Сбросить"]);
   assert.equal(tipFor(el({}, "Сегодня 8")), TIPS["Сегодня"]);   // вкладка с бейджем
   assert.equal(tipFor(el({}, "Какая-то неизвестная кнопка")), "");

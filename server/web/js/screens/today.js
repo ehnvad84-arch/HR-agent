@@ -8,7 +8,7 @@ import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
 import { TOASTS, resultText, takenText } from "../decisions-model.js";
 import { openDecisionSheet, takePerson } from "../decisions.js";
 import { declineSheet, draftSheet } from "../letter-ui.js";
-import { chip, face, personHref, personName, scoreBadge } from "../people.js";
+import { chip, face, personHref, personName, scoreBadge, summaryBlock } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
 import { normalizeToday } from "./today-model.js";
@@ -22,7 +22,7 @@ function signalCard(row, env) {
   const reason = alertReason(row.reason);
   const dossier = () => env.go("person", { id: row.person_id });
   const profiles = row.role_profile_id ? [{ role_profile_id: row.role_profile_id, role_title: row.role_title, score: row.score }] : [];
-  /** «Отложить» и «Не наш»: общее окно комментария (200 знаков); после сохранения карточка гаснет. */
+  /** «Временно отложить» и «Категорически нет»: общее окно комментария (200 знаков); после сохранения карточка гаснет. */
   const decide = (kind) => async () => {
     const result = await openDecisionSheet({ api: env.api, signal: env.signal, kind, person: row, matches: profiles });
     if (!result.saved) return;
@@ -31,23 +31,24 @@ function signalCard(row, env) {
     toast(TOASTS[kind]);
   };
   const card = actionCard(({ btns, status }) =>
-    h("div.row", scoreBadge(row.score), face(row, { size: "lg" }),
+    h("div.row.sigrow", scoreBadge(row.score), face(row, { size: "lg" }),
       h("div.grow", h("div.t1", h("a", { href: personHref(row.person_id) }, personName(row))),
         h("div.t2", [row.role_title, row.city].filter(Boolean).join(" · ")),
         h("div.t2", { style: "color:var(--ink2)" }, row.headline),
         h("div.chips", chip(reason.title, reason.tone)),
-        btns, status)),
+        btns, status),
+      summaryBlock(row.summary)),
   [
     // вакансию определяет профиль человека: одна — сразу, несколько — окно выбора, ни одной — подтверждение «в резерв»
-    actBtn("fill", "В работу", () => perform(card, () => takePerson({ api: env.api, signal: env.signal, person: row }),
+    actBtn("fill", "Сохранить", () => perform(card, () => takePerson({ api: env.api, signal: env.signal, person: row }),
       (result) => {
         if (!result.taken) { card.busy(false); return; }
         card.finish(takenText(result.vacancy));
         env.resolved();
         toast("Взят в работу");
-      })),
-    actBtn("", "Отложить", decide("postpone")),
-    actBtn("danger", "Не наш", decide("reject")),
+      }), "take"),
+    actBtn("", "Временно отложить", decide("postpone")),
+    actBtn("danger", "Категорически нет", decide("reject")),
     h("button.b.tint", { type: "button", onClick: dossier }, "Открыть досье"),
   ]);
   return card.el;
@@ -220,7 +221,7 @@ export function render(box, ctx) {
 
   const env = {
     api, signal, go: ctx.go, session: ctx.session,
-    /** Сигнал разобран (взят, отложен, «не наш»): число на вкладке уменьшается. */
+    /** Сигнал разобран (сохранён, отложен, «категорически нет»): число на вкладке уменьшается. */
     resolved() { badge = Math.max(0, badge - 1); showBadge(); },
     /** Перерисовать без экрана «Загружаю…»: данные уже на месте, обновляется только список. */
     async refresh() {
