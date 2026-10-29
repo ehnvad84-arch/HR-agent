@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 
 from . import db, hh, web
 from .api import actions as actions_api
+from .api import base as base_api
 from .api import contacts as contacts_api
 from .api import decisions as decisions_api
 from .api import funnel as funnel_api
@@ -22,7 +23,8 @@ from .deps import get_clock, get_conn_factory, get_hh_http
 log = logging.getLogger(__name__)
 app = FastAPI(title="Агент подбора", docs_url=None, redoc_url=None, openapi_url=None)
 for _r in (session_api.router, today_api.router, person_api.router, decisions_api.router,
-           funnel_api.router, actions_api.router, contacts_api.router):
+           funnel_api.router, actions_api.router, contacts_api.router,
+           base_api.router):
     app.include_router(_r)
 
 

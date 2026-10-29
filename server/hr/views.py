@@ -127,3 +127,61 @@ def dossier(conn: psycopg.Connection, person_id: int, full: bool = True) -> dict
             FROM decision_log d JOIN app_user u ON u.id = d.author_id
             WHERE d.person_id = %s ORDER BY d.created_at DESC""", (person_id,))
     return out
+
+
+# ------------------------------------------------------------------ база
+
+SORTS = {"name": "name", "city": "city", "role": "role_title", "dept": "dept", "score": "score", "where": "where_",
+         "source": "sources", "socn": "socn", "upd": "updated"}
+
+_BASE = """
+WITH best AS (
+    SELECT DISTINCT ON (m.person_id) m.person_id, m.score, rp.code AS role_code, rp.title AS role_title,
+           d.code AS dept_code, d.title AS dept
+    FROM match m JOIN role_profile rp ON rp.id = m.role_profile_id JOIN department d ON d.id = rp.department_id
+    WHERE (%(code)s::text IS NULL OR rp.code = %(code)s)
+    ORDER BY m.person_id, m.score DESC
+), people AS (
+    SELECT p.id AS person_id, p.label, p.city, p.last_event_at AS updated, p.candidate_id,
+           coalesce(c.fio, (SELECT nullif(btrim(concat_ws(' ', o.raw->>'last_name', o.raw->>'first_name')), '')
+                            FROM observation o WHERE o.person_id = p.id ORDER BY o.last_seen DESC LIMIT 1)) AS name,
+           CASE WHEN p.candidate_id IS NOT NULL THEN 'candidate' ELSE p.watch::text END AS where_,
+           (SELECT coalesce(array_agg(DISTINCT s.code ORDER BY s.code), '{{}}') FROM observation o
+            JOIN source s ON s.id = o.source_id WHERE o.person_id = p.id) AS sources,
+           (SELECT count(*) FROM social_profile sp WHERE sp.person_id = p.id AND sp.confidence <> 'rejected') AS socn,
+           EXISTS (SELECT 1 FROM ops.person_photo ph JOIN observation o ON o.id = ph.observation_id
+                   WHERE o.person_id = p.id AND ph.state = 'ok') AS photo,
+           b.score, b.role_code, b.role_title, b.dept_code, b.dept
+    FROM person p LEFT JOIN candidate c ON c.id = p.candidate_id
+    {join} best b ON b.person_id = p.id
+    WHERE (%(code)s::text IS NULL OR (p.watch <> 'dropped' AND NOT EXISTS (
+            SELECT 1 FROM decision_log dl JOIN role_profile x ON x.id = dl.role_profile_id
+            WHERE dl.person_id = p.id AND dl.kind = 'reject' AND x.code = %(code)s)))
+)
+SELECT *, count(*) OVER () AS total FROM people
+WHERE (%(dept)s::text IS NULL OR dept_code = %(dept)s OR dept = %(dept)s)
+  AND (%(city)s::text IS NULL OR city ILIKE %(city)s)
+  AND (%(role)s::text IS NULL OR role_code = %(role)s OR role_title = %(role)s)
+  AND (%(score_min)s::int IS NULL OR score >= %(score_min)s)
+  AND (%(where)s::text IS NULL OR where_ = %(where)s)
+  AND (%(source)s::text IS NULL OR %(source)s = ANY(sources))
+ORDER BY {order} {dir} NULLS LAST, person_id
+LIMIT %(limit)s OFFSET %(offset)s"""
+
+
+def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min=None, where=None, source=None,
+         sort="score", direction="desc", page=0, role_code=None) -> dict:
+    """S19, S22: таблица людей. Сортировка — только по колонкам из SORTS (имя колонки в SQL не из запроса).
+    role_code — подходящие к вакансии: только оценки по этому профилю, без «не наш» по нему и без dropped."""
+    if sort not in SORTS or direction not in ("asc", "desc"):
+        raise ValueError("сортировка")
+    size = int(setting(conn, "base_page_size", 50))
+    sql = _BASE.format(join="JOIN" if role_code else "LEFT JOIN", order=SORTS[sort], dir=direction)
+    items = rows(conn, sql, {"code": role_code, "dept": dept, "city": city, "role": role, "score_min": score_min,
+                             "where": where, "source": source, "limit": size, "offset": max(page, 0) * size})
+    total = items[0]["total"] if items else 0
+    for r in items:
+        r.pop("total")
+        r["where"] = r.pop("where_")
+        r["sources"] = list(r["sources"] or [])
+    return {"items": items, "total": total, "page": page, "page_size": size}
