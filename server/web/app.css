@@ -471,3 +471,16 @@ svg{width:100%;height:auto;display:block}
 .repgroup{margin-top:12px}
 .repgroup:first-child{margin-top:0}
 .repgroup > summary{padding:2px 0}
+
+/* --------------------------------- схема (S34) --------------------------------- */
+.livecounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.livecount{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 18px}
+.livecount .n{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.livecount .l{font-size:13.5px;color:var(--muted);margin-top:2px}
+table.runs thead th{cursor:default}
+table.runs td{vertical-align:top}
+table.runs tr.never td{color:var(--muted)}
+.runcode{font-size:12px;font-weight:400;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.runfacts{min-width:260px}
+table.runs td:nth-child(n+2):nth-child(-n+4){white-space:nowrap}
+table.runs td.name{min-width:190px}

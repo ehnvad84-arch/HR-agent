@@ -7,14 +7,14 @@
 // perm — право из /api/me; без него экран заменяется на «Нет доступа к этому разделу» (сервер проверяет права сам).
 // Исключение или отказ промиса из render() показываются карточкой ошибки с «Повторить».
 //
-// Чтобы сделать экран (T23–T31): создать screens/<имя>.js с функцией render и заменить ею placeholder ниже.
-import { placeholder } from "./placeholder.js";
+// Новый экран: создать screens/<имя>.js с функцией render и добавить запись в SCREENS (и маршрут в router.js).
 import { render as renderBase } from "./base.js";
 import { render as renderFunnel } from "./funnel.js";
 import { render as renderLearn } from "./learn.js";
 import { render as renderLogs } from "./logs.js";
 import { render as renderPerson } from "./person.js";
 import { render as renderProfiles } from "./profiles.js";
+import { render as renderSchema } from "./schema.js";
 import { render as renderToday } from "./today.js";
 import { render as renderVacancies } from "./vacancies.js";
 
@@ -27,5 +27,5 @@ export const SCREENS = {
   learn: { title: "Обучение агента", perm: "base.read", render: renderLearn },
   logs: { title: "Журнал и отчёт", perm: "report.read", render: renderLogs },
   funnel: { title: "Воронка", perm: "base.read", render: renderFunnel },
-  arch: { title: "Схема", perm: "base.read", render: placeholder("Схема") },
+  arch: { title: "Схема", perm: "base.read", render: renderSchema },
 };
