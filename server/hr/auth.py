@@ -126,6 +126,7 @@ def _hash_password(password: str) -> str:
 
 def create_user(conn: psycopg.Connection, login: str, full_name: str, role: str, password: str) -> int:
     """Временная учётная запись до входа из 1С (Решения): пользователь и хеш пароля."""
+    login = login.strip().lower()   # логин без учёта регистра: «Vadim» и «vadim» — одна запись
     uid = one(conn, """INSERT INTO app_user (login, full_name, role) VALUES (%s, %s, %s)
                        ON CONFLICT (login) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role
                        RETURNING id""", (login, full_name, role))["id"]
@@ -141,7 +142,7 @@ def check_password(conn: psycopg.Connection, login: str, password: str, now: dat
     now = now or SYSTEM.now()
     r = one(conn, """SELECT u.id, u.is_active, p.hash, p.failed_count, p.locked_until
                      FROM app_user u JOIN ops.user_password p ON p.user_id = u.id
-                     WHERE u.login = %s FOR UPDATE OF p""", (login,))
+                     WHERE lower(u.login) = lower(%s) FOR UPDATE OF p""", (login.strip(),))
     if not r or not r["is_active"]:
         return None
     if r["locked_until"] and r["locked_until"] > now:

@@ -89,3 +89,15 @@ def test_cli_user_create_asks_password_without_echo(conn_factory, conn, monkeypa
     uid = db.val(conn, "SELECT id FROM app_user WHERE login = 'rec'")
     assert auth.check_password(conn, "rec", "пароль-из-ввода-1") == uid
     assert "пароль-из-ввода" not in capsys.readouterr().out
+
+
+def test_login_case_insensitive(conn, boss, client):
+    """Логин — без учёта регистра: «Boss», «BOSS» и «boss» — одна учётная запись."""
+    for variant in ("Boss", "BOSS", " boss "):
+        assert login(client, user=variant).status_code == 200, variant
+
+
+def test_user_create_keeps_one_account_per_login(conn):
+    a = auth.create_user(conn, "Rec", "Рекрутер", "recruiter", "пароль-номер-один")
+    b = auth.create_user(conn, "rec", "Рекрутер", "recruiter", "пароль-номер-два")
+    assert a == b and db.val(conn, "SELECT login FROM app_user WHERE id = %s", (a,)) == "rec"
