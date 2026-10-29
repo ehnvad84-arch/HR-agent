@@ -7,9 +7,10 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from .. import assist, auth, photos, views
+from .. import assist, auth, dossier_docx, photos, views
+from ..clock import Clock
 from ..db import ConnFactory, j, run
-from ..deps import get_conn_factory, get_llm_http
+from ..deps import get_clock, get_conn_factory, get_llm_http
 
 router = APIRouter()
 NOT_FOUND = {"error": "not_found", "message": "Человек не найден"}
@@ -61,3 +62,28 @@ def explain(person_id: int, body: ExplainIn, user: Annotated[auth.User, Depends(
         return assist.explain_pair(conn_factory, person_id, body.role_profile_id, http=http)
     except assist.NotFound:
         raise HTTPException(404, {"error": "not_found", "message": "Нет оценки по этому профилю"}) from None
+
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@router.get("/api/person/{person_id}/export")
+def export(person_id: int, f: str,
+           user: Annotated[auth.User, Depends(auth.require("dossier.export", csrf=True))],
+           conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)],
+           clock: Annotated[Clock, Depends(get_clock)]):
+    """S10: docx — файл; pdf — запись выгрузки, сам PDF печатает браузер. GET с CSRF (security.md)."""
+    if f not in ("docx", "pdf"):
+        raise HTTPException(422, {"error": "validation", "message": "Формат — docx или pdf"})
+    now = clock.now()
+    with conn_factory() as conn:
+        built = dossier_docx.build(conn, person_id, now) if f == "docx" else None
+        d = built[1] if built else views.dossier(conn, person_id, full=False)
+        if d is None:
+            raise HTTPException(404, NOT_FOUND)
+        cid = d["candidate"]["id"] if d["candidate"] else None
+        eid = dossier_docx.record(conn, person_id, cid, f, user.id, now)
+    if f == "pdf":
+        return {"export_id": eid}
+    return Response(built[0], media_type=DOCX,
+                    headers={"Content-Disposition": f'attachment; filename="dossier-{person_id}.docx"'})

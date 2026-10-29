@@ -9,6 +9,7 @@ defusedxml==0.7.1
 bcrypt==5.0.0
 Pillow==13.0.0
 python-multipart==0.0.32
+python-docx==1.2.0
 # разработка
 pytest==9.1.1
 ruff==0.17.2

@@ -7,8 +7,8 @@
 <!-- Перезаписывается в конце каждой сессии и итерации. Здесь всё, что нужно следующей сессии с чистым контекстом. -->
 
 - Этап: 2 — разработка
-- Последнее сделанное: T1–T19b (миграция, вход, оболочка, «Сегодня», досье, фото, GigaChat, разбор по требованию, решения)
-- Следующий шаг: T20 — выгрузка досье в Word и PDF
+- Последнее сделанное: T1–T20 (миграция, вход, оболочка, «Сегодня», досье, фото, GigaChat, разбор по требованию, решения)
+- Следующий шаг: T21 — API экрана «Схема»
 - Важно знать:
   - Ветка от `feature/core`: core ещё не смержен (ждёт T21 и Этапа 3).
   - Реальные данные — база `ruware_hr` на `~/.local/pg16`, порт 55432; после перезагрузки поднимать вручную (память `hh-app-reminder`).
@@ -44,3 +44,4 @@
 - 2026-10-29 · T18 · `learning.build_digest|decide|apply_digest|current`, задачи `digest` и `apply_digest`, `/api/digest/current`, `/api/digest/{id}/decide` (право `digest.decide`), промпт `digest_proposal.md`, миграция `003_digest.sql` (`digest_similarity` 0.35): группы по векторам, предложение на группу, `target` только из белого списка с границами (W2), ночью — настройка, вес (новая версия профиля с утверждением) или «принято без правки», всё в `agent_change` с `proposal_id` и автором · 290 тестов зелёные
 - 2026-10-29 · T19 · `reports.py` + `GET /api/changelog` (from, to), `GET /api/report/weekly`, `POST /api/report/weekly/build` («Сформировать сейчас»), право `report.read`: отчёт за 7 дней по видам изменений в `weekly_report` · отклонение: тест и код в одном шаге; адрес «Сформировать» — `/build`, отправка `/send` — в T19b · pytest зелёный
 - 2026-10-29 · T19b · `mailer.py`: SMTP (465 — SSL, иначе STARTTLS, таймаут 30 с, один повтор через 60 с), задачи `digest_mail` и `weekly_report`, `POST /api/report/weekly/send` (отчёт сохраняется до отправки, отказ → 502), `GET /api/report/recipients`, `POST /api/digest/current/send`; в письмах только цифры и ссылка `WEB_URL`; `check_env.py` проверяет почту · pytest 300 зелёных
+- 2026-10-29 · T20 · `dossier_docx.py` + `GET /api/person/{id}/export?f=docx|pdf` (право `dossier.export`, CSRF и на GET): Word с 11 разделами пункта 30 без значений контактов; pdf — запись для печати в браузере; `dossier_export` и `audit_log export`; зависимость python-docx 1.2.0, pip-audit чисто · pytest зелёный
