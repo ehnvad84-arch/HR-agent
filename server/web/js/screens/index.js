@@ -9,9 +9,10 @@
 //
 // Чтобы сделать экран (T23–T31): создать screens/<имя>.js с функцией render и заменить ею placeholder ниже.
 import { placeholder } from "./placeholder.js";
+import { render as renderToday } from "./today.js";
 
 export const SCREENS = {
-  today: { title: "Сегодня", perm: "base.read", render: placeholder("Сегодня") },
+  today: { title: "Сегодня", perm: "base.read", render: renderToday },
   person: { title: "Досье", perm: "base.read", render: placeholder("Досье") },
   base: { title: "База", perm: "base.read", render: placeholder("База") },
   vacancies: { title: "Вакансии", perm: "base.read", render: placeholder("Вакансии") },
