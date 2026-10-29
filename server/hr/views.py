@@ -21,11 +21,18 @@ _CARD = """
                             ORDER BY o.last_seen DESC LIMIT 1)) AS name,
            EXISTS (SELECT 1 FROM ops.person_photo ph JOIN observation o ON o.id = ph.observation_id
                    WHERE o.person_id = p.id AND ph.state = 'ok') AS photo,
+           lo.exp_years, lo.salary_expect, lo.employer_current, lo.relocation_ready, lo.open_for_search,
+           lo.updated_at_src, lo.skills AS top_skills,
            (SELECT max(m.score) FROM match m WHERE m.person_id = p.id AND m.role_profile_id IN (
                 SELECT DISTINCT ON (x.code) x.id FROM role_profile x
                 WHERE x.is_active AND x.approved_at IS NOT NULL ORDER BY x.code, x.approved_at DESC, x.id DESC))
                AS best_score
     FROM person p LEFT JOIN candidate c ON c.id = p.candidate_id
+    LEFT JOIN LATERAL (   -- свежее резюме человека: короткая сводка для карточки
+        SELECT o.exp_years, o.salary_expect, o.employer_current, o.relocation_ready, o.open_for_search,
+               o.updated_at_src, o.skills[1:5] AS skills
+        FROM observation o WHERE o.person_id = p.id
+        ORDER BY o.is_gone, coalesce(o.updated_at_src, o.last_seen) DESC LIMIT 1) lo ON true
     WHERE p.id = ANY(%s)"""
 
 
@@ -34,9 +41,17 @@ def cards(conn: psycopg.Connection, person_ids: list[int]) -> dict[int, dict]:
     return {r["person_id"]: r for r in rows(conn, _CARD, (ids,))} if ids else {}
 
 
+SUMMARY = ("exp_years", "salary_expect", "employer_current", "relocation_ready", "open_for_search", "updated_at_src")
+
+
 def _card(c: dict | None) -> dict:
+    """Карточка человека для списков: имя или ярлык, фото и короткая сводка резюме — без контактов."""
     c = c or {}
-    return {"name": c.get("name"), "label": c.get("label"), "photo": bool(c.get("photo")), "city": c.get("city")}
+    summary = {k: c.get(k) for k in SUMMARY}
+    summary["exp_years"] = float(summary["exp_years"]) if summary["exp_years"] is not None else None
+    summary["skills"] = list(c.get("top_skills") or [])
+    return {"name": c.get("name"), "label": c.get("label"), "photo": bool(c.get("photo")), "city": c.get("city"),
+            "summary": summary}
 
 
 def today(conn: psycopg.Connection, now: datetime) -> dict:

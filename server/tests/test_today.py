@@ -90,3 +90,15 @@ def test_s36_meetings_today_and_tomorrow(conn, clock, api):
     meet = c.get("/api/today").json()["meetings"]
     assert len(meet) == 2 and meet[0]["scheduled_at"] < meet[1]["scheduled_at"]
     assert meet[0]["kind"] == "phone" and meet[0]["person_id"]
+
+
+def test_signal_card_has_resume_summary(conn, clock, api):
+    prof = profile(conn)
+    alert(conn, person(conn, clock, rid="sum", salary={"amount": 180000, "currency": "RUR"},
+                       relocation={"type": {"id": "relocation_possible"}}), prof)
+    c, _, _ = api()
+    card = c.get("/api/today").json()["signals"][0]
+    s = card["summary"]
+    assert s["exp_years"] and s["salary_expect"] == 180000 and s["relocation_ready"] is True
+    assert s["employer_current"] and s["skills"][:1] == ["Altium Designer"] and len(s["skills"]) <= 5
+    assert "updated_at_src" in s
