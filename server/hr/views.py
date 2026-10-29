@@ -194,3 +194,16 @@ def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min
         r["where"] = r.pop("where_")
         r["sources"] = list(r["sources"] or [])
     return {"items": items, "total": total, "page": page, "page_size": size}
+
+
+def schema(conn: psycopg.Connection) -> dict:
+    """S34: последний прогон каждой фоновой задачи и объём базы — живые цифры для экрана «Схема»."""
+    jobs = rows(conn, """SELECT DISTINCT ON (job) job, started_at, finished_at, ok, stats, error
+                         FROM ops.job_run ORDER BY job, started_at DESC, id DESC""")
+    counts = rows(conn, """SELECT (SELECT count(*) FROM observation) AS observations,
+                                  (SELECT count(*) FROM person) AS persons,
+                                  (SELECT count(*) FROM candidate) AS candidates,
+                                  (SELECT count(*) FROM role_profile WHERE is_active AND approved_at IS NOT NULL)
+                                      AS profiles,
+                                  (SELECT count(*) FROM alert WHERE state = 'new') AS signals""")[0]
+    return {"jobs": jobs, "counts": counts}

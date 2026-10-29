@@ -1,4 +1,4 @@
-"""«Сегодня» (S4, S5, S36, S37)."""
+"""«Сегодня» (S4, S5, S36, S37) и «Схема» (S34)."""
 from __future__ import annotations
 
 from typing import Annotated
@@ -19,3 +19,10 @@ def today(user: Annotated[auth.User, Depends(auth.require("base.read"))],
           clock: Annotated[Clock, Depends(get_clock)]):
     with conn_factory() as conn:
         return views.today(conn, clock.now())
+
+
+@router.get("/api/schema")
+def schema(user: Annotated[auth.User, Depends(auth.require("base.read"))],
+           conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)]):
+    with conn_factory() as conn:
+        return views.schema(conn)
