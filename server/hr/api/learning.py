@@ -38,3 +38,28 @@ def post(body: FeedbackIn, user: Annotated[auth.User, Depends(auth.require("feed
                              body.role_profile_id, http=http)
     except learning.Invalid as e:
         raise HTTPException(422, {"error": "validation", "message": f"Проверьте: {e}"}) from None
+
+
+@router.get("/api/digest/current")
+def digest(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+    with conn_factory() as conn:
+        return learning.current(conn) or {"proposals": []}
+
+
+class DecideIn(BaseModel):
+    decision: str
+    note: str | None = None
+
+
+@router.post("/api/digest/{proposal_id}/decide")
+def decide(proposal_id: int, body: DecideIn, user: Annotated[auth.User, Depends(auth.require("digest.decide"))],
+           conn_factory: Conn, clock: Now):
+    try:
+        with conn_factory() as conn:
+            return {"decision": learning.decide(conn, proposal_id, body.decision, body.note, user.id, clock.now())}
+    except learning.Invalid as e:
+        raise HTTPException(422, {"error": "validation", "message": f"Проверьте: {e}"}) from None
+    except learning.Conflict as e:
+        raise HTTPException(409, {"error": "conflict", "message": f"Нельзя: {e}"}) from None
+    except LookupError:
+        raise HTTPException(404, {"error": "not_found", "message": "Предложение не найдено"}) from None
