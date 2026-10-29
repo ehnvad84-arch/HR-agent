@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from . import gigachat
 from .config import get_config
 
 PROMPTS = Path(__file__).parent / "prompts"
@@ -42,10 +43,13 @@ def _json(text: str) -> Any:
         raise
 
 
-def complete(messages: list[dict], *, http: httpx.Client | None = None, max_tokens: int = 700) -> Any:
+def complete(messages: list[dict], *, http: httpx.Client | None = None, max_tokens: int = 700,
+             pause_minutes: float = 60) -> Any:
     cfg = get_config()
     if not cfg.llm_enabled:
         raise LLMUnavailable("модель не настроена: LLM_BASE_URL и LLM_MODEL пусты")
+    if cfg.gigachat_auth_key:
+        return _complete_gigachat(messages, http, max_tokens, pause_minutes)
     client = http or httpx.Client(timeout=cfg.llm_timeout_s)
     url = cfg.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {cfg.llm_api_key}"} if cfg.llm_api_key else {}
@@ -59,6 +63,27 @@ def complete(messages: list[dict], *, http: httpx.Client | None = None, max_toke
             r = client.post(url, json=body, headers=headers)
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
+        raise LLMUnavailable(f"модель не ответила: {type(e).__name__}") from None
+    try:
+        return _json(content)
+    except (json.JSONDecodeError, ValueError):
+        raise LLMUnavailable("модель вернула не JSON") from None
+
+
+def _complete_gigachat(messages: list[dict], http: httpx.Client | None, max_tokens: int,
+                       pause_minutes: float) -> Any:
+    cfg = get_config()
+    body: dict[str, Any] = {"model": cfg.gigachat_model, "messages": messages, "temperature": cfg.llm_temperature,
+                            "max_tokens": max_tokens}
+    try:
+        with gigachat.turn():
+            client = http or gigachat.client()
+            r = gigachat.post_chat(client, body, pause_minutes)
+            r.raise_for_status()
+            content = r.json()["choices"][0]["message"]["content"]
+    except gigachat.Unavailable as e:
+        raise LLMUnavailable(str(e)) from None
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
         raise LLMUnavailable(f"модель не ответила: {type(e).__name__}") from None
     try:

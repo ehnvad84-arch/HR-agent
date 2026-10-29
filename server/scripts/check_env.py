@@ -34,5 +34,18 @@ try:
     say(True, "база отвечает")
 except psycopg.Error:
     say(False, "база не отвечает: проверьте строку DATABASE_URL")
+print("Рабочее место:")
+say(len(e("SESSION_KEY", "")) >= 32, "SESSION_KEY задан (не короче 32 знаков)" if e("SESSION_KEY")
+    else "SESSION_KEY пустой: сгенерируйте python -m hr.cli gen-key")
+
+
+def note(text: str) -> None:   # необязательное: без него работает, но хуже
+    print("  · " + text)
+
+
+note("GIGACHAT_AUTH_KEY задан: разборы пишет модель" if e("GIGACHAT_AUTH_KEY")
+     else "GIGACHAT_AUTH_KEY не задан: разборы и письма по шаблону")
+if e("GIGACHAT_CA_FILE"):
+    say(os.path.isfile(e("GIGACHAT_CA_FILE")), "сертификат НУЦ из GIGACHAT_CA_FILE на месте")
 print("ШАГ 1 ВЫПОЛНЕН" if ok else "Есть ошибки: исправьте строки с ✗ в nano .env")
 sys.exit(0 if ok else 1)

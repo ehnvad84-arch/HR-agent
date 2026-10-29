@@ -12,7 +12,7 @@
 - Важно знать:
   - Ветка от `feature/core`: core ещё не смержен (ждёт T21 и Этапа 3).
   - Реальные данные — база `ruware_hr` на `~/.local/pg16`, порт 55432; после перезагрузки поднимать вручную (память `hh-app-reminder`).
-  - В `.env.example` дописать (агенту файл недоступен): `SESSION_KEY`, `WEB_HOSTS`.
+  - В `.env.example` дописать (агенту файл недоступен): `SESSION_KEY`, `WEB_HOSTS`, `GIGACHAT_AUTH_KEY`, `GIGACHAT_SCOPE`, `GIGACHAT_MODEL`, `GIGACHAT_CA_FILE`, `GIGACHAT_OAUTH_URL`, `GIGACHAT_BASE_URL`.
   - Живые вызовы hh и платные контакты в задачах — только на заглушке; живое подтверждение делает человек в T32.
   - Спека 263 строки при ориентире 200: фича объединена с `learning` решением человека; контракт API вынесен в `docs/reference/workplace-api.md`.
 
@@ -28,3 +28,5 @@
 - 2026-10-29 · T4 · `views.py` (карточка: имя из кандидата или hh, иначе ярлык; фото — флаг), `GET /api/today`; фикстура `api` в conftest для тестов API · pytest зелёный
 - 2026-10-29 · T5 · `views.dossier`, `GET /api/person/{id}` и `/dossier`: места работы из raw по белому списку полей, контакты не выдаются, просмотр `hiring_manager` → `audit_log view` · pytest зелёный
 - 2026-10-29 · T6 · `photos.py`: задача `photos` (только https-хосты hh, ≤ 2 МБ, 1 запрос/с, 3 попытки, JPEG ≤ 10 КБ без EXIF, защита от бомбы распаковки), `GET /api/person/{id}/photo`; зависимость Pillow 13.0.0, pip-audit чисто · pytest зелёный
+- 2026-10-29 · T6 (живой прогон) · `hr.cli run photos` на ruware_hr: 44 фото из 55 карточек (11 без фото на hh), максимум 10 189 байт
+- 2026-10-29 · T7 · `gigachat.py` + ветка в `llm.complete`: OAuth-токен в памяти, обновление за минуту и на 401, один поток, пауза на 429/402, TLS с НУЦ из файла; адреса сверены с OpenAPI (`docs/reference/gigachat.md`): генерация теперь на `api.giga.chat` · отклонение: тесты написаны после кода · pytest зелёный
