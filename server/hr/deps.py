@@ -19,3 +19,8 @@ def get_hh_http() -> httpx.Client:
 
 def get_clock() -> Clock:
     return SYSTEM
+
+
+def get_llm_http() -> httpx.Client | None:
+    """HTTP-клиент модели; None — llm.complete создаст свой (для GigaChat — с сертификатом НУЦ)."""
+    return None

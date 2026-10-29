@@ -43,6 +43,11 @@ def _json(text: str) -> Any:
         raise
 
 
+def model_name() -> str:
+    cfg = get_config()
+    return cfg.gigachat_model if cfg.gigachat_auth_key else cfg.llm_model
+
+
 def complete(messages: list[dict], *, http: httpx.Client | None = None, max_tokens: int = 700,
              pause_minutes: float = 60) -> Any:
     cfg = get_config()

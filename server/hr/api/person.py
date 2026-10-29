@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 
-from .. import auth, photos, views
+from .. import assist, auth, photos, views
 from ..db import ConnFactory, j, run
-from ..deps import get_conn_factory
+from ..deps import get_conn_factory, get_llm_http
 
 router = APIRouter()
 NOT_FOUND = {"error": "not_found", "message": "Человек не найден"}
@@ -44,3 +46,18 @@ def photo(person_id: int, user: Annotated[auth.User, Depends(auth.require("base.
     if data is None:
         raise HTTPException(404, {"error": "not_found", "message": "Фото нет"})
     return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+
+class ExplainIn(BaseModel):
+    role_profile_id: int
+
+
+@router.post("/api/person/{person_id}/explain")
+def explain(person_id: int, body: ExplainIn, user: Annotated[auth.User, Depends(auth.require("base.read"))],
+            conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)],
+            http: Annotated[httpx.Client | None, Depends(get_llm_http)]):
+    """S7, S8: разбор моделью отдельно от досье — досье не ждёт модель."""
+    try:
+        return assist.explain_pair(conn_factory, person_id, body.role_profile_id, http=http)
+    except assist.NotFound:
+        raise HTTPException(404, {"error": "not_found", "message": "Нет оценки по этому профилю"}) from None
