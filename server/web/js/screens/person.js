@@ -2,6 +2,8 @@
 // Данные — GET /api/person/{id}/dossier. Разбор моделью приходит отдельно (POST …/explain) и не задерживает досье.
 // Всё из ответа выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
+import { TOASTS } from "../decisions-model.js";
+import { openDecisionSheet, takePerson } from "../decisions.js";
 import { absoluteDay, dateTimeLabel, moneyText, statusTitle, yearsText } from "../format.js";
 import { chip, face, personName, scoreBadge } from "../people.js";
 import { hashFor } from "../router.js";
@@ -82,11 +84,13 @@ function headerCard(data, env) {
   const status = errorLine();
   const canTake = env.session.can("person.take");
   const watched = person.watch === "watched";
-  const act = async (request, done) => {
+  /** Действие из шапки: ошибка — под кнопками; false от request — человек отменил окно; успех — уведомление и новое досье. */
+  const act = async (request, doneText) => {
     status.clear();
     try {
-      await request();
-      done();
+      const result = await request();
+      if (result === false) return;
+      toast(typeof doneText === "function" ? doneText(result) : doneText);
       await env.refresh();
     } catch (error) {
       if (error && error.name === "AbortError") return;
@@ -94,12 +98,21 @@ function headerCard(data, env) {
     }
   };
   const id = encodeURIComponent(person.person_id);
+  const decide = (kind) => () => act(async () => {
+    const result = await openDecisionSheet({ api: env.api, signal: env.signal, kind, person, matches });
+    return result.saved ? kind : false;
+  }, (k) => TOASTS[k]);
+  const open = canTake && !candidate;
   const buttons = [
-    canTake && !candidate ? h("button.b.fill", { type: "button", onClick: () =>
-      act(() => env.api.post(`/api/person/${id}/take`, {}, { signal: env.signal }), () => toast("Взят в работу")) }, "В работу") : null,
+    open ? h("button.b.fill", { type: "button", onClick: () => act(async () => {
+      const result = await takePerson({ api: env.api, signal: env.signal, person, matches });
+      return result.taken ? result : false;
+    }, () => "Взят в работу") }, "В работу") : null,
+    open ? h("button.b", { type: "button", onClick: decide("postpone") }, "Отложить") : null,
+    open && person.watch !== "dropped" ? h("button.b.danger", { type: "button", onClick: decide("reject") }, "Не наш") : null,
     canTake && person.watch !== "dropped" ? h("button.b", { type: "button", "aria-pressed": watched, onClick: () =>
       act(() => env.api.post(`/api/person/${id}/watch`, { on: !watched }, { signal: env.signal }),
-        () => toast(watched ? "Особое наблюдение снято" : "Веду особо: сигнал придёт на любое изменение резюме")) },
+        watched ? "Особое наблюдение снято" : "Веду особо: сигнал придёт на любое изменение резюме") },
     watched ? "Не вести особо" : "Вести особо") : null,
     env.session.can("dossier.export") ? h("button.b", { type: "button", onClick: () => exportSheet(person, env) },
       "Выгрузить в Word или PDF") : null,
@@ -163,16 +176,34 @@ function skillsCard(obs) {
   return skills.length ? card("Навыки", h("div.chips", { style: "margin-top:0" }, skills.map((s) => chip(s)))) : null;
 }
 
-function socialCard(social) {
+function socialCard(social, env) {
+  const canConfirm = env.session.can("person.take");
   const rows = social.map((s) => {
     const info = socialInfo(s.kind);
     const conf = confidenceInfo(s.confidence);
     const meta = [s.handle, s.last_activity ? `последняя активность: ${absoluteDay(s.last_activity)}` : null].filter(Boolean).join(" · ");
+    // S15: вероятный профиль подтверждает рекрутер; 409 (профиль отклонён) — текст ответа под кнопкой
+    const status = errorLine();
+    const confirm = h("button.b.tint", { type: "button", onClick: async () => {
+      status.clear();
+      confirm.disabled = true;
+      try {
+        await env.api.post(`/api/social/${encodeURIComponent(s.id)}/confirm`, {}, { signal: env.signal });
+        toast("Профиль подтверждён: теперь он учитывается в разборе");
+        await env.refresh();
+      } catch (error) {
+        if (error && error.name === "AbortError") return;
+        status.show(error);
+        confirm.disabled = false;
+      }
+    } }, "Подтвердить");
     return h("div.soc", h("div.ico", { class: info.ico, "aria-hidden": "true" }, info.abbr),
       h("div", h("div", { style: "font-weight:600" }, info.title, " ", chip(conf.text, conf.tone)),
         s.summary ? h("div.t2", s.summary) : null,
         meta ? h("div.t2", meta) : null,
-        s.url ? h("div.t2", h("a.link", { href: s.url, target: "_blank" }, "открыть профиль")) : null));
+        s.url ? h("div.t2", h("a.link", { href: s.url, target: "_blank" }, "открыть профиль")) : null,
+        canConfirm && s.confidence === "probable" ? h("div.btns", { style: "margin-top:8px" }, confirm) : null,
+        status.el));
   });
   return card("Соцсети и профессиональные следы",
     rows.length ? rows : h("div.t2", "Профессиональных следов в открытых источниках пока не найдено. Агент повторит поиск при следующем изменении резюме."),
@@ -254,7 +285,7 @@ export function view(data, env) {
       h("div.split", { style: "margin-top:14px" },
         h("div.stack", data.observations.length ? data.observations.map((o, i) => resumeCard(o, i, data))
           : card("Резюме", h("div.t2", "Резюме площадок для этого человека нет.")),
-        experienceCard(first), skillsCard(data.observations), socialCard(data.social)),
+        experienceCard(first), skillsCard(data.observations), socialCard(data.social, env)),
         h("div.stack", matchCards, data.candidate ? candidateCard(data.candidate) : null, timelineCard(data), decisionsCard(data))),
     ],
   };

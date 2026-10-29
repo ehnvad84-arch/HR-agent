@@ -116,10 +116,12 @@ export function errorLine() {
  * Поле с видимой подписью: {root, input, error(text)}. kind: "text" | "password" | "textarea".
  * Ошибка проверки (422) показывается у поля и связана с ним через aria-describedby.
  */
-export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint } = {}) {
+export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint, describedBy } = {}) {
   const id = uid(name || "field");
   const errId = `${id}-err`;
-  const common = { id, name, autocomplete, required, placeholder, "aria-describedby": errId, "aria-invalid": false };
+  // describedBy — id других подсказок поля (например счётчика знаков): читаются вместе с текстом ошибки
+  const common = { id, name, autocomplete, required, placeholder, "aria-describedby": [describedBy, errId].filter(Boolean).join(" "),
+    "aria-invalid": false };
   const input = kind === "textarea"
     ? h("textarea", { ...common }, value)
     : h("input", { ...common, type: kind, value });
@@ -188,6 +190,7 @@ export function sheet({ title, hint, width, dismissible = true, className = "" }
     el: dialog,
     body,
     closed,
+    dismissible,
     /** Открыть как модальное окно; focusEl — что подсветить сразу (по умолчанию первый элемент ввода). */
     show(focusEl) {
       document.body.appendChild(dialog);
@@ -204,7 +207,22 @@ export function sheet({ title, hint, width, dismissible = true, className = "" }
   return handle;
 }
 
-/** Закрыть все открытые окна (при выходе): на экране не должно остаться ничего о людях. */
-export function closeAllSheets() {
-  [...openSheets].forEach((win) => win.close("closed"));
+/**
+ * Окно «да / нет». Фокус — на «Отмена»: случайный Enter ничего не подтверждает. Возвращает Promise<boolean>.
+ */
+export function confirmSheet({ title, hint, confirmText, cancelText = "Отмена", width = "440px" }) {
+  const win = sheet({ title, hint, width });
+  const cancel = h("button.b", { type: "button", onClick: () => win.close("cancel") }, cancelText);
+  const ok = h("button.b.fill", { type: "button", onClick: () => win.close("ok") }, confirmText);
+  win.body.append(h("div.sheetfoot.end", cancel, ok));
+  win.show(cancel);
+  return win.closed.then((outcome) => outcome === "ok");
+}
+
+/**
+ * Закрыть открытые окна: при выходе — все (на экране не должно остаться ничего о людях); при смене экрана
+ * («Назад» в браузере) — только те, что можно закрыть Esc, окно повторного входа остаётся.
+ */
+export function closeAllSheets({ onlyDismissible = false } = {}) {
+  [...openSheets].filter((win) => !onlyDismissible || win.dismissible).forEach((win) => win.close("closed"));
 }

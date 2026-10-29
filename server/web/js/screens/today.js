@@ -2,6 +2,8 @@
 // Данные — GET /api/today. Всё из ответа выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
+import { TOASTS, resultText, takenText } from "../decisions-model.js";
+import { openDecisionSheet, takePerson } from "../decisions.js";
 import { chip, face, personHref, personName, scoreBadge } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
@@ -59,7 +61,15 @@ const nameLine = (person) => h("div.namewrap", face(person, { small: true }),
 function signalCard(row, env) {
   const reason = alertReason(row.reason);
   const dossier = () => env.go("person", { id: row.person_id });
-  // «Отложить» и «Не наш» откроют окна с комментарием от 200 знаков в задаче «окна решений»; пока ведут в досье
+  const profiles = row.role_profile_id ? [{ role_profile_id: row.role_profile_id, role_title: row.role_title, score: row.score }] : [];
+  /** «Отложить» и «Не наш»: общее окно комментария (200 знаков); после сохранения карточка гаснет. */
+  const decide = (kind) => async () => {
+    const result = await openDecisionSheet({ api: env.api, signal: env.signal, kind, person: row, matches: profiles });
+    if (!result.saved) return;
+    card.finish(resultText(kind, result.length));
+    env.resolved();
+    toast(TOASTS[kind]);
+  };
   const card = actionCard(({ btns, status }) =>
     h("div.row", scoreBadge(row.score),
       h("div.grow", nameLine(row),
@@ -68,15 +78,16 @@ function signalCard(row, env) {
         h("div.chips", chip(reason.title, reason.tone)),
         btns, status)),
   [
-    actBtn("fill", "В работу", () => perform(card,
-      () => env.api.post(`/api/person/${encodeURIComponent(row.person_id)}/take`, {}, { signal: env.signal }),
-      () => {
-        card.finish("Взят в работу. Контакт не открыт: его можно открыть в досье");
-        env.taken();
+    // вакансию определяет профиль человека: одна — сразу, несколько — окно выбора, ни одной — подтверждение «в резерв»
+    actBtn("fill", "В работу", () => perform(card, () => takePerson({ api: env.api, signal: env.signal, person: row }),
+      (result) => {
+        if (!result.taken) { card.busy(false); return; }
+        card.finish(takenText(result.vacancy));
+        env.resolved();
         toast("Взят в работу");
       })),
-    h("button.b", { type: "button", onClick: dossier }, "Отложить"),
-    h("button.b.danger", { type: "button", onClick: dossier }, "Не наш"),
+    actBtn("", "Отложить", decide("postpone")),
+    actBtn("danger", "Не наш", decide("reject")),
     h("button.b.tint", { type: "button", onClick: dossier }, "Открыть досье"),
   ]);
   return card.el;
@@ -191,7 +202,8 @@ export function render(box, ctx) {
 
   const env = {
     api, signal, go: ctx.go,
-    taken() { badge = Math.max(0, badge - 1); showBadge(); },
+    /** Сигнал разобран (взят, отложен, «не наш»): число на вкладке уменьшается. */
+    resolved() { badge = Math.max(0, badge - 1); showBadge(); },
     /** Перерисовать без экрана «Загружаю…»: данные уже на месте, обновляется только список. */
     async refresh() {
       try {

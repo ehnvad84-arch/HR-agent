@@ -29,6 +29,7 @@ const tabs = buildTabs($("#tabs"), titles, {
 function renderRoute(route) {
   if (!session.user) return;   // страница входа открыта: чужие адреса в хэше ничего не грузят
   if (screenAbort) screenAbort.abort();
+  closeAllSheets({ onlyDismissible: true });   // окно решения не должно пережить уход с экрана, к которому оно относилось
   const controller = new AbortController();
   screenAbort = controller;
   const screen = SCREENS[route.name];
