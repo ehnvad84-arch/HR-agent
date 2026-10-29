@@ -50,7 +50,7 @@ function renderRoute(route) {
   }
   const ctx = {
     route, params: route.params, query: route.query, signal: controller.signal, api, session,
-    go: (name, params, query) => router.go(name, params, query),
+    go: (name, params, query, options) => router.go(name, params, query, options),
     setBadge: tabs.setBadge,
   };
   Promise.resolve()
