@@ -17,6 +17,7 @@ from .api import funnel as funnel_api
 from .api import person as person_api
 from .api import session as session_api
 from .api import today as today_api
+from .api import vacancies as vacancies_api
 from .clock import Clock
 from .deps import get_clock, get_conn_factory, get_hh_http
 
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="Агент подбора", docs_url=None, redoc_url=None, openapi_url=None)
 for _r in (session_api.router, today_api.router, person_api.router, decisions_api.router,
            funnel_api.router, actions_api.router, contacts_api.router,
-           base_api.router):
+           base_api.router, vacancies_api.router):
     app.include_router(_r)
 
 
