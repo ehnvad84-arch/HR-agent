@@ -9,7 +9,8 @@ from datetime import datetime
 
 import psycopg
 
-from .db import j, one, rows, run, val
+from . import pipeline, scoring
+from .db import j, one, rows, run, setting, val
 from .scoring import FEATURE_LABELS
 
 EDITABLE = ("title", "geo", "salary_min", "salary_max", "must_have", "nice_to_have", "stop_factors", "weights",
@@ -143,3 +144,47 @@ def approve(conn: psycopg.Connection, profile_id: int, user_id: int, now: dateti
                                                           "state": "approved"}),
          user_id, now, f"утверждена версия {p['version']} профиля «{p['title']}»"))
     return {"id": profile_id, "state": "approved"}
+
+
+def preview(conn: psycopg.Connection, profile_id: int) -> dict:
+    """S26: сколько людей пройдёт порог по неутверждённой версии против действующей. В базу не пишет."""
+    new = one(conn, """SELECT rp.*, d.code AS dept_code FROM role_profile rp
+                       JOIN department d ON d.id = rp.department_id WHERE rp.id = %s""", (profile_id,))
+    if not new:
+        raise NotFound
+    if new["approved_at"]:
+        raise Conflict("версия уже утверждена")
+    cur = next((p for p in pipeline.current_profiles(conn) if p["code"] == new["code"]), None)
+    threshold = int(setting(conn, "watch_threshold", 60))
+    limit = int(setting(conn, "preview_max_persons", 5000))
+    prm = pipeline.params(conn)
+    pn, pc = scoring.Profile.from_row(new), scoring.Profile.from_row(cur) if cur else None
+    enter, leave, now_n, new_n = [], [], 0, 0
+    ids = [r["id"] for r in rows(conn, "SELECT id FROM person ORDER BY last_event_at DESC NULLS LAST LIMIT %s",
+                                 (limit,))]
+    for pid in ids:
+        person = pipeline.person_data(conn, pid)
+        s_new = scoring.score(person, pn, prm).score
+        s_now = scoring.score(person, pc, prm).score if pc else 0
+        now_n += s_now >= threshold
+        new_n += s_new >= threshold
+        row = {"person_id": pid, "score_now": s_now, "score_new": s_new}
+        if s_new >= threshold > s_now:
+            enter.append(row)
+        elif s_now >= threshold > s_new:
+            leave.append(row)
+    labels = {r["id"]: r["label"] for r in rows(conn, "SELECT id, label FROM person WHERE id = ANY(%s)",
+                                                ([x["person_id"] for x in enter + leave],))}
+    for x in enter + leave:
+        x["label"] = labels.get(x["person_id"])
+    return {"passes_now": now_n, "passes_new": new_n, "checked": len(ids), "threshold": threshold,
+            "enter": enter[:50], "leave": leave[:50]}
+
+
+def approvers(conn: psycopg.Connection) -> dict:
+    """S39: кто может утверждать профили — по role_permission (только чтение до exchange-1c)."""
+    roles = [r["role"] for r in rows(conn, """SELECT role::text AS role FROM role_permission
+                                              WHERE permission = 'profile.approve' ORDER BY role""")]
+    users = rows(conn, """SELECT id, login, full_name, role::text AS role FROM app_user
+                          WHERE is_active AND role::text = ANY(%s) ORDER BY full_name""", (roles,))
+    return {"roles": roles, "users": users}

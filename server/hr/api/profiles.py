@@ -65,3 +65,18 @@ def approve(profile_id: int, user: Annotated[auth.User, Depends(auth.require("pr
     out = _errors(go)
     background.add_task(_rescore, conn_factory, profile_id)   # «Схема» показывает ход по ops.job_run
     return JSONResponse({**out, "rescore": "started"}, status_code=202)
+
+
+@router.get("/api/profile/{profile_id}/preview")
+def preview(profile_id: int, user: Annotated[auth.User, Depends(auth.require("profile.edit"))],
+            conn_factory: Conn):
+    def go():
+        with conn_factory() as conn:
+            return profiles.preview(conn, profile_id)
+    return _errors(go)
+
+
+@router.get("/api/approvers")
+def approvers(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+    with conn_factory() as conn:
+        return profiles.approvers(conn)
