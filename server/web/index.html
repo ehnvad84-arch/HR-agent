@@ -4,8 +4,41 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Подбор — рабочее место</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+<script src="js/theme-init.js"></script>
+<script type="module" src="app.js"></script>
 </head>
 <body>
-<p>Рабочее место загружается…</p>
+<noscript><p class="note">Рабочему месту нужен включённый JavaScript.</p></noscript>
+<button type="button" class="skip" id="skip">К содержимому</button>
+
+<!-- до ответа /api/me и при сбое связи -->
+<div id="boot" class="boot" aria-busy="true"><span>Загружаю…</span></div>
+
+<!-- страница входа: форму строит login.js -->
+<section id="login-page" aria-label="Вход" hidden></section>
+
+<div id="app" hidden>
+  <header class="nav">
+    <div class="navin">
+      <div class="navtop">
+        <div class="mark" aria-hidden="true">Р</div>
+        <h1 class="h1">Подбор</h1>
+        <div class="right">
+          <div class="theme" id="theme" role="group" aria-label="Тема оформления"></div>
+          <span class="who" id="who"></span>
+          <button type="button" class="linkbtn" id="logout">Выйти</button>
+          <div class="ava" id="ava" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="seg" id="tabs" role="tablist" aria-label="Разделы рабочего места"></div>
+    </div>
+  </header>
+  <main id="view" role="tabpanel" tabindex="-1"></main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

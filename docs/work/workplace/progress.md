@@ -7,12 +7,13 @@
 <!-- Перезаписывается в конце каждой сессии и итерации. Здесь всё, что нужно следующей сессии с чистым контекстом. -->
 
 - Этап: 2 — разработка
-- Последнее сделанное: T1–T21 — весь сервер (миграция, вход, оболочка, «Сегодня», досье, фото, GigaChat, разбор по требованию, решения)
-- Следующий шаг: T22 — оболочка экранов `server/web/` (frontend-developer)
+- Последнее сделанное: T1–T22 — сервер и оболочка экранов (миграция, вход, оболочка, «Сегодня», досье, фото, GigaChat, разбор по требованию, решения)
+- Следующий шаг: T23 — экран «Сегодня»
 - Важно знать:
   - Ветка от `feature/core`: core ещё не смержен (ждёт T21 и Этапа 3).
   - Реальные данные — база `ruware_hr` на `~/.local/pg16`, порт 55432; после перезагрузки поднимать вручную (память `hh-app-reminder`).
   - В `.env.example` дописать (агенту файл недоступен): `SESSION_KEY`, `WEB_HOSTS`, `GIGACHAT_AUTH_KEY`, `GIGACHAT_SCOPE`, `GIGACHAT_MODEL`, `GIGACHAT_CA_FILE`, `GIGACHAT_OAUTH_URL`, `GIGACHAT_BASE_URL`, `STORAGE_DIR`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `MAIL_TO`, `WEB_URL`.
+  - Экраны проверяются на копии базы `ruware_hr_dev`, сервер разработки — `scratchpad/dev_server.sh` (порт 8010), служебная учётка `dev`, пароль в `scratchpad/dev_pass`.
   - Живые вызовы hh и платные контакты в задачах — только на заглушке; живое подтверждение делает человек в T32.
   - Спека 263 строки при ориентире 200: фича объединена с `learning` решением человека; контракт API вынесен в `docs/reference/workplace-api.md`.
 
@@ -46,3 +47,4 @@
 - 2026-10-29 · T19b · `mailer.py`: SMTP (465 — SSL, иначе STARTTLS, таймаут 30 с, один повтор через 60 с), задачи `digest_mail` и `weekly_report`, `POST /api/report/weekly/send` (отчёт сохраняется до отправки, отказ → 502), `GET /api/report/recipients`, `POST /api/digest/current/send`; в письмах только цифры и ссылка `WEB_URL`; `check_env.py` проверяет почту · pytest 300 зелёных
 - 2026-10-29 · T20 · `dossier_docx.py` + `GET /api/person/{id}/export?f=docx|pdf` (право `dossier.export`, CSRF и на GET): Word с 11 разделами пункта 30 без значений контактов; pdf — запись для печати в браузере; `dossier_export` и `audit_log export`; зависимость python-docx 1.2.0, pip-audit чисто · pytest зелёный
 - 2026-10-29 · T21 · `views.schema` + `GET /api/schema`: последний прогон каждой задачи из `ops.job_run` и объём базы · отклонение: тест и код в одном шаге · pytest зелёный. Серверная часть T1–T21 закрыта
+- 2026-10-29 · T22 · frontend-developer: оболочка `server/web/` (index.html, app.css, app.js, модули `js/`: `h()`, клиент API с CSRF и повторным входом, хэш-маршрутизатор, темы, вход и выход), контраст токенов поправлен, `innerHTML` нет; тесты `test_web_static.py`, node-тесты через `test_web_js.py` · 321 тест зелёный; браузер: headless Chromium (CDP) — вход, 401, CSRF, клавиатура, без ошибок CSP; снимки в scratchpad/t22 · проверка: снимок «Сегодня» просмотрен главной сессией · отклонения: вход — режим index.html, без отдельного login.html; в `ruware_hr_dev` один лишний запрос approve (409, без изменений)
