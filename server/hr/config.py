@@ -62,6 +62,16 @@ class Config:
         "GIGACHAT_OAUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"))
     gigachat_base_url: str = field(default_factory=lambda: _env("GIGACHAT_BASE_URL", "https://api.giga.chat/v1"))
 
+    # почта дайджеста и отчёта (решение человека 2026-10-29); в письме цифры и ссылка, без людей
+    smtp_host: str = field(default_factory=lambda: _env("SMTP_HOST"))
+    smtp_port: int = field(default_factory=lambda: _int("SMTP_PORT", 587))
+    smtp_user: str = field(default_factory=lambda: _env("SMTP_USER"))
+    smtp_password: str = field(default_factory=lambda: _env("SMTP_PASSWORD"))
+    mail_from: str = field(default_factory=lambda: _env("MAIL_FROM"))
+    mail_to: tuple[str, ...] = field(default_factory=lambda: tuple(
+        a.strip() for a in _env("MAIL_TO").split(",") if a.strip()))
+    web_url: str = field(default_factory=lambda: _env("WEB_URL", "http://localhost:8000/"))
+
     session_key: str = field(default_factory=lambda: _env("SESSION_KEY"))
     # хосты, с которых открывают рабочее место: проверка Origin и TrustedHost (AD-6, через туннель)
     web_hosts: tuple[str, ...] = field(default_factory=lambda: tuple(

@@ -53,7 +53,7 @@
   Готово, когда: три похожих сообщения дают одно предложение (19), «принять» → изменение и `agent_change` после `apply_digest` (20), «поставь порог 0» отбраковано (W2). Задачи запускаются `python -m hr.cli run digest|apply_digest`.
 - [x] T19 — `reports.py`: журнал изменений `GET /api/changelog`, недельный отчёт `GET /api/report/weekly` и «Сформировать сейчас» · сценарий: S32, S33 · проверка: auto · исполнитель: main
   Готово, когда: тесты журнала за период и отчёта зелёные.
-- [ ] T19b — `mailer.py`: SMTP, задачи `digest_mail` и `weekly_report`, `POST /api/report/weekly/send`, «Получатели», «Сводку на почту», `SMTP_*` и `MAIL_*` в `.env.example` и `check_env.py` · сценарий: S33, S40, S41 · проверка: auto · исполнитель: main
+- [x] T19b — `mailer.py`: SMTP, задачи `digest_mail` и `weekly_report`, `POST /api/report/weekly/send`, «Получатели», «Сводку на почту», `SMTP_*` и `MAIL_*` в `.env.example` и `check_env.py` · сценарий: S33, S40, S41 · проверка: auto · исполнитель: main
   Готово, когда: тесты на заглушке SMTP зелёные: письмо уходит всем адресам `MAIL_TO`, в нём нет данных о людях, при отказе отчёт сохранён и на экране «не отправлено». Задачи запускаются `python -m hr.cli run digest_mail|weekly_report`.
 - [ ] T20 — выгрузка досье: Word через `python-docx` по разделам пункта 30, PDF — запись `dossier_export` для печати в браузере, `audit_log` · сценарий: S10 · проверка: auto · исполнитель: main
   Готово, когда: тест проверяет разделы пункта 30 в .docx, две записи `dossier_export` с автором (25, 30) и отсутствие значений контактов.

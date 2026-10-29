@@ -47,5 +47,10 @@ note("GIGACHAT_AUTH_KEY задан: разборы пишет модель" if e
      else "GIGACHAT_AUTH_KEY не задан: разборы и письма по шаблону")
 if e("GIGACHAT_CA_FILE"):
     say(os.path.isfile(e("GIGACHAT_CA_FILE")), "сертификат НУЦ из GIGACHAT_CA_FILE на месте")
+if e("SMTP_HOST"):
+    say(bool(e("SMTP_USER") and e("SMTP_PASSWORD")), "почта: SMTP_USER и SMTP_PASSWORD вписаны")
+    say("@" in e("MAIL_TO", ""), "почта: MAIL_TO — адреса получателей")
+else:
+    note("SMTP_HOST не задан: дайджест и отчёт на почту не уходят, только на экране")
 print("ШАГ 1 ВЫПОЛНЕН" if ok else "Есть ошибки: исправьте строки с ✗ в nano .env")
 sys.exit(0 if ok else 1)

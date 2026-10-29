@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from . import alerts, collect, explain, files, jobs, learning, photos, pipeline, search, social
+from . import alerts, collect, explain, files, jobs, learning, mailer, photos, pipeline, search, social
 from .clock import SYSTEM, Clock
 from .db import ConnFactory, rows
 from .db import run as sql
@@ -53,6 +53,8 @@ TASKS: dict[str, Task] = {
     "photos": Task(photos.fetch_photos, ("source:hh",)),
     "digest": Task(lambda cf, clock=None, **kw: learning.build_digest(cf, (clock or SYSTEM).now(), **kw)),
     "apply_digest": Task(learning.apply_digest),
+    "digest_mail": Task(mailer.digest_mail),
+    "weekly_report": Task(mailer.weekly_report),
 }
 
 
