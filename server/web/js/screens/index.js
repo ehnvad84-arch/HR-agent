@@ -11,6 +11,7 @@
 import { placeholder } from "./placeholder.js";
 import { render as renderBase } from "./base.js";
 import { render as renderFunnel } from "./funnel.js";
+import { render as renderLearn } from "./learn.js";
 import { render as renderPerson } from "./person.js";
 import { render as renderProfiles } from "./profiles.js";
 import { render as renderToday } from "./today.js";
@@ -22,7 +23,7 @@ export const SCREENS = {
   base: { title: "База", perm: "base.read", render: renderBase },
   vacancies: { title: "Вакансии", perm: "base.read", render: renderVacancies },
   profiles: { title: "База должностей", perm: "base.read", render: renderProfiles },
-  learn: { title: "Обучение агента", perm: "base.read", render: placeholder("Обучение агента") },
+  learn: { title: "Обучение агента", perm: "base.read", render: renderLearn },
   logs: { title: "Журнал и отчёт", perm: "report.read", render: placeholder("Журнал и отчёт") },
   funnel: { title: "Воронка", perm: "base.read", render: renderFunnel },
   arch: { title: "Схема", perm: "base.read", render: placeholder("Схема") },
