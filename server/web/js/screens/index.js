@@ -12,12 +12,13 @@ import { placeholder } from "./placeholder.js";
 import { render as renderBase } from "./base.js";
 import { render as renderPerson } from "./person.js";
 import { render as renderToday } from "./today.js";
+import { render as renderVacancies } from "./vacancies.js";
 
 export const SCREENS = {
   today: { title: "Сегодня", perm: "base.read", render: renderToday },
   person: { title: "Досье", perm: "base.read", render: renderPerson },
   base: { title: "База", perm: "base.read", render: renderBase },
-  vacancies: { title: "Вакансии", perm: "base.read", render: placeholder("Вакансии") },
+  vacancies: { title: "Вакансии", perm: "base.read", render: renderVacancies },
   profiles: { title: "База должностей", perm: "base.read", render: placeholder("База должностей") },
   learn: { title: "Обучение агента", perm: "base.read", render: placeholder("Обучение агента") },
   logs: { title: "Журнал и отчёт", perm: "report.read", render: placeholder("Журнал и отчёт") },

@@ -304,6 +304,12 @@ details summary{cursor:pointer;font-size:14px}
 .chip.tip:hover::after,.chip.tip:focus-visible::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);
   width:max-content;max-width:260px;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:8px;font-size:12.5px;z-index:5}
 
+/* --------------------------------- вакансии --------------------------------- */
+.sectionbar{display:flex;align-items:flex-end;gap:12px;margin-bottom:8px}
+.sectionbar .sechead{margin-bottom:0}
+.sectionbar .b{margin-left:auto}
+.sechead:not(:first-child){margin-top:24px}
+
 /* --------------------------------- письмо и контакты --------------------------------- */
 .sheet textarea.tall{min-height:240px}
 .contactrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:.5px solid var(--sep)}

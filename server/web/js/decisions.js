@@ -12,20 +12,20 @@ import { confirmSheet, errorLine, field, sheet } from "./ui.js";
 let minChars = DEFAULT_MIN;   // порог из ответа сервера (422 comment_too_short) запоминается для следующих окон
 
 /**
- * Окно «Отложить» / «Не наш»: подсказки-причины, счётчик знаков, «Сохранить решение» только с порога.
- * Ошибка сервера показывается под кнопками, окно не закрывается, текст остаётся.
- *   person: {person_id, name, label}; matches: [{role_profile_id, role_title, score}] — профили на выбор.
- * Возвращает Promise<{saved, length, roleProfileId}>.
+ * Общее окно комментария (S13): подсказки-причины, счётчик знаков, «Сохранить решение» только с порога.
+ * Используется для «Отложить», «Не наш» и закрытия вакансии. Ошибка сервера — под кнопками, окно не закрывается,
+ * текст остаётся; порог из ответа 422 запоминается.
+ *   send(text) — запрос на сервер (бросает ApiError); before — поля над подсказками (например выбор профиля).
+ * Возвращает Promise<{saved, length}>.
  */
-export function openDecisionSheet({ api, signal, kind, person, matches }) {
-  const options = profileOptions(matches, kind);
-  const win = sheet({ title: `${TITLES[kind]}: ${personName(person)}`, hint: HINTS[kind], width: "560px" });
+export function openCommentSheet({ title, hint, reasons, send, before = null, width = "560px", saveLabel = "Сохранить решение", placeholder = PLACEHOLDER }) {
+  const win = sheet({ title, hint, width });
   const counterId = uid("counter");
-  const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", required: true, placeholder: PLACEHOLDER,
+  const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", required: true, placeholder,
     describedBy: counterId });
   const counter = h("span.counter.bad", { id: counterId }, counterText("", minChars));
   const status = errorLine();
-  const save = h("button.b.fill", { type: "submit", disabled: true }, "Сохранить решение");
+  const save = h("button.b.fill", { type: "submit", disabled: true }, saveLabel);
 
   let busy = false;
   const update = () => {
@@ -35,23 +35,14 @@ export function openDecisionSheet({ api, signal, kind, person, matches }) {
     save.disabled = busy || !ready;
   };
 
-  const profileId = h("select", { id: uid("profile") }, options.map((o) => h("option", { value: o.id ?? "" }, o.label)));
-  const profileField = options.length > 1
-    ? h("div.field", h("label", { for: profileId.id }, "По какому профилю"), profileId) : null;
-  const chosenProfile = () => {
-    if (options.length === 0) return null;
-    if (options.length === 1) return options[0].id;
-    return profileId.value === "" ? null : Number(profileId.value);
-  };
-
-  const reasons = h("div.reasons", REASONS[kind].map((reason) =>
+  const chips = h("div.reasons", reasons.map((reason) =>
     h("button", { type: "button", onClick: () => {
       comment.input.value = appendReason(comment.input.value, reason);
       comment.input.focus();
       update();
     } }, `+ ${reason}`)));
 
-  const form = h("form", { novalidate: true }, profileField, reasons, comment.root,
+  const form = h("form", { novalidate: true }, before, chips, comment.root,
     h("div.sheetfoot", counter,
       h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"), save),
     status.el);
@@ -66,9 +57,8 @@ export function openDecisionSheet({ api, signal, kind, person, matches }) {
     busy = true;
     update();
     try {
-      const roleProfileId = chosenProfile();
-      await api.post("/api/decision", { person_id: person.person_id, kind, role_profile_id: roleProfileId, comment: text }, { signal });
-      outcome = { saved: true, length: countChars(text), roleProfileId };
+      await send(text);
+      outcome = { saved: true, length: countChars(text) };
       win.close("saved");
     } catch (error) {
       if (error && error.name === "AbortError") { win.close("cancel"); return; }
@@ -83,6 +73,32 @@ export function openDecisionSheet({ api, signal, kind, person, matches }) {
   update();
   win.show(comment.input);
   return win.closed.then((result) => (result === "saved" ? outcome : { saved: false }));
+}
+
+/**
+ * Окно «Отложить» / «Не наш» по человеку: общее окно комментария и выбор профиля.
+ *   person: {person_id, name, label}; matches: [{role_profile_id, role_title, score}] — профили на выбор.
+ * Возвращает Promise<{saved, length, roleProfileId}>.
+ */
+export async function openDecisionSheet({ api, signal, kind, person, matches }) {
+  const options = profileOptions(matches, kind);
+  const profileId = h("select", { id: uid("profile") }, options.map((o) => h("option", { value: o.id ?? "" }, o.label)));
+  const profileField = options.length > 1
+    ? h("div.field", h("label", { for: profileId.id }, "По какому профилю"), profileId) : null;
+  const chosenProfile = () => {
+    if (options.length === 0) return null;
+    if (options.length === 1) return options[0].id;
+    return profileId.value === "" ? null : Number(profileId.value);
+  };
+  let roleProfileId = null;
+  const result = await openCommentSheet({
+    title: `${TITLES[kind]}: ${personName(person)}`, hint: HINTS[kind], reasons: REASONS[kind], before: profileField,
+    send: (text) => {
+      roleProfileId = chosenProfile();
+      return api.post("/api/decision", { person_id: person.person_id, kind, role_profile_id: roleProfileId, comment: text }, { signal });
+    },
+  });
+  return result.saved ? { ...result, roleProfileId } : result;
 }
 
 // ------------------------------------------------------------------ «В работу»

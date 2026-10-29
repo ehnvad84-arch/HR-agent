@@ -22,10 +22,14 @@ export const countChars = (text) => [...String(text ?? "").trim()].length;
 export const canSave = (text, min) => countChars(text) >= min;
 export const counterText = (text, min) => `${countChars(text)} из ${min} символов`;
 
-/** Сервер ответил 422 comment_too_short: «Комментарий не короче 150 знаков» — берём число оттуда. */
+/**
+ * Сервер строже клиента: «Комментарий не короче 150 знаков» (решение по человеку, 422 comment_too_short) или
+ * «Проверьте: комментарий не короче 150 знаков» (закрытие вакансии, 422 validation) — берём число оттуда.
+ */
 export function minFromError(error, fallback) {
-  if (!error || error.code !== "comment_too_short") return fallback;
-  const match = /(\d+)\s*знаков/.exec(error.message || "");
+  const tooShort = error && (error.status === 422 || error.code === "comment_too_short");
+  if (!tooShort) return fallback;
+  const match = /не короче\s+(\d+)\s*знаков/i.exec(error.message || "");
   return match ? Number(match[1]) : fallback;
 }
 
