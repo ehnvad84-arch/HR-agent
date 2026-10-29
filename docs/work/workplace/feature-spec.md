@@ -81,11 +81,11 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 
 ### Кнопки прототипа
 
-**S36: «Сегодня и завтра».** Дано: на этапе воронки у кандидата задана дата встречи или интервью. Тогда: в зоне «Сегодня и завтра» встречи на сегодня и завтра по времени, карточка открывает досье.
-**S37: зависшие.** Дано: кандидат на этапе дольше `stalled_days` (5). Тогда: он в зоне «Зависли». «Напомнить» — черновик напоминания в очереди (как S18), «В резерв» — перевод в резерв, «Закрыть» — закрытие кандидатства с причиной; всё пишется в `status_history`.
-**S38: открыть заново.** Когда: «Открыть заново» у закрытой вакансии. Тогда: вакансия снова открыта, воронка и накопленные кандидаты сохранены, запись в журнале.
+**S36: «Сегодня и завтра».** Дано: у кандидата назначено интервью (`interview.scheduled_at`, схема:645). Тогда: в зоне «Сегодня и завтра» встречи на сегодня и завтра по времени, карточка открывает досье.
+**S37: зависшие.** Дано: кандидату написали, а с последнего контакта прошло больше `stalled_after_days` (5) дней (`v_stalled`, схема:984). Тогда: он в зоне «Зависли». «Напомнить» — черновик напоминания в очереди (как S18), «В резерв» — перевод в резерв, «Закрыть» — закрытие кандидатства с причиной; всё пишется в `status_history`.
+**S38: открыть заново.** Когда: «Открыть заново» у закрытой вакансии. Тогда: вакансия снова открыта, воронка и накопленные кандидаты сохранены, запись в `audit_log` (`action = edit`).
 **S39: кто утверждает.** Когда: «Кто утверждает». Тогда: список ролей с правом `profile.approve` и пользователей с ними (из `role_permission`), только чтение до `exchange-1c`.
-**S40: получатели отчёта.** Когда: «Получатели». Тогда: адреса из `MAIL_TO`; изменение — в `.env`, на экране только чтение.
+**S40: получатели отчёта.** Когда: «Получатели». Тогда: адреса из `MAIL_TO` (через запятую: руководитель персонала и директор по пункту 26; на время пробы — один адрес); изменение — в `.env`, на экране только чтение.
 **S41: сводку на почту.** Когда: «Отправить на почту» у недельной сводки. Тогда: письмо с цифрами и ссылкой на получателей `MAIL_TO`, без данных о людях; ошибка отправки — понятное сообщение, сводка не теряется.
 
 ### Ошибки
@@ -171,38 +171,9 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 
 Опора на готовое: выдача берёт только утверждённые версии (`pipeline.py:142`); «отложить», «не наш», «вести особо» уже учитывает `alerts.evaluate` (`alerts.py:48,54,76`); поиск — `search.similar` (`search.py:13`); имя — из `raw` (`normalize.py:153`).
 
-**Контракты.** Ответ — JSON; ошибка — `{"error": код, "message": текст по-русски}`: 401 нет сессии, 403 нет права, 404, 409 недопустимое состояние, 422 проверка входа, 502/503 внешний сервис. Все изменяющие запросы — с заголовком `X-CSRF-Token`. Заявки (`/api/request*`) — фича `exchange-1c`.
+**Контракты.** Ответ — JSON; ошибка — `{"error": код, "message": текст по-русски}`: 401 нет сессии, 403 нет права, 404, 409 недопустимое состояние, 422 проверка входа, 502/503 внешний сервис. CSRF — см. «Безопасность». Заявки (`/api/request*`) — фича `exchange-1c`.
 
-| Эндпойнт | Право | Вход → выход | Особые ошибки |
-|---|---|---|---|
-| `POST /api/login`, `POST /api/logout`, `GET /api/me` | — / сессия | `{login, password}` → cookie, `{user, permissions[], csrf}` | 401 неверно (текст один для логина и пароля), 429 блокировка |
-| `GET /api/today` | `base.read` | → `{signals[≤daily_cards_limit], actions[], stalled[], meetings[]}`; карточка: `person_id, name\|label, photo, score, headline` | — |
-| `GET /api/person/{id}`, `/dossier` | `base.read` | → карточка, `match[]` с `features` «сколько из скольких», версии `obs_version`, `social[]`, события, решения, `contact_opened` (без значений) | 404 |
-| `GET /api/person/{id}/photo` | `base.read` | → `image/jpeg` ≤ 10 КБ | 404 → заглушка в интерфейсе |
-| `POST /api/person/{id}/explain` | `base.read` | `{role_profile_id}` → `{text, by: model\|template}` | никогда не 5xx: отказ модели = шаблон (S8) |
-| `POST /api/person/{id}/take` | `person.take` | `{vacancy_id}` → `{candidate_id}` | 409 уже кандидат |
-| `POST /api/decision` | `person.take` | `{person_id, kind: postpone\|reject, role_profile_id, comment}` | 422 комментарий < `decision_comment_min` |
-| `POST /api/person/{id}/watch`, `POST /api/social/{id}/confirm` | `person.take` | `{on: bool}` / — → `{watch}` / `{confidence}` | 409 профиль `rejected` |
-| `POST /api/candidate/{id}/status` | `person.take` | `{vacancy_id, to_status, comment?}` → `{status}` | 422 неизвестный этап |
-| `POST /api/candidate/{id}/contact/prepare` | `contact.open` | → `{action_id, hidden: [...], already_open, will_spend}` | 409 нет кандидата / не hh |
-| `GET /api/candidate/{id}/contacts` | `contact.open` | → `contacts[]`; каждый показ — `audit_log view_contact` | 404 |
-| `POST /api/candidate/{id}/draft` | `person.take` | `{vacancy_id, kind}` → `{action_id, text, by}` | 409 основание `not_obtained` |
-| `POST /api/action/{id}/approve` | `person.take`; `open_contact` — `contact.open` | → `{state: executed, result}`; письмо: статус `first_message_sent`; контакт: вызов hh | 409 не `proposed`; 502/503 отказ hh (S17) |
-| `POST /api/action/{id}/decline` | `person.take` | `{reason}` непустая → `{state: declined}` | 422 |
-| `GET /api/base`, `GET /api/vacancy/{id}/matching`, `/candidates` | `base.read` | `dept, city, role, score_min, where, source, sort, dir, page` → `{items, total}`; сортировка — только из белого списка колонок | 422 неизвестная колонка |
-| `GET /api/search?q=` | `base.read` | → `items[]` по близости | 422 пустой запрос |
-| `GET /api/vacancies`, `POST /api/vacancy` | `base.read` / `vacancy.edit` | `{role_profile_id, title, headcount, target_date}` → `{id}`, `origin = 'recruiter'` | 422 профиль не утверждён |
-| `POST /api/vacancy/{id}/close` | `vacancy.edit` | `{comment}` → `{state: closed}`, `keep_sourcing` не трогается | 422 < 200 знаков; 409 уже закрыта |
-| `GET /api/vacancy/{id}/funnel` | `base.read` | → `stages[{status, people[], avg_days}]` | 404 |
-| `GET /api/profiles?q=`, `GET /api/profile/{id}` | `base.read` | → `[{id, code, title, version, state: approved\|pending\|draft}]` | — |
-| `POST /api/profile/{id}` | `profile.edit` | поля профиля → `{id новой версии, state: pending}` | 422 веса, условия must/stop |
-| `GET /api/profile/{id}/preview` | `profile.edit` | → `{passes_now, passes_new, enter[], leave[]}` (до `preview_max_persons`) | 409 версия уже утверждена |
-| `POST /api/profile/{id}/approve` | `profile.approve` | → 202 `{job_run_id}`; пересчёт в фоне, «Схема» показывает ход | 403 (32); 409 уже утверждена |
-| `POST /api/profile/{id}/doc` | `profile.edit` | multipart `.docx\|.pdf` ≤ `import_max_file_mb` → `{job_doc_id, draft_version_id}` | 422 тип или размер |
-| `GET/POST /api/feedback` | `base.read` / `feedback.write` | `{body, tag, person_id?, role_profile_id?}` → `{id, reply, by}` | 422 < `feedback_min_chars` |
-| `GET /api/digest/current`, `POST /api/digest/{proposal_id}/decide` | `base.read` / `digest.decide` | `{decision: accepted\|declined\|discuss, note}` → `{decision}` | 409 уже решено |
-| `GET /api/changelog`, `GET /api/report/weekly`, `POST /api/report/weekly/send` | `report.read` | `from, to` → записи `agent_change`; send → `{sent_at}` | 502 SMTP (отчёт сохранён) |
-| `GET /api/person/{id}/export?f=docx` и `?f=pdf` | `dossier.export` | docx → файл; pdf → `{export_id}`, дальше печать в браузере | 403; 404 |
+Таблица эндпойнтов (право, вход → выход, особые ошибки) — `docs/reference/workplace-api.md`.
 
 **Данные.** Схема покрывает почти всё; новое — миграция `002_workplace.sql`, только `ops` (в `public` по пункту 2 приёмки остаются 46 таблиц, 001:3):
 - `ops.user_password` (`user_id` PK → `app_user`, `hash`, `changed_at`, `failed_count`, `locked_until`). В `app_user` (схема:727) пароля нет.
@@ -210,7 +181,7 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 - `ops.person_photo` (`observation_id` PK → `observation` ON DELETE CASCADE, `data bytea` CHECK `octet_length ≤ 10240`, `sha256`, `state ok|absent|failed`, `attempts`, `fetched_at`). Удаляется вместе с наблюдением по сроку хранения.
 - `ops.llm_cache` (`key` PK = sha256(назначение, модель, версия промпта, входной JSON), `purpose`, `person_id` → `person` ON DELETE CASCADE, `reply jsonb`, `tokens`, `created_at`). Ключ по входу = «по версии резюме и профиля» (S7): `rescore_person` сбрасывает `match.model` только при смене балла или версии (`pipeline.py:192`). Принятый разбор пишется и в `match.explanation`, как `explain.py:96`.
 - `ops.feedback_reply` (`feedback_id` PK → `feedback_message`, `body`, `by`, `created_at`): ответ агента короче 40 знаков не пройдёт CHECK (схема:790).
-- `ops.candidate_vacancy` (`candidate_id`, `vacancy_id` PK, `added_by`, `added_at`). Варианты: (а) эта таблица, воронка — свой запрос; (б) связь через `action_queue`, как `v_funnel` (схема:975). Рекомендую (а): цена — `v_funnel` не используется; (б) кладёт в очередь подтверждений пустые действия.
+- `ops.candidate_vacancy` (`candidate_id`, `vacancy_id` PK, `added_by`, `added_at`) — связь кандидата с вакансией; `v_funnel` не используется.
 - `role_permission`: добавить `contact.open` и `vacancy.edit` (`recruiter`, `head_recruiter`), `feedback.write` для `head_recruiter` (в схеме:756–759 его нет, а единственный пользователь — `head_recruiter`); запись в `agent_change` (`kind = 'permission'`).
 - `settings`: `session_idle_hours` 12, `session_max_days` 7, `login_max_failures` 5, `login_lock_minutes` 15, `photo_max_bytes` 10240, `preview_max_persons` 5000, `llm_pause_minutes` 60, `llm_calls_per_hour` 60, `base_page_size` 50.
 - Индекс `decision_log (role_profile_id, person_id) WHERE kind = 'reject'` — «не наш» убирает из выдачи только по этому профилю; `watch = 'dropped'` — если профиль не указан.
@@ -218,7 +189,7 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 Правила записи: «В работу» — `candidate` (`fio` из имени hh или ярлык, `retention_until` по `retention_candidate_years`), `consent`, `status_history`, `person.candidate_id`, `alert.state = 'taken'`, одной транзакцией. Отложить — `person.postponed_until` (001:58) на `reserve_touch_months`. Правка профиля — новая строка `role_profile` с той же `code` и следующей `version`, `approved_* = NULL`. ДИ — файл в `STORAGE_DIR` под ключом sha256 (объектное хранилище — фича `deploy`), `job_doc`, черновая версия профиля «ждёт утверждения» с полями `di_*`: это и есть «предложение правок в очереди» (S28).
 
 **Сторонние API.**
-- **hh, контакт.** `prepare` ничего не списывает: `hidden_fields` и `contact_view_status` из сохранённого полного резюме, затем `GET /resumes/{id}/phone` (без списания, `docs/reference/hh-api.md:79`). `approve`: свежий `GET /resumes/{id}` (1 просмотр пакета) → уже `FULL` — контакт берётся без списания; иначе вызов `actions.get_with_contact.url` (1 контакт), только если хост ссылки совпадает с `HH_API`. Лимит 1 запрос/с через `RateLimiter` (`http.py:19`); блокировка `source:hh` занята ночным сбором → 409 «идёт сбор hh». Отказы — через `raise_for_hh` (`hh.py:153`): лимит, капча, нет оплаты → понятный текст, действие остаётся `proposed`; повтор на 5xx один раз через 5 с. Двойного списания нет: блокировка на действие и проверка `contact` до вызова.
+- **hh, контакт.** `prepare` ничего не вызывает у hh: только `hidden_fields` и `contact_view_status` из сохранённого полного резюме. `/resumes/{id}/phone` не используется: он отдаёт номер до кнопки. `approve`: свежий `GET /resumes/{id}` (1 просмотр пакета) → уже `FULL` — контакт берётся без списания; иначе вызов `actions.get_with_contact.url` (1 контакт), только если хост ссылки совпадает с `HH_API`. Лимит 1 запрос/с через `RateLimiter` (`http.py:19`); блокировка `source:hh` занята ночным сбором → 409 «идёт сбор hh». Отказы — через `raise_for_hh` (`hh.py:153`): лимит, капча, нет оплаты → понятный текст, действие остаётся `proposed`; повтор на 5xx один раз через 5 с. Двойного списания нет: блокировка на действие и проверка `contact` до вызова.
 - **GigaChat.** Токен по ключу авторизации, живёт 30 минут: держится в памяти процесса, обновляется за минуту до конца и один раз на 401. Один поток: замок на процесс, ждать не дольше 5 с, иначе шаблон «модель занята». 429 или исчерпан пакет → пауза `llm_pause_minutes`, всё по шаблону. Таймаут для вызова из запроса — 30 с (сейчас общий 90 с, `config.py:34`). TLS — только с сертификатом НУЦ из файла, без отключения проверки. Если шлюз не знает `response_format`, повтор без него уже есть (`llm.py:56`).
 - **SMTP.** `smtplib`, STARTTLS или SSL по `SMTP_PORT`, таймаут 30 с, один повтор через 60 с. Отказ → `weekly_report.sent_at` пуст, ошибка в `ops.job_run`, на экране «не отправлено». Получатели — только `MAIL_TO`, в письме цифры и ссылка, без людей.
 - **Фото hh.** Хосты — белый список доменов hh, ответ ≤ 2 МБ, таймаут 10 с, 1 запрос/с, не больше 3 попыток (`attempts`).
@@ -230,7 +201,7 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 
 **Данные и секреты.** Персональные: имя и фото до «В работу» (`observation.raw`, `ops.person_photo`; уточнение AD-3), контакты (`contact`, схема:447), тексты резюме и чата. Новые секреты, имена в `.env.example`: `SESSION_KEY` (подпись cookie), `GIGACHAT_AUTH_KEY`, `GIGACHAT_CA_FILE`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `MAIL_TO`, `STORAGE_DIR`. Токен GigaChat в базу и логи не пишется. Пароль временной записи задаётся `hr.cli user-create` через ввод без эха, не аргументом.
 
-**Точки входа.** HTTP на `127.0.0.1:8000`, проброс порта VS Code — только приватный, не публичный. Без сессии открыты только `/login`, статика без данных и `/api/oauth/hh/callback` (`main.py:32`, защищён одноразовым `state`). Загрузка ДИ: размер и расширение проверяются, имя файла в путь не идёт, ключ — sha256. Фото: белый список хостов hh, защита от «бомбы распаковки» (ограничение пикселей), EXIF удаляется. Ссылка `get_with_contact` вызывается с токеном hh только при хосте `HH_API`, иначе токен утечёт по чужому адресу.
+**Точки входа.** HTTP на `127.0.0.1:8000`, проброс порта VS Code — только приватный, не публичный. Без сессии открыты только `/login`, статика без данных и `/api/oauth/hh/callback` (`main.py:32`, защищён одноразовым `state`). Загрузка ДИ: размер и расширение проверяются, имя файла в путь не идёт, ключ — sha256. Фото: белый список хостов hh, защита от «бомбы распаковки» (ограничение пикселей), EXIF удаляется. Ссылка `get_with_contact` — только хост `HH_API` (см. «Сторонние API»).
 
 **Вход и права.**
 - bcrypt (cost 12); после `login_max_failures` ошибок — блокировка на `login_lock_minutes`; одинаковый текст для неверного логина и пароля.
@@ -266,7 +237,7 @@ PRD: docs/PRD.md → «Требования», фича 2 `workplace`
 | Профили должностей | создаёт и правит человек в «Базе должностей»; изменение → `agent_change`, новая версия → пересчёт базы (`rescore_profile`) | решение человека 2026-10-29 | — |
 | Открытие контакта | кнопка с подтверждением, один платный контакт hh, запись в `audit_log`, контакт виден только в досье | решение человека 2026-10-29; never.md | — |
 | Фото | система скачивает фото hh и сжимает до 10 КБ | решение человека 2026-10-29 | показывать по ссылке hh |
-| Языковая модель | GigaChat, бесплатный пакет для физлиц; переходник к `complete(messages)` (AD-5); вызов только по действию человека (открыл досье, черновик, чат), ответ кэшируется; пакет кончился → шаблон | решение человека 2026-10-29: «минимальные расходы или бесплатно». Freemium для физлиц на 2026-10: 365 млн токенов на 12 месяцев, из них 250 млн на Lite (`GigaChat-2`); генерация в один поток (developers.sber.ru, «Тарифы для физлиц»). Платный Lite — 20 млн токенов за 1 300 ₽/мес. Токен доступа живёт 30 минут. Адреса OAuth и chat, сертификат НУЦ — отложено до реализации: задача подключения GigaChat | YandexGPT Lite (~750–1500 ₽/мес); локальная модель (3 ГБ памяти, слабый русский) |
+| Языковая модель | GigaChat Lite, бесплатный пакет физлица (365 млн токенов на год, один поток — developers.sber.ru, «Тарифы для физлиц»); вызов только по действию человека, кэш, без модели — шаблон | решение человека 2026-10-29: «минимальные расходы или бесплатно» | YandexGPT Lite; локальная модель |
 | Выгрузка досье (25) | Word собирается на сервере (`python-docx`, как `build_docx.py`); PDF — печать из браузера, как в прототипе; обе пишут `dossier_export` через API | решение главной сессии: без тяжёлых зависимостей для PDF | PDF на сервере (WeasyPrint и системные библиотеки) |
 | Дайджест 08:30 (8) и пятничный отчёт (26) | на почту сразу: SMTP из `.env` (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_TO`), в письме цифры и ссылка, без данных о людях; плюс экран | решение человека 2026-10-29 | только экран; Telegram |
 | Публикация вакансии на hh (17) | позже, отдельной задачей | решение человека 2026-10-29: публикация платная | сейчас |
