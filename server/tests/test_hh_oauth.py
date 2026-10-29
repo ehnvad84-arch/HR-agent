@@ -52,7 +52,7 @@ def api(conn_factory, clock):
     app.dependency_overrides[get_conn_factory] = lambda: conn_factory
     app.dependency_overrides[get_clock] = lambda: clock
     app.dependency_overrides[get_hh_http] = fake.client
-    yield TestClient(app), fake
+    yield TestClient(app, base_url="https://localhost:8000"), fake
     app.dependency_overrides.clear()
 
 
@@ -107,7 +107,8 @@ def test_callback_wrong_employer_is_403(conn, hh_env, conn_factory, clock):
     app.dependency_overrides[get_hh_http] = fake.client
     try:
         st = state_of(hh.auth_link(conn, clock.now()))
-        r = TestClient(app).get("/api/oauth/hh/callback", params={"code": "c1", "state": st})
+        r = TestClient(app, base_url="https://localhost:8000").get("/api/oauth/hh/callback",
+                                                                   params={"code": "c1", "state": st})
         assert r.status_code == 403
         assert db.val(conn, "SELECT count(*) FROM ops.oauth_token") == 0
     finally:

@@ -8,7 +8,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from . import db, hh
+from . import db, hh, web
 from .api import session as session_api
 from .clock import Clock
 from .deps import get_clock, get_conn_factory, get_hh_http
@@ -41,3 +41,6 @@ def hh_callback(code: str, state: str,
     with conn_factory() as conn:
         hh.store_tokens(conn, tokens, employer, now)
     return "<!doctype html><meta charset=utf-8><title>hh подключён</title><p>hh подключён. Окно можно закрыть.</p>"
+
+
+web.install(app)   # после всех маршрутов: раздача страниц и обработчики ошибок
