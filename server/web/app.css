@@ -458,3 +458,16 @@ svg{width:100%;height:auto;display:block}
   h2{break-after:avoid}
   .split{grid-template-columns:1fr}
 }
+
+/* --------------------------------- журнал и отчёт (S32, S33, S40) --------------------------------- */
+.tagseg.wrap{flex-wrap:wrap;width:auto;margin:8px 0 12px}
+.periodbar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:10px 0 6px}
+.periodbar .field{margin:0}
+.periodbar .field input{width:auto;min-width:150px}
+.logsum{font-size:14px;color:var(--ink2);margin-top:3px}
+.logmore{margin-top:4px}
+.loglines{margin:6px 0 0;padding-left:20px;font-size:14px;color:var(--ink2)}
+.loglines li{margin:3px 0}
+.repgroup{margin-top:12px}
+.repgroup:first-child{margin-top:0}
+.repgroup > summary{padding:2px 0}

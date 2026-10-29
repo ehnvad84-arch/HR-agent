@@ -45,7 +45,7 @@ export function weekTitle(from, to, now = new Date()) {
   return `Неделя ${absoluteDay(a, now)} — ${absoluteDay(b, now)}`;
 }
 
-const SETTING_TITLES = {
+export const SETTING_TITLES = {
   watch_threshold: "порог наблюдения", daily_cards_limit: "число карточек в день", alert_score_new: "порог сигнала по новым людям",
   alert_score_pool_event: "порог сигнала по резерву", stalled_after_days: "дней до статуса «зависли»",
   reserve_touch_months: "месяцев до напоминания по резерву",
