@@ -13,13 +13,14 @@ const FULL = { exp_years: 9.4, salary_expect: 180000, employer_current: "АО «
 test("полная сводка: опыт, ожидания, место работы, переезд, поиск работы, дата обновления, навыки", () => {
   const view = summaryView(FULL, NOW);
   assert.deepEqual(view.rows.map(([label, value]) => `${label}: ${value.replace(/[  ]/g, " ")}`), [
-    "Опыт: 9,4 года", "Ожидания: 180 000 ₽", "Сейчас: АО «Северный прибор»", "Переезд: готов", "Ищет работу: да",
+    "Опыт: 9,4 года", "Ожидания: 180 000 ₽", "Сейчас: АО «Северный прибор»", "Переезд: готов · ищет работу",
     "Резюме обновлено: 12 дней назад"]);
-  assert.deepEqual(view.skills, ["Altium Designer", "OrCAD", "ЭМС", "STM32", "KiCad"]);
+  assert.ok(view.rows.length <= 5, "справка не длиннее пяти строк");
+  assert.deepEqual(view.skills, ["Altium Designer", "OrCAD", "ЭМС"]);
 });
 
 test("ожидания не указаны — так и пишем; переезд: готов / нет / не указано", () => {
-  const rows = (patch) => Object.fromEntries(summaryView({ ...FULL, ...patch }, NOW).rows);
+  const rows = (patch) => Object.fromEntries(summaryView({ ...FULL, open_for_search: null, ...patch }, NOW).rows);
   assert.equal(rows({ salary_expect: null }).Ожидания, "не указаны");
   assert.equal(rows({ salary_expect: 0 }).Ожидания, "не указаны");
   assert.equal(rows({ relocation_ready: false }).Переезд, "нет");
@@ -42,9 +43,10 @@ test("сводки нет совсем — блока нет", () => {
     updated_at_src: null, skills: [] }, NOW), null);
 });
 
-test("навыков не больше пяти, лишние пробелы и пустое убираются", () => {
-  const view = summaryView({ ...FULL, skills: [" A ", "", "B", "C", "D", "E", "F", "G"] }, NOW);
-  assert.deepEqual(view.skills, ["A", "B", "C", "D", "E"]);
+test("навыков не больше трёх, длинные обрезаются, лишние пробелы и пустое убираются", () => {
+  const view = summaryView({ ...FULL, skills: [" A ", "", "Управление дистрибьюторской сетью Развитие дилерской сети", "C", "D"] }, NOW);
+  assert.deepEqual(view.skills, ["A", "Управление дистрибьюторской…", "C"]);
+  assert.ok(view.skills.every((s) => s.length <= 28));
 });
 
 test("когда обновлено резюме: сегодня, вчера, N дней назад", () => {

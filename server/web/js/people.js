@@ -66,6 +66,7 @@ export function summaryBlock(summary, now = new Date()) {
   const view = summaryView(summary, now);
   if (!view) return null;
   return h("aside.summary", { "aria-label": "Коротко из резюме", "data-tip": "summary" },
-    h("dl", view.rows.flatMap(([label, value]) => [h("dt", label), h("dd", value)])),
+    // значение в одну строку; обрезанное многоточием целиком видно в подсказке
+    h("dl", view.rows.flatMap(([label, value]) => [h("dt", label), h("dd", { "data-tip": value }, value)])),
     view.skills.length ? h("div.chips", view.skills.map((skill) => chip(skill))) : null);
 }

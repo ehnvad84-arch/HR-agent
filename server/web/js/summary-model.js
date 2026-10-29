@@ -1,7 +1,10 @@
 // Краткая сводка резюме (summary из /api/today) без DOM: что показать справа на карточке сигнала.
 import { moneyText, plural, yearsText } from "./format.js";
 
-const MAX_SKILLS = 5;
+const MAX_SKILLS = 3;     // справка, а не всё резюме: карточки одной высоты (просьба человека)
+const MAX_SKILL_CHARS = 28;
+
+const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text);
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
@@ -17,12 +20,13 @@ export function daysAgoText(value, now = new Date()) {
 }
 
 /**
- * Строки для блока справа: [подпись, значение] и навыки (до пяти). Пустые поля пропускаются; «ожидания» и «переезд»
+ * Строки для блока справа: [подпись, значение], не больше пяти, и навыки (до трёх, каждый обрезан). Пустые поля пропускаются; «ожидания» и «переезд»
  * показываются словами «не указаны» и «не указано». Нет ни одного данного — null, блока не будет.
  */
 export function summaryView(summary, now = new Date()) {
   if (!summary) return null;
-  const skills = (summary.skills || []).map((s) => String(s).trim()).filter(Boolean).slice(0, MAX_SKILLS);
+  const skills = (summary.skills || []).map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean)
+    .slice(0, MAX_SKILLS).map((s) => clip(s, MAX_SKILL_CHARS));
   const employer = String(summary.employer_current ?? "").trim();
   const updated = daysAgoText(summary.updated_at_src, now);
   const hasAny = summary.exp_years !== null && summary.exp_years !== undefined
@@ -34,8 +38,8 @@ export function summaryView(summary, now = new Date()) {
   if (typeof summary.exp_years === "number") rows.push(["Опыт", yearsText(summary.exp_years)]);
   rows.push(["Ожидания", summary.salary_expect ? moneyText(summary.salary_expect) : "не указаны"]);
   if (employer) rows.push(["Сейчас", employer]);
-  rows.push(["Переезд", summary.relocation_ready === true ? "готов" : summary.relocation_ready === false ? "нет" : "не указано"]);
-  if (summary.open_for_search === true) rows.push(["Ищет работу", "да"]);
+  const move = summary.relocation_ready === true ? "готов" : summary.relocation_ready === false ? "нет" : "не указано";
+  rows.push(["Переезд", summary.open_for_search === true ? `${move} · ищет работу` : move]);
   if (updated) rows.push(["Резюме обновлено", updated]);
   return { rows, skills };
 }
