@@ -76,6 +76,9 @@ def install(app: FastAPI) -> None:
         response = await call_next(request)
         for k, v in HEADERS.items():
             response.headers.setdefault(k, v)
+        # файлы рабочего места браузер сверяет с сервером при каждой загрузке (ответ 304 — дёшево): иначе
+        # после обновления портала он смешивает старые и новые модули, и страница висит на «Загружаю…»
+        response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(get_config().web_hosts))

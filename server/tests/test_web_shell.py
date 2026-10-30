@@ -29,6 +29,12 @@ def test_security_headers_on_page_and_api(client):
         assert h["x-content-type-options"] == "nosniff" and h["referrer-policy"] == "no-referrer"
 
 
+def test_static_files_revalidated(client):
+    """После обновления портала браузер не смешивает старые и новые модули: каждый файл сверяется с сервером."""
+    for path in ("/", "/app.js", "/js/api.js"):
+        assert client.get(path).headers["cache-control"] == "no-cache"
+
+
 def test_index_served_without_data(client):
     r = client.get("/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
