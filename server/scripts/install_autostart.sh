@@ -3,7 +3,8 @@
 # Запускает человек один раз:  bash ~/projects/HR-agent/server/scripts/install_autostart.sh
 # Службы — systemd пользователя (без root): ruware-pg, ruware-portal, таймеры ruware-hh-daily и ruware-trudvsem.
 # Ключи читаются из server/.env и ~/.config/ruware-hr/session_key при старте службы, в файлы служб не копируются.
-# Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer ruware-trudvsem.timer
+# Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer ruware-trudvsem.timer \
+#               ruware-load-watchdog.timer ruware-feedback-week.timer
 set -euo pipefail
 
 APP="$HOME/projects/HR-agent/server"
@@ -90,18 +91,66 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
+cat > "$UNITS/ruware-load-watchdog.service" <<EOF
+[Unit]
+Description=Рувер: проверка загрузок — не начались по расписанию или зависли (S20)
+After=ruware-pg.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP
+ExecStart=/bin/bash -c '$ENV_LOAD; exec .venv/bin/python -m hr.cli run load_watchdog'
+EOF
+
+cat > "$UNITS/ruware-load-watchdog.timer" <<EOF
+[Unit]
+Description=Рувер: проверка загрузок раз в час
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+cat > "$UNITS/ruware-feedback-week.service" <<EOF
+[Unit]
+Description=Рувер: недельная сводка всех замечаний — в Телеграм и на почту (S21)
+After=ruware-pg.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP
+ExecStart=/bin/bash -c '$ENV_LOAD; exec .venv/bin/python -m hr.cli run feedback_week'
+EOF
+
+cat > "$UNITS/ruware-feedback-week.timer" <<EOF
+[Unit]
+Description=Рувер: сводка замечаний по пятницам в 18:30 по Москве
+
+[Timer]
+OnCalendar=Fri *-*-* 18:30:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # то, что сейчас запущено вручную, уступает службам
 "$PG/bin/pg_ctl" -D "$DATA" status >/dev/null 2>&1 && "$PG/bin/pg_ctl" -D "$DATA" stop -m fast || true
 pkill -f "uvicorn hr.main:app --host 127.0.0.1 --port 8000" || true
 sleep 2
 
 systemctl --user daemon-reload
-systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer ruware-trudvsem.timer
+systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer ruware-trudvsem.timer \
+    ruware-load-watchdog.timer ruware-feedback-week.timer
 # без входа в систему службы пользователя не живут после перезагрузки — включаем «linger»
 loginctl enable-linger "$USER" || echo "Не удалось включить linger: выполните  sudo loginctl enable-linger $USER"
 
 sleep 5
 echo
 systemctl --user --no-pager status ruware-pg.service ruware-portal.service | grep -E "●|Active:"
-systemctl --user --no-pager list-timers ruware-hh-daily.timer ruware-trudvsem.timer | head -4
+systemctl --user --no-pager list-timers ruware-hh-daily.timer ruware-trudvsem.timer ruware-load-watchdog.timer \
+    ruware-feedback-week.timer | head -6
 curl -s -o /dev/null -w "Портал отвечает: HTTP %{http_code}\n" http://127.0.0.1:8000/ || echo "Портал пока не отвечает — подождите 10 секунд и проверьте снова"

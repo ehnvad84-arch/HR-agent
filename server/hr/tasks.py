@@ -4,7 +4,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from . import alerts, collect, explain, files, jobs, learning, mailer, photos, pipeline, search, social, tweaks
+from . import (
+    alerts,
+    collect,
+    explain,
+    files,
+    jobs,
+    learning,
+    load_check,
+    mailer,
+    photos,
+    pipeline,
+    search,
+    social,
+    tweaks,
+)
 from .clock import SYSTEM, Clock
 from .db import ConnFactory, rows
 from .db import run as sql
@@ -58,6 +72,7 @@ TASKS: dict[str, Task] = {
     "digest_mail": Task(mailer.digest_mail),
     "weekly_report": Task(mailer.weekly_report),
     "user_rescore": Task(tweaks.user_rescore),
+    "load_watchdog": Task(load_check.load_watchdog),
 }
 
 

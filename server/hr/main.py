@@ -19,6 +19,7 @@ from .api import handoff as handoff_api
 from .api import hh_collect as hh_collect_api
 from .api import learning as learning_api
 from .api import my as my_api
+from .api import notify as notify_api
 from .api import org as org_api
 from .api import person as person_api
 from .api import profiles as profiles_api
@@ -37,7 +38,8 @@ for _r in (session_api.router, today_api.router, person_api.router, decisions_ap
            base_api.router, vacancies_api.router, profiles_api.router,
            learning_api.router, reports_api.router,
            hh_collect_api.router, org_api.router, my_api.router,
-           access_api.router, handoff_api.router, tweaks_api.router):
+           access_api.router, handoff_api.router, tweaks_api.router,
+           notify_api.router):
     app.include_router(_r)
 
 

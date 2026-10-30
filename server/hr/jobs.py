@@ -136,7 +136,10 @@ def run(name: str, func: Callable[..., JobStats], conn_factory: db.ConnFactory |
             result = JobResult(False, JobStats(), type(e).__name__, e)
         finally:
             _current.reset(token)
-        return _journal(factory, name, result, run_id)
+        out = _journal(factory, name, result, run_id)
+        from . import load_check  # S20: итог загрузки — отделу персонала (импорт здесь: load_check знает jobs)
+        load_check.after_run(factory, name, out, run_id)
+        return out
     finally:
         lock_conn.close()   # закрытие соединения снимает advisory-блокировки
 
