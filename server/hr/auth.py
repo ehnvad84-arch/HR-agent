@@ -102,7 +102,7 @@ def revoke(conn: psycopg.Connection, cookie: str | None, now: datetime) -> None:
 
 # ------------------------------------------------------------- пароль
 
-PASSWORD_MIN = 10
+PASSWORD_MIN = 8    # решение человека 2026-10-30: временные пароли для проб
 BCRYPT_COST = 12
 
 

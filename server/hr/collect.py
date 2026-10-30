@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import httpx
 
-from . import hh, pipeline
+from . import hh, photos, pipeline
 from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
@@ -70,7 +70,9 @@ class _HHItems:
 
 
 def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
-               limiter: RateLimiter | None = None, **_) -> JobStats:
+               limiter: RateLimiter | None = None, full_cap: int | None = None, **_) -> JobStats:
+    """Обход hh по действующим профилям. full_cap — предел полных резюме вместо hh_full_resume_per_run
+    (остаток дневного лимита просмотров); предел страниц тогда — поиск по всем профилям плюс full_cap."""
     clock = clock or SYSTEM
     http = http or client(get_config().hh_user_agent)
     stats = JobStats()
@@ -79,9 +81,11 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
         if not src or not src["is_active"]:
             raise JobNotConfigured("источник hh выключен или не заведён")
         profiles = pipeline.current_profiles(conn)
-        budget = PageBudget(int(setting(conn, "crawl_max_pages", 2000)), stats)
         per_profile = int(setting(conn, "crawl_per_profile_pages", 5))
-        full_left = int(setting(conn, "hh_full_resume_per_run", 200))
+        full_left = int(setting(conn, "hh_full_resume_per_run", 200)) if full_cap is None else full_cap
+        max_pages = int(setting(conn, "crawl_max_pages", 2000)) if full_cap is None else \
+            len(profiles) * per_profile + full_cap
+        budget = PageBudget(max_pages, stats)
         params = {p["id"]: hh.search_params(conn, p) for p in profiles}
     api = hh.Api(conn_factory, http, clock, limiter or _limiter, budget)
     items = _HHItems(conn_factory, api, src, profiles, stats, full_left, clock)
@@ -163,4 +167,24 @@ def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, cl
             continue
         with conn_factory() as conn:
             run(conn, "UPDATE observation SET last_seen = %s WHERE id = %s", (now, o["id"]))
+    return stats
+
+
+def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
+                     limiter: RateLimiter | None = None, count: int | None = None, **_) -> JobStats:
+    """Задача collect_hh_daily (18:00 по Москве) и кнопка «Загрузить резюме»: обход hh с полными резюме
+    на остаток дневного лимита просмотров (count — не больше остатка), затем фото новых людей."""
+    clock = clock or SYSTEM
+    http = http or client(get_config().hh_user_agent)
+    limiter = limiter or _limiter
+    left = hh.limits_today(conn_factory, http, clock.now(), limiter=limiter)["views_left"]
+    cap = left if count is None else min(count, left)
+    if cap <= 0:
+        stats = JobStats(note="дневной лимит просмотров hh исчерпан — сбор завтра")
+        stats.extra = {"views_left": left}
+        return stats
+    stats = collect_hh(conn_factory, http=http, clock=clock, limiter=limiter, full_cap=cap)
+    stats.extra = {**stats.extra, "views_left": left, "full_cap": cap}
+    # фото — тем же проходом: новые карточки сразу с лицом
+    stats.extra["photos"] = photos.fetch_photos(conn_factory, clock=clock, limiter=limiter).new
     return stats

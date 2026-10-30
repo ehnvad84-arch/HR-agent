@@ -252,3 +252,31 @@ def selftest(conn_factory: ConnFactory, http: httpx.Client, now: datetime,
         found = get("/resumes", {"text": "инженер", "area": "53", "per_page": 1}).get("found")
     return {"search_access": search_access, "services": services, "views_left": left.get("resume_view_from_api"),
             "views_left_site": left.get("resume_view"), "found": found}
+
+
+def limits_today(conn_factory: ConnFactory, http: httpx.Client, now: datetime,
+                 limiter: RateLimiter | None = None) -> dict:
+    """Остаток на сегодня: просмотры резюме (полное резюме через API тратит дневной лимит сайта, 500 в сутки —
+    замер 2026-10-29) и остаток пакета запросов API_LIMITED. Три запроса, без поиска и без списаний."""
+    limiter = limiter or RateLimiter()
+    with conn_factory() as conn:
+        token = access_token(conn, http, now, limiter=limiter)
+
+    def get(path: str) -> dict:
+        limiter.wait("hh")
+        r = http.get(f"{get_config().hh_api}{path}", headers={"Authorization": f"Bearer {token}"})
+        raise_for_hh(r)
+        return r.json()
+
+    me = get("/me")
+    eid, mid = (me.get("employer") or {}).get("id"), (me.get("manager") or {}).get("id")
+    if not (eid and mid):
+        raise JobNotConfigured("токен hh выдан не менеджеру работодателя — "
+                               "пройдите авторизацию: python -m hr.cli hh-auth")
+    left = get(f"/employers/{eid}/managers/{mid}/limits/resume").get("left") or {}
+    package = [(s.get("balance") or {}).get("actual") for s in
+               get(f"/employers/{eid}/services/payable_api_actions/active").get("items") or []
+               if (s.get("service_type") or {}).get("id") == "API_LIMITED"]
+    api_left = left.get("resume_view_from_api")
+    views = api_left if api_left is not None else left.get("resume_view")
+    return {"views_left": max(0, int(views or 0)), "package_left": package[0] if package else None}

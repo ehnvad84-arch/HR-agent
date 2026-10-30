@@ -101,3 +101,10 @@ def test_user_create_keeps_one_account_per_login(conn):
     a = auth.create_user(conn, "Rec", "Рекрутер", "recruiter", "пароль-номер-один")
     b = auth.create_user(conn, "rec", "Рекрутер", "recruiter", "пароль-номер-два")
     assert a == b and db.val(conn, "SELECT login FROM app_user WHERE id = %s", (a,)) == "rec"
+
+
+def test_password_min_length_8(conn):
+    import pytest
+    with pytest.raises(auth.PasswordError):
+        auth.create_user(conn, "short", "Коротко", "recruiter", "x" * 7)
+    assert auth.create_user(conn, "eight", "Восемь", "recruiter", "y" * 8)

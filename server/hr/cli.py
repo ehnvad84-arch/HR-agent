@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
               + (f"; {res.stats.note}" if res.stats.note else ""))
         return 0 if res.ok else 1
     elif args.cmd == "user-create":
-        pw = getpass.getpass("Пароль (не короче 10 знаков): ")
+        pw = getpass.getpass("Пароль (не короче 8 знаков): ")
         if pw != getpass.getpass("Ещё раз: "):
             print("Пароли не совпали, учётная запись не создана")
             return 1
