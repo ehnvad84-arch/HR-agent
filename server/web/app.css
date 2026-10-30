@@ -533,7 +533,7 @@ button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
 .arealist{margin-top:6px;max-height:210px;overflow:auto;border:1px solid var(--field-line);border-radius:12px;background:var(--card)}
 .areaopt{padding:9px 12px;cursor:pointer;font-size:14.5px}
 .areaopt[aria-selected="true"],.areaopt:hover{background:var(--card2)}
-.rowbtns{margin-left:auto;display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.rowbtns{margin-left:auto;display:flex;gap:8px;align-items:center;justify-content:flex-end;flex:none}
 .li .rowbtns + .chev{margin-left:0}
 
 /* --------------------------------- ход загрузки резюме hh (S48) --------------------------------- */
@@ -572,9 +572,21 @@ button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
   .fitshort{display:inline}
   .li.stretch,.orgnode .li{flex-wrap:wrap}
   .li.stretch > div:first-child,.orgnode .li > div:first-child{flex:1 1 100%}
-  .rowbtns{margin-left:0;justify-content:flex-start}
+  .rowbtns{margin-left:0;justify-content:flex-start;flex-wrap:wrap}
   .li.stretch .chev{display:none}
 }
 button.b.inactive{opacity:.55;cursor:not-allowed;filter:none}
 button.b.inactive:hover{filter:none}
 button.b.inactive:active{transform:none}
+
+/* должность из нескольких подразделений — одна строка с разбивкой (T41) */
+.posbox{border-bottom:.5px solid var(--sep)}
+.posbox:last-child{border-bottom:0}
+.posbox > .li{border-bottom:0}
+.breaktoggle{border:0;background:none;padding:0 2px;font:inherit;font-size:13px;color:var(--blue-ink);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.breaktoggle::after{content:"▾";text-decoration:none;display:inline-block;margin-left:4px}
+.breaktoggle[aria-expanded="true"]::after{content:"▴"}
+.li.stretch .breaktoggle{position:relative;z-index:1}
+.li > div:first-child{min-width:0}
+.breakdown{margin:0;padding:6px 18px 12px 34px;list-style:none;display:grid;gap:3px;font-size:13.5px;color:var(--ink2);background:var(--card2)}
+.breakdown li::before{content:"· ";color:var(--muted)}

@@ -11,7 +11,7 @@ import { loadResumesButton } from "../hh-load.js";
 import { fitAvailability, fitQuery } from "./base-model.js";
 import { weightControl } from "../weight-input.js";
 import {
-  allUnitIds, buildTree, canLoadPosition, filterTree, orgFileError, orgHeading, orgResultText, positionLink, positionState, rateText, rootOptions,
+  allUnitIds, breakdownLines, buildTree, canLoadPosition, filterTree, orgFileError, orgHeading, orgResultText, positionLink, positionState, rateText, rootOptions,
   syncText, treeCounts,
 } from "./org-model.js";
 import {
@@ -166,6 +166,7 @@ function listScreen(box, ctx) {
   let org = null;          // ответ GET /api/org: последняя выгрузка 1С и подразделения; нет — прежний плоский список
   let forest = [];         // дерево подразделений с должностями (пустые скрыты)
   const collapsed = new Set();
+  const expanded = new Set();   // строки должностей, у которых раскрыта разбивка по подразделениям
   let items = [];
 
   const heading = h("div.t1");
@@ -219,11 +220,27 @@ function listScreen(box, ctx) {
     const info = positionState(p);
     const link = positionLink(p);
     const load = canLoadPosition(p) ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.profile.id, title: p.profile.title || p.title, geo: p.profile.geo } }) : null;
-    return h(link ? "div.li.stretch" : "div.li", { style: link ? null : "cursor:default" },
-      h("div", h("div", { style: "font-weight:600" }, link ? h("a.main", { href: hashFor("profiles", { id: link }) }, p.title) : p.title), h("div.sub", rateText(p))),
+    // должность из нескольких подразделений — одна строка; разбивка по подразделениям раскрывается кнопкой и не открывает портрет
+    const lines = breakdownLines(p);
+    const open = lines.length > 0 && expanded.has(p.key);
+    const listId = uid("brk");
+    const toggle = lines.length ? h("button.breaktoggle", { type: "button", "aria-expanded": open, "aria-controls": listId, dataset: { row: p.key },
+      onClick: (event) => {
+        event.preventDefault();
+        if (expanded.has(p.key)) expanded.delete(p.key);
+        else expanded.add(p.key);
+        draw();
+        const again = [...results.querySelectorAll("[data-row]")].find((el) => el.dataset.row === p.key);
+        if (again) again.focus();
+      } }, "по подразделениям") : null;
+    const row = h(link ? "div.li.stretch" : "div.li", { style: link ? null : "cursor:default" },
+      h("div", h("div", { style: "font-weight:600" }, link ? h("a.main", { href: hashFor("profiles", { id: link }) }, p.title) : p.title),
+        h("div.sub", rateText(p), toggle ? [" ", toggle] : null)),
       p.profile && p.profile.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
-      h("span.pill", { class: info.pill }, info.text), h("div.rowbtns", fitButton(ctx, p.profile ? p.profile.code : null, p.title, p.profile ? p.profile.state : null), load),
+      h("span.pill", { class: info.pill }, info.text),
+      h("div.rowbtns", fitButton(ctx, p.profile ? p.profile.code : null, p.title, p.profile ? p.profile.state : null), load),
       link ? h("span.chev", "›") : null);
+    return h("div.posbox", row, open ? h("ul.breakdown", { id: listId, "aria-label": `Подразделения: ${p.title}` }, lines.map((line) => h("li", line))) : null);
   };
   const unitNode = (node, forced) => {
     const open = forced || !collapsed.has(node.id);   // при поиске всё найденное развёрнуто
