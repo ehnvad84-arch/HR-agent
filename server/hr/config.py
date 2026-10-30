@@ -72,6 +72,10 @@ class Config:
     mail_from: str = field(default_factory=lambda: _env("MAIL_FROM"))
     mail_to: tuple[str, ...] = field(default_factory=lambda: tuple(
         a.strip() for a in _env("MAIL_TO").split(",") if a.strip()))
+    # Телеграм-бот человека для недельной сводки замечаний (S21): токен бота и id чата
+    feedback_tg_token: str = field(default_factory=lambda: _env("FEEDBACK_TG_TOKEN"))
+    feedback_tg_chat: str = field(default_factory=lambda: _env("FEEDBACK_TG_CHAT"))
+    telegram_api: str = field(default_factory=lambda: _env("TELEGRAM_API", "https://api.telegram.org"))
     web_url: str = field(default_factory=lambda: _env("WEB_URL", "http://localhost:8000/"))
 
     session_key: str = field(default_factory=lambda: _env("SESSION_KEY"))

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -17,7 +17,7 @@ from . import actions, assist, embed, llm, profiles
 from .clock import SYSTEM
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
-from .jobs import JobStats
+from .jobs import JobError, JobStats
 from .scoring import FEATURE_LABELS
 
 log = logging.getLogger(__name__)
@@ -313,4 +313,52 @@ def apply_digest(conn_factory: ConnFactory, *, now: datetime | None = None, cloc
                      note + " — принято, автоматической правки нет: вносит человек"))
             run(conn, "UPDATE digest_proposal SET applied_at = %s WHERE id = %s", (now, p["id"]))
             stats.changed += 1
+    return stats
+
+
+# ------------------------------------------------------------------ недельная сводка всех замечаний (S21)
+
+def week_text(conn, now: datetime, days: int = 7) -> tuple[str, int]:
+    """Все замечания за неделю от всех сотрудников по видам, с автором и датой; имена и контакты скрыты."""
+    since = now - timedelta(days=days)
+    msgs = rows(conn, """SELECT f.tag::text AS tag, f.body, f.created_at, u.full_name AS author
+                         FROM feedback_message f JOIN app_user u ON u.id = f.author_id
+                         WHERE f.created_at > %s ORDER BY f.tag, f.created_at""", (since,))
+    head = f"Замечания сотрудников по обучению агента, {since:%d.%m}–{now:%d.%m}: {len(msgs)}"
+    if not msgs:
+        return head + "\n\nЗа неделю замечаний не было.", 0
+    lines = [head]
+    for tag in TAG_TITLE:
+        part = [m for m in msgs if m["tag"] == tag]
+        if part:
+            lines.append(f"\n{TAG_TITLE[tag].capitalize()} — {len(part)}:")
+            # наружу (Телеграм, почта) — ещё и любое «Фамилия И. О.»: вдруг это кандидат, которого нет в базе
+            lines += [f"• {m['author']}, {m['created_at']:%d.%m}: {_FIO_LIKE.sub('[имя]', mask(conn, m['body'])[0])}"
+                      for m in part]
+    props = rows(conn, """SELECT title FROM digest_proposal WHERE decision IS NULL ORDER BY id DESC LIMIT 10""")
+    if props:
+        lines.append("\nПредложения агента ждут решения:")
+        lines += [f"• {p['title']}" for p in props]
+    return "\n".join(lines), len(msgs)
+
+
+def feedback_week(conn_factory: ConnFactory, *, clock=None, http: httpx.Client | None = None, **_) -> JobStats:
+    """Задача feedback_week (пятница 18:30 МСК): сводка — в Телеграм-бот человека и на почту MAIL_TO."""
+    from . import mailer, telegram
+    now = (clock or SYSTEM).now()
+    stats = JobStats()
+    with conn_factory() as conn:
+        text, n = week_text(conn, now)
+    stats.seen = n
+    sent = []
+    if telegram.configured():
+        telegram.send(text, http=http)
+        sent.append("Телеграм")
+    try:
+        mailer.send("Замечания сотрудников за неделю", text + f"\n\n{mailer._link()}")
+        sent.append("почта")
+    except (JobError, mailer.MailError) as e:
+        log.info("сводка замечаний на почту не ушла: %s", type(e).__name__)
+    stats.note = ("отправлено: " + ", ".join(sent)) if sent else "канал не настроен: сводка только на экране"
+    stats.new = len(sent)
     return stats

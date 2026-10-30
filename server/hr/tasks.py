@@ -73,6 +73,7 @@ TASKS: dict[str, Task] = {
     "weekly_report": Task(mailer.weekly_report),
     "user_rescore": Task(tweaks.user_rescore),
     "load_watchdog": Task(load_check.load_watchdog),
+    "feedback_week": Task(learning.feedback_week),
 }
 
 

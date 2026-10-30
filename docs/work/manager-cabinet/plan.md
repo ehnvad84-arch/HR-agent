@@ -29,7 +29,7 @@
 - [x] T17 — `hr/load_check.py`: разбор итога прогонов `collect_hh`, `collect_hh_daily`, `collect_trudvsem`, `photos` (успех / тревога с причиной), сообщения в `notification` всем действующим recruiter/head_recruiter и почта при SMTP, без повторов чаще `load_alarm_repeat_hours`; задача `load_watchdog` (не начались по расписанию, зависли) и таймер раз в час в `install_autostart.sh`; `GET /api/notifications`, `POST /api/notification/{id}/read`, «Разбираюсь» · сценарий: S20 · проверка: auto · исполнитель: main
   Готово, когда: `server/tests/test_load_check.py` зелёный: успех → сообщение всем HR, ошибка → тревога с причиной, 0 резюме → тревога, пропуск расписания и зависание → тревога, повтор подавлен, руководителю не приходит.
 
-- [ ] T19 — задача `feedback_week`: все замечания недели (маска `learning.mask`), по видам с автором; отправка в Телеграм (`FEEDBACK_TG_TOKEN`, `FEEDBACK_TG_CHAT`, `hr/telegram.py`, без контактов кандидатов) и на почту `MAIL_TO`; таймер пятница 18:30 MSK в `install_autostart.sh`; имена переменных — в `check_env.py` · сценарий: S21 · проверка: auto · исполнитель: main
+- [x] T19 — задача `feedback_week`: все замечания недели (маска `learning.mask`), по видам с автором; отправка в Телеграм (`FEEDBACK_TG_TOKEN`, `FEEDBACK_TG_CHAT`, `hr/telegram.py`, без контактов кандидатов) и на почту `MAIL_TO`; таймер пятница 18:30 MSK в `install_autostart.sh`; имена переменных — в `check_env.py` · сценарий: S21 · проверка: auto · исполнитель: main
   Готово, когда: `server/tests/test_feedback_week.py` зелёный: сводка содержит замечания всех авторов недели, без телефонов и имён кандидатов; без каналов — запись «канал не настроен»; Телеграм и почта — на заглушках.
 
 ### Экраны

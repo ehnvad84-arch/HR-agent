@@ -52,5 +52,10 @@ if e("SMTP_HOST"):
     say("@" in e("MAIL_TO", ""), "почта: MAIL_TO — адреса получателей")
 else:
     note("SMTP_HOST не задан: дайджест и отчёт на почту не уходят, только на экране")
+if e("FEEDBACK_TG_TOKEN") or e("FEEDBACK_TG_CHAT"):
+    say(bool(e("FEEDBACK_TG_TOKEN") and e("FEEDBACK_TG_CHAT")),
+        "Телеграм: FEEDBACK_TG_TOKEN и FEEDBACK_TG_CHAT вписаны")
+else:
+    note("FEEDBACK_TG_TOKEN не задан: недельная сводка замечаний в Телеграм не уходит")
 print("ШАГ 1 ВЫПОЛНЕН" if ok else "Есть ошибки: исправьте строки с ✗ в nano .env")
 sys.exit(0 if ok else 1)
