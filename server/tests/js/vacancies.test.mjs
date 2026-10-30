@@ -5,7 +5,7 @@ import test from "node:test";
 import { minFromError } from "../../web/js/decisions-model.js";
 import {
   CLOSE_HINT, CLOSE_REASONS, buildVacancy, closeResult, closedText, daysBetween, isStarving, openText, originText,
-  profileChoices, vacancyTitle,
+  profileChoices, staffChoices, vacancyTitle, MANAGER_HINT,
 } from "../../web/js/screens/vacancies-model.js";
 
 const NOW = new Date(2026, 9, 29);
@@ -79,13 +79,32 @@ test("профили для новой вакансии: только утвер
 });
 
 test("S21: форма новой вакансии собирает тело запроса и проверяет поля", () => {
-  assert.deepEqual(buildVacancy({ profileId: "4", title: "  Инженер ОТК  ", headcount: "2", targetDate: "2026-12-01" }),
-    { ok: true, payload: { role_profile_id: 4, title: "Инженер ОТК", headcount: 2, target_date: "2026-12-01" } });
-  assert.deepEqual(buildVacancy({ profileId: "4", title: "Инженер", headcount: "1", targetDate: "" }),
-    { ok: true, payload: { role_profile_id: 4, title: "Инженер", headcount: 1 } });   // без срока поле не уходит
+  assert.deepEqual(buildVacancy({ profileId: "4", title: "  Инженер ОТК  ", headcount: "2", targetDate: "2026-12-01", recruiterId: "7", hiringManagerId: "12" }),
+    { ok: true, payload: { role_profile_id: 4, title: "Инженер ОТК", headcount: 2, target_date: "2026-12-01", recruiter_id: 7, hiring_manager_id: 12 } });
+  assert.deepEqual(buildVacancy({ profileId: "4", title: "Инженер", headcount: "1", targetDate: "", recruiterId: "7", hiringManagerId: "12" }),
+    { ok: true, payload: { role_profile_id: 4, title: "Инженер", headcount: 1, recruiter_id: 7, hiring_manager_id: 12 } });   // без срока поле не уходит
   assert.equal(buildVacancy({ profileId: "", title: "Инженер", headcount: "1" }).error, "Выберите профиль должности");
   assert.equal(buildVacancy({ profileId: "4", title: "   ", headcount: "1" }).error, "Введите название вакансии");
   assert.equal(buildVacancy({ profileId: "4", title: "А", headcount: "0" }).error, "Ставок должно быть не меньше одной");
   assert.equal(buildVacancy({ profileId: "4", title: "А", headcount: "1.5" }).error, "Ставок должно быть не меньше одной");
   assert.equal(buildVacancy({ profileId: "4", title: "А", headcount: "" }).error, "Ставок должно быть не меньше одной");
+});
+
+test("S12: форма вакансии — ответственный HR и руководитель-заказчик обязательны и уходят в запрос", () => {
+  const base = { profileId: "4", title: "Инженер", headcount: "1", targetDate: "" };
+  assert.deepEqual(buildVacancy({ ...base, recruiterId: "7", hiringManagerId: "12" }),
+    { ok: true, payload: { role_profile_id: 4, title: "Инженер", headcount: 1, recruiter_id: 7, hiring_manager_id: 12 } });
+  assert.equal(buildVacancy({ ...base, recruiterId: "", hiringManagerId: "12" }).error, "Выберите ответственного HR");
+  assert.equal(buildVacancy({ ...base, recruiterId: "7", hiringManagerId: "" }).error, "Выберите руководителя-заказчика");
+  assert.equal(buildVacancy({ ...base, recruiterId: "7", hiringManagerId: "x" }).error, "Выберите руководителя-заказчика");
+});
+
+test("S12: списки сотрудников для формы — подпись с подразделением; ответственный по умолчанию — я", () => {
+  const items = [{ id: 7, full_name: "Петрова Анна", org_unit: "Отдел управления персоналом" }, { id: 8, full_name: "Сидоров Пётр", org_unit: null }];
+  const hr = staffChoices(items, 8);
+  assert.deepEqual(hr.options, [{ id: 7, label: "Петрова Анна — Отдел управления персоналом" }, { id: 8, label: "Сидоров Пётр" }]);
+  assert.equal(hr.selected, 8);
+  assert.equal(staffChoices(items, 99).selected, null);   // меня в списке нет: выбирают вручную
+  assert.deepEqual(staffChoices(null, 8), { options: [], selected: null });
+  assert.equal(MANAGER_HINT, "Выберите вручную");
 });

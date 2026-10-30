@@ -3,16 +3,22 @@
 import { actBtn, actionCard, perform } from "../cards.js";
 import { h, mount } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
-import { blockedSheet, contactSheet, quietDecline } from "../contact-ui.js";
+import { blockedSheet, contactSheet, quietDecline, startContact } from "../contact-ui.js";
 import { loadResumesButton } from "../hh-load.js";
 import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
 import { TOASTS, resultText, takenText } from "../decisions-model.js";
-import { openDecisionSheet, takePerson } from "../decisions.js";
+import { openCommentSheet, openDecisionSheet, takePerson } from "../decisions.js";
 import { declineSheet, draftSheet } from "../letter-ui.js";
-import { chip, face, personHref, personName, scoreBadge, summaryBlock } from "../people.js";
+import { handoffControl, statusBadge } from "../handoff.js";
+import { DEFAULT_MIN as HANDOFF_MIN, NO_INBOX, REJECT_HINT, REJECT_REASONS, inboxLines, takenToast, zoneTitle as inboxTitle } from "../handoff-model.js";
+import { isCabinet } from "../nav-model.js";
+import { chip, face, myScoreChip, personHref, personName, scoreBadge, summaryBlock } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
 import { normalizeToday } from "./today-model.js";
+import {
+  EMPTY_SIGNALS, EMPTY_VACANCIES, NO_HANDOFFS, customerLine, hrLine, managerBadge, matchingLabel, normalizeManagerToday, vacancyMeta, zoneTitles,
+} from "./manager-model.js";
 
 const nameLine = (person) => h("div.namewrap", face(person, { small: true }),
   h("div.t1", h("a", { href: personHref(person.person_id) }, personName(person))));
@@ -190,6 +196,66 @@ function meetingCard(row) {
     row.vacancy_title ? h("div.t2", `Вакансия: ${row.vacancy_title}`) : null));
 }
 
+/**
+ * Карточка в блоке «Передали руководители» (S11): фото, балл по вакансии, кто и когда передал, комментарий цитатой.
+ * «Взять в работу» — человек встаёт в воронку этой вакансии, контакт открывается отдельной кнопкой с подтверждением;
+ * «Отклонить» — общее окно комментария с порогом передачи, причину увидит руководитель.
+ */
+function inboxCard(item, env) {
+  const id = encodeURIComponent(item.id);
+  const after = h("div.btns", { hidden: true });
+  const take = () => perform(card, () => env.api.post(`/api/handoff/${id}/take`, {}, { signal: env.signal }), (reply) => {
+    card.finish(`${takenToast(item)}. Контакт не открыт: он откроется по кнопке, с подтверждением`);
+    env.resolved();
+    toast(takenToast(item));
+    if (env.session.can("contact.open") && reply && reply.candidate_id) {
+      const status = errorLine();
+      const open = h("button.b.fill", { type: "button", "data-tip": "Открыть контакт", onClick: async () => {
+        status.clear();
+        open.disabled = true;
+        try {
+          const result = await startContact({ api: env.api, signal: env.signal, candidateId: reply.candidate_id, person: item });
+          if (result) {
+            toast(result.opened ? "Контакт открыт, запись в журнале доступа" : "Контакт уже был открыт");
+            open.textContent = "Контакт открыт";
+            return;
+          }
+        } catch (error) {
+          if (error && error.name === "AbortError") return;
+          status.show(error);
+        }
+        open.disabled = false;
+      } }, "Открыть контакт");
+      mount(after, open, status.el);
+      after.hidden = false;
+    }
+  });
+  const reject = async () => {
+    const result = await openCommentSheet({
+      title: `Отклонить: ${personName(item)}`, hint: REJECT_HINT, reasons: REJECT_REASONS, min: HANDOFF_MIN, saveLabel: "Отклонить передачу",
+      placeholder: "Что не подошло по этой вакансии. Руководитель увидит ваш ответ и поймёт, кого предлагать дальше.",
+      send: (text) => env.api.post(`/api/handoff/${id}/reject`, { reason: text }, { signal: env.signal }),
+    });
+    if (!result.saved) return;
+    card.finish("Отклонено, причину увидит руководитель");
+    env.resolved();
+    toast("Отклонено, причина отправлена руководителю");
+  };
+  const card = actionCard(({ btns, status }) =>
+    h("div.row.sigrow", scoreBadge(item.score), face(item, { size: "lg" }),
+      h("div.grow", h("div.t1", h("a", { href: personHref(item.person_id) }, personName(item))),
+        inboxLines(item, { seeAll: env.session.can("handoff.all") }).map((line) => h("div.t2", line)),
+        item.comment ? h("blockquote.quote", item.comment) : null,
+        btns, status)),
+  [
+    actBtn("fill", "Взять в работу", take),
+    actBtn("danger", "Отклонить", reject, "Отклонить передачу"),
+    h("button.b.tint", { type: "button", onClick: () => env.go("person", { id: item.person_id }) }, "Открыть досье"),
+  ]);
+  card.el.append(after);
+  return card.el;
+}
+
 function zone(num, tone, cls, title, cards, emptyText) {
   const headId = `today-zone-${num}`;
   return h("section", { "aria-labelledby": headId },
@@ -199,7 +265,7 @@ function zone(num, tone, cls, title, cards, emptyText) {
 
 // ------------------------------------------------------------------ экран
 
-/** «Загрузить резюме HH.ru» над блоками — только с правом settings.edit; после запуска ход виден в полосе под вкладками. */
+/** «Загрузить резюме HH.ru» над блоками — только с правом collect.run; после запуска ход виден в полосе под вкладками. */
 function loadBar(env) {
   const button = loadResumesButton({ api: env.api, signal: env.signal, session: env.session, variant: "fill" });
   return button ? h("div.loadbar", button, h("span.hint", "Скачать полные резюме с hh вручную, в пределах дневного лимита просмотров")) : null;
@@ -211,17 +277,78 @@ export function view(data, env) {
       h("div.btns", h("a.link", { href: hashFor("base") }, "Открыть «Базу»")))];
   }
   const cardEnv = { ...env, followUpQueued: data.followUpQueued };
+  // блок передач — первый и только у тех, кому они адресованы; остальные блоки тогда нумеруются 2–5
+  const inbox = env.session.can("handoff.review");
+  const num = (n) => String(n + (inbox ? 1 : 0));
   return [
     loadBar(env),
-    zone("1", "g", "z1", "Обратите внимание — новые и изменившиеся люди", data.signals.map((r) => signalCard(r, cardEnv)),
+    inbox ? zone("1", "v", "z5", inboxTitle(), data.handoffs.map((x) => inboxCard(x, cardEnv)), NO_INBOX) : null,
+    zone(num(1), "g", "z1", "Обратите внимание — новые и изменившиеся люди", data.signals.map((r) => signalCard(r, cardEnv)),
       "Новых сигналов нет"),
-    zone("2", "o", "z2", "Ждут подтверждения — агент подготовил, решаете вы", data.actions.map((r) => approvalCard(r, cardEnv)), "Ничего не ждёт"),
-    zone("3", "r", "z3", "Зависли — давно без движения", data.stalled.map((r) => stalledCard(r, cardEnv)), "Ничего не ждёт"),
-    zone("4", "b", "z4", "Сегодня и завтра", data.meetings.map(meetingCard), "Встреч на сегодня и завтра нет"),
+    zone(num(2), "o", "z2", "Ждут подтверждения — агент подготовил, решаете вы", data.actions.map((r) => approvalCard(r, cardEnv)), "Ничего не ждёт"),
+    zone(num(3), "r", "z3", "Зависли — давно без движения", data.stalled.map((r) => stalledCard(r, cardEnv)), "Ничего не ждёт"),
+    zone(num(4), "b", "z4", "Сегодня и завтра", data.meetings.map(meetingCard), "Встреч на сегодня и завтра нет"),
   ];
 }
 
+// ------------------------------------------------------------------ «Сегодня» руководителя (S6): без решений по людям, контактов и загрузки резюме
+
+function managerSignalCard(row, env) {
+  const reason = alertReason(row.reason);
+  const card = actionCard(({ btns }) =>
+    h("div.row.sigrow", h("div", { style: "display:grid;gap:6px;justify-items:center" }, scoreBadge(row.score), myScoreChip(row)), face(row, { size: "lg" }),
+      h("div.grow", h("div.t1", h("a", { href: personHref(row.person_id) }, personName(row))),
+        h("div.t2", [row.role_title, row.city].filter(Boolean).join(" · ")),
+        h("div.t2", { style: "color:var(--ink2)" }, row.headline),
+        h("div.chips", chip(reason.title, reason.tone)),
+        btns),
+      summaryBlock(row.summary)),
+  [
+    handoffControl({ api: env.api, signal: env.signal, session: env.session, person: row, existing: env.handed.get(row.person_id) || null }),
+    h("button.b.tint", { type: "button", onClick: () => env.go("person", { id: row.person_id }) }, "Досье"),
+  ]);
+  return card.el;
+}
+
+function managerVacancyCard(v, env) {
+  return h("div.card", h("div.cardbody", h("div.row",
+    h("div.grow", h("div.t1", v.title), h("div.t2", [vacancyMeta(v), v.org_unit].filter(Boolean).join(" · ")),
+      h("div.t2", [hrLine(v), customerLine(v)].filter(Boolean).join(" · "))),
+    h("div.btns", { style: "margin:0" }, h("a.link", { href: hashFor("funnel", { id: v.id }), "data-tip": "vacancy-matching" }, matchingLabel(v.matching))))));
+}
+
+function handoffCard(item) {
+  return h("div.card", h("div.cardbody", h("div.namewrap", face(item, { small: true }),
+    h("div.t1", h("a", { href: personHref(item.person_id) }, personName(item)))),
+  h("div.t2", `Вакансия: ${item.vacancy_title}`), h("div", { style: "margin-top:6px" }, statusBadge(item))));
+}
+
+export function managerView(data, env) {
+  const titles = zoneTitles();
+  return [
+    zone("1", "g", "z1", titles.signals, data.signals.map((r) => managerSignalCard(r, env)), EMPTY_SIGNALS),
+    h("p", { style: "margin:-6px 6px 10px" }, h("a.link", { href: hashFor("vacancies") }, "Мои вакансии")),
+    zone("2", "b", "z4 noicon", titles.vacancies, data.vacancies.map((v) => managerVacancyCard(v, env)), EMPTY_VACANCIES),
+    zone("3", "o", "z2 noicon", titles.handoffs, data.handoffs.map(handoffCard), NO_HANDOFFS),
+  ];
+}
+
+function renderManager(box, ctx) {
+  const { api, signal, setBadge } = ctx;
+  const env = { api, signal, go: ctx.go, session: ctx.session, handed: new Map() };
+  const load = async () => {
+    const data = normalizeManagerToday(await api.get("/api/today", { signal }));
+    for (const item of data.handoffs) env.handed.set(item.person_id, item);   // у кого уже есть статус — бейдж вместо кнопки
+    return data;
+  };
+  return mountAsync(box, load, (data) => {
+    setBadge("today", managerBadge(data.badge));
+    return managerView(data, env);
+  }, { signal });
+}
+
 export function render(box, ctx) {
+  if (isCabinet(ctx.session.user)) return renderManager(box, ctx);
   const { api, signal, setBadge } = ctx;
   let badge = 0;
   const showBadge = () => setBadge("today", badge > 0 ? badge : "");

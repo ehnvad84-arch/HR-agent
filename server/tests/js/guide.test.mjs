@@ -113,3 +113,13 @@ test("блок открыт при первом входе и свёрнут п�
   assert.doesNotThrow(() => markGuideSeen(broken, { id: 7 }));
   assert.equal(guideOpen(null, { id: 7 }), false);
 });
+
+test("S21: правила — недельная сводка замечаний по пятницам, в Телеграм и на почту, без имён кандидатов; личное обучение видит и руководитель", () => {
+  const weekly = RULES.find((r) => r.includes("недельная сводка замечаний"));
+  assert.ok(weekly, "правило про недельную сводку замечаний");
+  for (const part of ["пятниц", "18:30", "по Москве", "Телеграм", "почту", "руководителю", "без имён кандидатов", "контактов"]) assert.ok(weekly.includes(part), part);
+  const personal = RULES.find((r) => r.startsWith("Личное обучение"));
+  assert.ok(/замечания.*видите вы, агент и руководитель — в недельной сводке/.test(personal), "замечания видит и руководитель — в недельной сводке");
+  assert.ok(personal.includes("поправки"), "поправки остаются личными");
+  assert.equal(RULES.join(" ").includes("видны вам и агенту"), false);
+});

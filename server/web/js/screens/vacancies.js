@@ -4,26 +4,32 @@
 import { actBtn, actionCard, perform } from "../cards.js";
 import { openCommentSheet } from "../decisions.js";
 import { h, mount, uid } from "../dom.js";
+import { isCabinet } from "../nav-model.js";
 import { chip } from "../people.js";
 import { emptyCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
+import { renderList as renderManagerList } from "./manager-vacancies.js";
 import {
   CLOSE_HINT, CLOSE_REASONS, CLOSE_TOAST, REOPEN_TOAST, buildVacancy, closeResult, closedText, isStarving, openText,
-  profileChoices, vacancyTitle,
+  MANAGER_HINT, profileChoices, staffChoices, vacancyTitle,
 } from "./vacancies-model.js";
 
 const CLOSE_PLACEHOLDER = "Чем закрыта потребность, кто вышел на работу, что стоит учесть агенту в следующий раз по этой должности.";
 
 // ------------------------------------------------------------------ новая вакансия (S21)
 
-/** Окно «Новая вакансия»: профиль из базы должностей (только утверждённые), название, ставки, срок. Возвращает Promise<id | null>. */
-function newVacancySheet({ api, signal }) {
+/**
+ * Окно «Новая вакансия»: профиль из базы должностей (только утверждённые), название, ставки, срок, ответственный HR (по умолчанию я)
+ * и руководитель-заказчик (подставляется по должности; не нашёлся — пусто с подсказкой «Выберите вручную»). Возвращает Promise<id | null>.
+ */
+function newVacancySheet({ api, signal, session }) {
   const win = sheet({ title: "Новая вакансия", width: "520px",
     hint: "Должность берётся из базы должностей: вакансия работает по её утверждённому профилю. Агент сразу покажет подходящих из накопленной базы." });
   const body = h("div", h("p.loading", "Загружаю профили…"));
   win.body.append(body);
   win.show();
 
-  api.get("/api/profiles", { signal }).then((reply) => {
+  Promise.all([api.get("/api/profiles", { signal }), api.get("/api/staff", { query: { kind: "hr" }, signal }),
+    api.get("/api/staff", { query: { kind: "managers" }, signal })]).then(([reply, hrReply, managersReply]) => {
     const choices = profileChoices(reply.items);
     if (!choices.length) {
       mount(body, h("p.t2", "Утверждённых профилей нет: сначала утвердите профиль в «Базе должностей»."),
@@ -37,6 +43,32 @@ function newVacancySheet({ api, signal }) {
     const headcount = field({ label: "Ставок", kind: "number", name: "headcount", value: "1", required: true });
     headcount.input.min = "1";
     const date = field({ label: "Срок закрытия (необязательно)", kind: "date", name: "target_date" });
+    const hr = staffChoices(hrReply.items, session.user ? session.user.id : null);
+    const managers = staffChoices(managersReply.items);
+    const recruiterId = uid("recruiter");
+    const recruiter = h("select", { id: recruiterId, required: true },
+      h("option", { value: "" }, "Выберите ответственного…"), hr.options.map((o) => h("option", { value: o.id, selected: o.id === hr.selected }, o.label)));
+    const managerId = uid("manager");
+    const manager = h("select", { id: managerId, required: true, "aria-describedby": `${managerId}-hint` },
+      h("option", { value: "" }, "Выберите руководителя…"), managers.options.map((o) => h("option", { value: o.id }, o.label)));
+    const managerHint = h("p.hint", { id: `${managerId}-hint`, style: "margin:6px 0 0", role: "status" },
+      "Заполнится по должности: руководитель её подразделения.");
+    let managerTouched = false;   // руководителя выбрали руками: смена должности его не перетирает
+    manager.addEventListener("change", () => { managerTouched = true; managerHint.textContent = ""; });
+    const suggestManager = async () => {
+      if (managerTouched || !profile.value) return;
+      managerHint.textContent = "";
+      let found = null;
+      try {
+        found = await api.get("/api/vacancy/defaults", { query: { role_profile_id: profile.value }, signal });
+      } catch (error) {
+        if (error && error.name === "AbortError") return;
+      }
+      if (managerTouched) return;
+      const known = found && managers.options.some((o) => o.id === found.hiring_manager_id);
+      manager.value = known ? String(found.hiring_manager_id) : "";
+      managerHint.textContent = known ? `По подразделению должности: ${found.hiring_manager}` : MANAGER_HINT;
+    };
     const status = errorLine();
     const save = h("button.b.fill", { type: "submit" }, "Создать вакансию");
     let autoTitle = "";   // название, подставленное из профиля: пока человек его не правил, оно следует за выбором
@@ -46,15 +78,19 @@ function newVacancySheet({ api, signal }) {
         autoTitle = chosen ? chosen.title : "";
         title.input.value = autoTitle;
       }
+      suggestManager();
     });
     const form = h("form", { novalidate: true }, h("div.form",
       h("div.field", h("label", { for: profileId }, "Профиль должности"), profile), title.root,
-      h("div.two", headcount.root, date.root)), status.el,
+      h("div.two", headcount.root, date.root),
+      h("div.field", h("label", { for: recruiterId }, "Ответственный HR"), recruiter),
+      h("div.field", h("label", { for: managerId }, "Руководитель-заказчик"), manager, managerHint)), status.el,
     h("div.sheetfoot.end", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"), save));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       status.clear();
-      const built = buildVacancy({ profileId: profile.value, title: title.input.value, headcount: headcount.input.value, targetDate: date.input.value });
+      const built = buildVacancy({ profileId: profile.value, title: title.input.value, headcount: headcount.input.value, targetDate: date.input.value,
+        recruiterId: recruiter.value, hiringManagerId: manager.value });
       if (!built.ok) {
         status.show(built.error);
         return;
@@ -97,7 +133,8 @@ function openCard(v, env) {
     await env.refresh();
   };
   const chips = [isStarving(v) ? chip("дольше нормы", "o") : null, v.state === "on_hold" ? chip("на паузе") : null].filter(Boolean);
-  const card = actionCard(({ btns, status }) => [h("div.t1", vacancyTitle(v)), h("div.t2", openText(v)),
+  const people = [v.recruiter ? `Ответственный HR: ${v.recruiter}` : null, v.hiring_manager ? `Заказчик: ${v.hiring_manager}` : null].filter(Boolean).join(" · ");
+  const card = actionCard(({ btns, status }) => [h("div.t1", vacancyTitle(v)), h("div.t2", openText(v)), people ? h("div.t2", people) : null,
     chips.length ? h("div.chips", chips) : null, btns, status], [
     h("button.b.fill", { type: "button", onClick: go("base", {}, { vacancy: v.id }) }, "Показать подходящих"),
     h("button.b.tint", { type: "button", onClick: go("funnel", { id: v.id }) }, "Воронка"),
@@ -152,6 +189,7 @@ export function view(data, env) {
 }
 
 export function render(box, ctx) {
+  if (isCabinet(ctx.session.user)) return renderManagerList(box, ctx);   // «Мои вакансии»: без «Новой вакансии» и «Закрыть»
   const { api, signal, session } = ctx;
   const env = { api, signal, go: ctx.go, canEdit: session.can("vacancy.edit"), notes: new Map(), focusAfter: null };
   const draw = (data) => {
@@ -177,7 +215,7 @@ export function render(box, ctx) {
     }
   };
   env.create = async () => {
-    const id = await newVacancySheet({ api, signal });
+    const id = await newVacancySheet({ api, signal, session: ctx.session });
     if (id === null || id === undefined) return;
     env.notes.set(id, "Вакансия заведена: «Показать подходящих» откроет людей из накопленной базы");
     toast("Вакансия заведена");

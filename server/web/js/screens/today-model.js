@@ -7,6 +7,7 @@ export function normalizeToday(raw) {
     actions: raw.actions || [],
     stalled: raw.stalled || [],
     meetings: raw.meetings || [],
+    handoffs: raw.handoffs || [],   // S11: передали руководители (только у тех, кому они адресованы)
   };
   return {
     ...data,

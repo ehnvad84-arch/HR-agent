@@ -22,9 +22,13 @@ export function navFor(user, can) {
   if (!user || user.role === "no_access") return { kind: "none", tabs: [], titles: {} };
   if (CABINET_ROLES.has(user.role)) return { kind: "cabinet", tabs: [...CABINET_TABS], titles: { ...CABINET_TITLES } };
   const tabs = [...STAFF_TABS];
-  if (can("access.manage")) tabs.splice(tabs.indexOf("logs") + 1, 0, "access");
+  // «Доступ»: у руководителя отдела персонала целиком (access.manage); у специалиста урезанный — только «Выдать код» руководителям (invite.issue)
+  if (can("access.manage") || can("invite.issue")) tabs.splice(tabs.indexOf("logs") + 1, 0, "access");
   return { kind: "staff", tabs, titles: {} };
 }
+
+/** Кабинет руководителя: руководитель подразделения и директор (без решений по людям, контактов и загрузки резюме). */
+export const isCabinet = (user) => Boolean(user && CABINET_ROLES.has(user.role));
 
 /** Какая вкладка подсвечена для адреса: у руководителя досье и воронка — без вкладки, подсвечивается список, откуда пришли. */
 export function activeTab(routeName, nav) {

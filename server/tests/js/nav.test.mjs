@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { SCREENS } from "../../web/js/screens/index.js";
 import {
-  NO_ACCESS_TEXT, NO_UNIT_TEXT, ROLE_TITLES, activeTab, hasFullBase, headerLine, navFor, noUnit,
+  NO_ACCESS_TEXT, NO_UNIT_TEXT, ROLE_TITLES, activeTab, hasFullBase, headerLine, isCabinet, navFor, noUnit,
 } from "../../web/js/nav-model.js";
 
 const user = (role, extra = {}) => ({ id: 1, login: "x", full_name: "Иванов И. И.", role, ...extra });
@@ -28,6 +28,9 @@ test("руководитель отдела персонала: то же и «�
   // право решает, а не название роли
   assert.equal(navFor(user("head_recruiter"), can("base.read")).tabs.includes("access"), false);
   assert.equal(navFor(user("recruiter"), can("base.read", "access.manage")).tabs.includes("access"), true);
+  // специалисту — урезанный «Доступ» (только выдача кода): право invite.issue
+  assert.equal(navFor(user("recruiter"), can("base.read", "invite.issue")).tabs.includes("access"), true);
+  assert.equal(navFor(user("recruiter"), can("base.read")).tabs.includes("access"), false);
 });
 
 test("руководитель подразделения: Сегодня · Мои вакансии · Мои должности · База · Обучение агента · Схема (справка)", () => {
@@ -97,4 +100,12 @@ test("у каждой вкладки любой роли есть экран", (
   for (const nav of [navFor(user("recruiter"), can("access.manage")), navFor(user("hiring_manager"), can()), navFor(user("director"), can())]) {
     for (const name of nav.tabs) assert.ok(SCREENS[name], name);
   }
+});
+
+test("кабинет — руководитель подразделения и директор; отдел персонала — нет", () => {
+  assert.equal(isCabinet(user("hiring_manager")), true);
+  assert.equal(isCabinet(user("director")), true);
+  assert.equal(isCabinet(user("recruiter")), false);
+  assert.equal(isCabinet(user("head_recruiter")), false);
+  assert.equal(isCabinet(null), false);
 });

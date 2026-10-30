@@ -1,5 +1,5 @@
 // Кнопка «Загрузить резюме HH.ru» и окно «сколько» (S44, S46): вручную скачать полные резюме с hh в пределах дневного лимита просмотров.
-// Только с правом settings.edit (руководитель подбора): загрузка тратит лимит hh. Сервер сам проверяет 1…остаток и отвечает 422.
+// Только с правом collect.run (специалисты отдела персонала): загрузка тратит лимит hh. Сервер сам проверяет 1…остаток и отвечает 422.
 // Два режима: общий («Сегодня», «База») и по одной должности и региону («База должностей»).
 // После запуска окно закрывается, а ход виден в полосе под вкладками на любом экране (load-status.js). Всё из API выводится только текстом (h(), textContent).
 import { h, mount, uid } from "./dom.js";
@@ -212,7 +212,7 @@ export function openLoadSheet({ api, signal, onStarted, role = null }) {
  * role — {id, title, geo} утверждённого портрета: кнопка открывает окно по должности и региону (S46).
  */
 export function loadResumesButton({ api, signal, session, onStarted, variant = "", role = null }) {
-  if (!session.can("settings.edit")) return null;
+  if (!session.can("collect.run")) return null;
   return h("button.b", { type: "button", class: variant, "data-tip": role ? "hh-load-role" : null,
     onClick: (event) => {
       event.preventDefault();

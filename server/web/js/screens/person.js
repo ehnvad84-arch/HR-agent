@@ -8,7 +8,10 @@ import { actionOutcome, contactKindTitle, draftKind } from "../contacts-model.js
 import { TOASTS } from "../decisions-model.js";
 import { openDecisionSheet, takePerson } from "../decisions.js";
 import { absoluteDay, dateTimeLabel, moneyText, statusTitle, yearsText } from "../format.js";
+import { handoffControl, statusBadge } from "../handoff.js";
+import { handoffsOfPerson } from "../handoff-model.js";
 import { draftSheet } from "../letter-ui.js";
+import { isCabinet } from "../nav-model.js";
 import { chip, face, personName, scoreBadge, templateChip } from "../people.js";
 import { hashFor } from "../router.js";
 import { announce, downloadBlob, emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
@@ -122,7 +125,11 @@ function headerCard(data, env) {
     return result.saved ? kind : false;
   }, (k) => TOASTS[k]);
   const open = canTake && !candidate;
-  const buttons = [
+  // руководитель (S5): ни решений, ни контактов, ни выгрузки; главная кнопка — «Передать в отдел персонала»
+  const cabinet = isCabinet(env.session.user);
+  const buttons = cabinet ? [
+    handoffControl({ api: env.api, signal: env.signal, session: env.session, person, variant: "fill", onSent: () => env.handoffs && env.handoffs.reload() }),
+  ].filter(Boolean) : [
     open ? h("button.b.fill", { type: "button", onClick: () => act(async () => {
       const result = await takePerson({ api: env.api, signal: env.signal, person, matches });
       return result.taken ? result : false;
@@ -147,6 +154,7 @@ function headerCard(data, env) {
   return h("section.card",
     h("div.row", scoreBadge(bestScore(person, matches)), face(person),
       h("div.grow", h("h2.t1", headerTitle(person)),
+        cabinet ? h("div.t2", "Просмотр записан в журнал доступа") : null,
         h("div.t2", [sources ? `источник: ${sources}` : null, `карточка ${person.person_id}`].filter(Boolean).join(" · ")),
         h("div.chips", chips))),
     buttons.length ? h("div.btns", buttons) : null, status.el);
@@ -154,12 +162,12 @@ function headerCard(data, env) {
 
 // ------------------------------------------------------------------ левая колонка
 
-function resumeCard(o, index, data) {
+function resumeCard(o, index, data, cabinet = false) {
   const { candidate } = data;
   const lastJob = (o.experience || [])[0];
   const last = o.employer_current || (lastJob ? [lastJob.company, lastJob.position].filter(Boolean).join(", ") : "");
   const tenure = o.avg_tenure_months ? `в среднем ${o.avg_tenure_months} мес. на месте` : "";
-  const contacts = index === 0
+  const contacts = index === 0 && !cabinet   // у руководителя строки «Контакты» нет совсем
     ? (candidate ? (candidate.contact_opened ? "открыты, журнал доступа ведётся" : "не открыты")
       : chip("откроются после «Сохранить»"))
     : null;
@@ -172,7 +180,7 @@ function resumeCard(o, index, data) {
       ["Образование", o.education],
       ["Ожидания", o.salary_expect ? moneyText(o.salary_expect) : "не указаны"],
       ["Поиск работы", o.open_for_search === true ? "открыт" : o.open_for_search === false ? "не ищет" : null],
-      ["Источник", [o.source_title, o.url ? h("a.link", { href: o.url, target: "_blank" }, "резюме на площадке") : null]
+      ["Источник", [o.source_title, o.url && !cabinet ? h("a.link", { href: o.url, target: "_blank" }, "резюме на площадке") : null]
         .filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x]))],
       ["В поле зрения", `с ${absoluteDay(o.first_seen)}, видели ${absoluteDay(o.last_seen)}`],
       ["Резюме", o.is_gone ? chip("снято с площадки", "r") : null],
@@ -249,18 +257,21 @@ function explainSlot(match, cached) {
   return { el, set };
 }
 
-function matchCard(match, slot) {
+function matchCard(match, slot, cabinet = false) {
   const rows = featureRows(match.features);
   return h("section.card",
     h("div.row", scoreBadge(match.score),
       h("div.grow", h("h2.t1", "Из чего сложился балл"),
-        h("div.t2", `«${match.role_title}» · версия профиля ${match.profile_version}`))),
+        h("div.t2", `«${match.role_title}» · версия профиля ${match.profile_version}`),
+        typeof match.my_score === "number" ? h("div.chips", chip(`мой ${match.my_score}`, "b")) : null)),
     h("div", { style: "margin-top:12px" }, rows.map((r) =>
       h("div.feat", h("div.lbl", h("span", r.label), h("span.num", `${r.points} / ${r.max}`)),
         h("div.bar", { class: r.low ? "low" : null }, h("i", { style: `width:${r.pct}%` })),
         r.detail ? h("div.detail", r.detail) : null))),
     slot.el,
-    h("div.t2", { style: "margin-top:8px" }, `Веса признаков задаются в профиле должности «${match.role_title}» — экран «База должностей», правит любой рекрутер.`));
+    h("div.t2", { style: "margin-top:8px" }, cabinet
+      ? `Веса признаков задаются в профиле должности «${match.role_title}»; свои поправки вы вносите в «Обучении агента».`
+      : `Веса признаков задаются в профиле должности «${match.role_title}» — экран «База должностей», правит любой рекрутер.`));
 }
 
 /** Строка контакта: значение текстом и «Скопировать»; без буфера значение выделяется и звучит «Нажмите Ctrl+C». */
@@ -341,6 +352,31 @@ function candidateCard(candidate) {
   ]));
 }
 
+/** Блок «Передачи» в досье руководителя (S10): что и кому передано, статус словом, причина отказа текстом. Возвращает {el, reload}. */
+function handoffsCard(env, person) {
+  const body = h("div", { "aria-live": "polite" }, h("p.loading", "Загружаю передачи…"));
+  const draw = (items) => mount(body, items.length
+    ? h("div.tl", items.map((x) => h("div.ev", h("time", { datetime: x.created_at }, dateTimeLabel(x.created_at)),
+      h("div", { style: "font-weight:600" }, x.vacancy_title || "Вакансия"),
+      h("div", { style: "margin-top:4px" }, statusBadge(x)),
+      x.recruiter ? h("div.t2", `Ответственный HR: ${x.recruiter}`) : null,
+      x.comment ? h("div.t2.lines", `«${x.comment}»`) : null)))
+    : h("div.t2", "Вы ещё не передавали этого человека."));
+  const reload = async () => {
+    try {
+      const reply = await env.api.get("/api/handoffs", { signal: env.signal });
+      draw(handoffsOfPerson(reply.items, person.person_id));
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      const status = errorLine();
+      status.show(error);
+      mount(body, status.el);
+    }
+  };
+  reload();
+  return { el: card("Передачи", body), reload };
+}
+
 function timelineCard(data) {
   const items = timeline(data);
   return card("Что изменилось", items.length
@@ -363,20 +399,25 @@ function decisionsCard(data) {
 
 export function view(data, env) {
   const slots = new Map(data.matches.map((m) => [m.role_profile_id, explainSlot(m, env.explained.get(m.role_profile_id))]));
+  const cabinet = isCabinet(env.session.user);
   const matchCards = data.matches.length
-    ? data.matches.map((m) => matchCard(m, slots.get(m.role_profile_id)))
+    ? data.matches.map((m) => matchCard(m, slots.get(m.role_profile_id), cabinet))
     : [card("Из чего сложился балл", h("div.t2", "Оценок пока нет: по утверждённым профилям человек ещё не оценён."))];
   const first = data.observations[0];
+  env.handoffs = cabinet ? handoffsCard(env, data.person) : null;
+  const header = headerCard(data, env);   // после handoffsCard: кнопка «Передать» обновляет этот блок
   return {
     slots,
     nodes: [
-      headerCard(data, env),
+      header,
       h("div.split", { style: "margin-top:14px" },
-        h("div.stack", data.observations.length ? data.observations.map((o, i) => resumeCard(o, i, data))
+        h("div.stack", data.observations.length ? data.observations.map((o, i) => resumeCard(o, i, data, cabinet))
           : card("Резюме", h("div.t2", "Резюме площадок для этого человека нет.")),
-        experienceCard(first), skillsCard(data.observations), socialCard(data.social, env)),
-        h("div.stack", matchCards, data.candidate ? candidateCard(data.candidate) : null,
-          data.candidate && env.session.can("contact.open") ? contactsCard(data, env) : null, timelineCard(data), decisionsCard(data))),
+        experienceCard(first), skillsCard(data.observations), cabinet ? null : socialCard(data.social, env)),
+        cabinet
+          ? h("div.stack", matchCards, env.handoffs.el, timelineCard(data))
+          : h("div.stack", matchCards, data.candidate ? candidateCard(data.candidate) : null,
+            data.candidate && env.session.can("contact.open") ? contactsCard(data, env) : null, timelineCard(data), decisionsCard(data))),
     ],
   };
 }

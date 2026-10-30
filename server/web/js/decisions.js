@@ -18,19 +18,21 @@ let minChars = DEFAULT_MIN;   // порог из ответа сервера (42
  *   send(text) — запрос на сервер (бросает ApiError); before — поля над подсказками (например выбор профиля).
  * Возвращает Promise<{saved, length}>.
  */
-export function openCommentSheet({ title, hint, reasons, send, before = null, width = "560px", saveLabel = "Сохранить решение", placeholder = PLACEHOLDER }) {
+export function openCommentSheet({ title, hint, reasons, send, before = null, width = "560px", saveLabel = "Сохранить решение", placeholder = PLACEHOLDER, min = null }) {
+  const own = min !== null;   // свой порог окна (отклонение передачи): общий для решений по людям не трогаем
+  let limit = own ? min : minChars;
   const win = sheet({ title, hint, width });
   const counterId = uid("counter");
   const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", required: true, placeholder,
     describedBy: counterId, tip: "comment" });
-  const counter = h("span.counter.bad", { id: counterId }, counterText("", minChars));
+  const counter = h("span.counter.bad", { id: counterId }, counterText("", limit));
   const status = errorLine();
   const save = h("button.b.fill", { type: "submit", disabled: true, "data-tip": saveLabel }, saveLabel);
 
   let busy = false;
   const update = () => {
-    const ready = canSave(comment.input.value, minChars);
-    counter.textContent = counterText(comment.input.value, minChars);
+    const ready = canSave(comment.input.value, limit);
+    counter.textContent = counterText(comment.input.value, limit);
     counter.classList.toggle("bad", !ready);
     save.disabled = busy || !ready;
   };
@@ -52,7 +54,7 @@ export function openCommentSheet({ title, hint, reasons, send, before = null, wi
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const text = comment.input.value.trim();
-    if (!canSave(text, minChars) || busy) return;
+    if (!canSave(text, limit) || busy) return;
     status.clear();
     busy = true;
     update();
@@ -62,7 +64,8 @@ export function openCommentSheet({ title, hint, reasons, send, before = null, wi
       win.close("saved");
     } catch (error) {
       if (error && error.name === "AbortError") { win.close("cancel"); return; }
-      minChars = minFromError(error, minChars);   // сервер строже клиента: счётчик берёт его число
+      limit = minFromError(error, limit);   // сервер строже клиента: счётчик берёт его число
+      if (!own) minChars = limit;
       status.show(error);
       busy = false;
       update();

@@ -118,7 +118,7 @@ export const scoreBand = (score) => (typeof score === "number" && score >= 75 ? 
 // ------------------------------------------------------------------ «Сегодня»
 
 export const isEmptyDay = (data) =>
-  !(data.signals.length || data.actions.length || data.stalled.length || data.meetings.length);
+  !(data.signals.length || data.actions.length || data.stalled.length || data.meetings.length || (data.handoffs || []).length);
 
-/** Число на вкладке: сигналы и подтверждения — то, что ждёт решения. */
-export const badgeCount = (data) => data.signals.length + data.actions.length;
+/** Число на вкладке: сигналы, подтверждения и передачи руководителей — то, что ждёт решения. */
+export const badgeCount = (data) => data.signals.length + data.actions.length + (data.handoffs || []).length;

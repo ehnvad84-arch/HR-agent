@@ -2,12 +2,14 @@
 // Данные — GET /api/vacancy/{id}/funnel. Всё из API выводится только текстом (h(), textContent).
 import { h, mount, uid } from "../dom.js";
 import { dayLabel, timeLabel } from "../format.js";
+import { isCabinet } from "../nav-model.js";
 import { chip, face, personHref, personName } from "../people.js";
 import { emptyCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
 import {
   buildMove, dayText, defaultTarget, funnelTotals, meetingStage, moveOptions, needsWindow, pickVacancy, reasonMode, stageSummary,
   statusLabel,
 } from "./funnel-model.js";
+import { renderPage as renderManagerPage } from "./manager-vacancies.js";
 import { closedText, openText } from "./vacancies-model.js";
 
 // ------------------------------------------------------------------ окно «Перевести»
@@ -91,6 +93,7 @@ function notFound(ctx) {
 }
 
 export function render(box, ctx) {
+  if (isCabinet(ctx.session.user)) return renderManagerPage(box, ctx);   // страница вакансии руководителя: подходящие и воронка только для чтения
   const { api, signal, session } = ctx;
   const id = ctx.params.id;
   if (id && !/^\d+$/.test(id)) return mount(box, notFound(ctx));

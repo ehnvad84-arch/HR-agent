@@ -57,13 +57,25 @@ export function profileChoices(items) {
     .map((p) => ({ id: p.id, title: p.title, label: p.dept ? `${p.title} — ${p.dept}` : p.title }));
 }
 
+export const MANAGER_HINT = "Выберите вручную";
+
+/** Сотрудники для выбора в форме (GET /api/staff): подпись с подразделением; selected — «я», если я в списке. */
+export function staffChoices(items, meId = null) {
+  const options = (items || []).map((u) => ({ id: u.id, label: u.org_unit ? `${u.full_name} — ${u.org_unit}` : u.full_name }));
+  return { options, selected: options.some((o) => o.id === meId) ? meId : null };
+}
+
 /** Поля формы → тело POST /api/vacancy; ошибка заполнения — текстом по-русски. */
-export function buildVacancy({ profileId, title, headcount, targetDate }) {
+export function buildVacancy({ profileId, title, headcount, targetDate, recruiterId, hiringManagerId }) {
   if (!/^\d+$/.test(String(profileId ?? ""))) return { ok: false, error: "Выберите профиль должности" };
   const name = String(title ?? "").trim();
   if (!name) return { ok: false, error: "Введите название вакансии" };
   if (!/^\d+$/.test(String(headcount ?? "")) || Number(headcount) < 1) return { ok: false, error: "Ставок должно быть не меньше одной" };
+  if (!/^\d+$/.test(String(recruiterId ?? ""))) return { ok: false, error: "Выберите ответственного HR" };
+  if (!/^\d+$/.test(String(hiringManagerId ?? ""))) return { ok: false, error: "Выберите руководителя-заказчика" };
   const payload = { role_profile_id: Number(profileId), title: name, headcount: Number(headcount) };
   if (targetDate) payload.target_date = targetDate;
+  payload.recruiter_id = Number(recruiterId);
+  payload.hiring_manager_id = Number(hiringManagerId);
   return { ok: true, payload };
 }

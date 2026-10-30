@@ -194,7 +194,8 @@ export function render(box, ctx) {
         return;
       }
       mount(tbody, shown.map((u) => {
-        const open = () => userSheet({ api, signal, user: u, units, onDone: refresh, canIssue });
+        // строка открывает окно правки роли и подразделения только у access.manage; у специалиста — одна кнопка «Выдать код»
+        const open = () => { if (canManage) userSheet({ api, signal, user: u, units, onDone: refresh, canIssue }); };
         const code = canIssue ? h("button.b.tint.rowbtn", { type: "button", "data-tip": "access-code", "aria-label": `Выдать код: ${u.full_name}`,
           onClick: (event) => { event.stopPropagation(); issueCode({ api, signal, user: u, onDone: refresh }); } }, "Выдать код") : null;
         const issue = canIssueCode(u);
@@ -203,16 +204,17 @@ export function render(box, ctx) {
           code.classList.add("inactive");
           code.addEventListener("click", (event) => { event.stopImmediatePropagation(); event.stopPropagation(); toast(issue.reason); }, true);
         }
-        return h("tr.trow", { class: u.is_active ? null : "never", tabindex: 0, onClick: (event) => { if (!event.target.closest("button, a")) open(); },
+        return h("tr.trow", { class: u.is_active ? null : "never", tabindex: canManage ? 0 : null, style: canManage ? null : "cursor:default",
+          onClick: (event) => { if (!event.target.closest("button, a")) open(); },
           onKeydown: (event) => { if (event.key === "Enter" && event.target === event.currentTarget) open(); } },
-        h("td.name", h("a.link", { href: "#/access", onClick: (event) => { event.preventDefault(); open(); } }, u.full_name)),
+        h("td.name", canManage ? h("a.link", { href: "#/access", onClick: (event) => { event.preventDefault(); open(); } }, u.full_name) : u.full_name),
         h("td", h("span.runcode", { style: "font-size:13px" }, u.login)), h("td.hint", u.position || "—"), h("td.hint", u.org_unit || "—"),
         h("td", chip(roleText(u.role), u.role === "no_access" ? "" : "g"), " ", u.manual ? chip("вручную", "v", "access-manual") : null),
         h("td", loginStatus(u)), h("td", code));
       }));
     };
     const draw = () => {
-      syncBox.textContent = syncLine(data.sync);
+      syncBox.textContent = canManage ? syncLine(data.sync) : "";
       drawRows();
     };
 
@@ -224,7 +226,8 @@ export function render(box, ctx) {
 
     return [
       h("div.card", h("div.t1", "Доступ"),
-        h("div.t2", "Кто может войти в рабочее место и с какой ролью. Роли назначаются по выгрузке сотрудников из 1С; изменение, которое вы сделали вручную, действует сразу и запишется в журнал."),
+        h("div.t2", canManage ? "Кто может войти в рабочее место и с какой ролью. Роли назначаются по выгрузке сотрудников из 1С; изменение, которое вы сделали вручную, действует сразу и запишется в журнал."
+          : "Руководители подразделений и директор, которым можно выдать код первого входа. Код виден один раз: передайте его человеку лично."),
         h("div.btns", sync, add), syncBox),
       h("form.tools", { role: "search", style: "margin-top:14px", onSubmit: (event) => event.preventDefault() },
         h("label.sr-only", { for: "access-q" }, "Поиск по пользователям"), search, roleFilter,
@@ -232,7 +235,7 @@ export function render(box, ctx) {
       h("div.tablewrap", { style: "max-height:none" },
         h("table.access", h("caption.sr-only", "Пользователи рабочего места и их роли"),
           h("thead", h("tr", ["ФИО", "Логин", "Должность", "Подразделение", "Роль", "Вход", "Действие"].map((title) => h("th", { scope: "col" }, title)))), tbody)),
-      h("p.hint", { style: "margin:10px 6px 0" }, "Нажмите на строку, чтобы изменить роль и подразделение. «Вручную» — роль задана вами, выгрузка из 1С её не меняет."),
+      canManage ? h("p.hint", { style: "margin:10px 6px 0" }, "Нажмите на строку, чтобы изменить роль и подразделение. «Вручную» — роль задана вами, выгрузка из 1С её не меняет.") : null,
     ];
   };
 

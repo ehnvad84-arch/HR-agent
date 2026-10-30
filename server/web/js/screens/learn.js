@@ -1,13 +1,17 @@
-// «Обучение агента» (S29–S31, S41; П:426–464): чат с тегами, недельная сводка с анкетой, решения руководителя.
-// Агент по сообщению ничего не меняет: оно попадает в сводку, решает руководитель, принятое применяет ночная задача apply_digest.
+// «Обучение агента» (S29–S31, S41; П:426–464; manager-cabinet S14–S16, S21): свой чат с тегами, предложения агента и личные поправки,
+// у руководителя отдела персонала ниже — недельная сводка с анкетой и решения.
+// Агент по сообщению ничего не меняет в общем: оно попадает в недельную сводку, решает руководитель, принятое применяет ночная задача apply_digest.
+// Личные поправки меняют только «мой балл» автора.
 // Всё из API выводится только текстом (h(), textContent).
 import { h, mount, uid } from "../dom.js";
 import { absoluteDay, whenLabel } from "../format.js";
 import { chip, templateChip } from "../people.js";
-import { confirmSheet, emptyCard, errorLine, field, mountAsync, toast } from "../ui.js";
+import { personalLearning } from "../tweaks-ui.js";
+import { confirmSheet, emptyCard, errorLine, errorText, field, mountAsync, toast } from "../ui.js";
 import {
   TAGS, canDecide, canSend, chatItems, counterText, decisionInfo, digestIntro, targetText, weekTitle,
 } from "./learn-model.js";
+import { CHAT_CAPTION, CHAT_INTRO } from "./tweaks-model.js";
 
 const PLACEHOLDER = "Например: в выдачу по продажам третий день попадают люди из розницы. Ожидал, что стоп-фактор «нет опыта B2B» их отсечёт.";
 const CHANGELOG_DAYS = 90;
@@ -79,16 +83,23 @@ function proposalCard(proposal, env) {
 export function render(box, ctx) {
   const { api, signal, session } = ctx;
   const canWrite = session.can("feedback.write");
+  const canDigest = session.can("digest.read");   // сводка и «Что уже внедрено» — у руководителя отдела персонала
+  const canTweak = session.can("tweak.own");
   const env = { api, signal, canDecide: session.can("digest.decide"), profileTitles: {}, refreshDigest: null };
 
   const load = async () => {
-    const [feed, digest] = await Promise.all([api.get("/api/feedback", { signal }), api.get("/api/digest/current", { signal })]);
+    // чат — только свои сообщения (сервер отдаёт по автору); сводка — по праву digest.read; поправки — по tweak.own
+    const [feed, digest, tweaks] = await Promise.all([
+      api.get("/api/feedback", { signal }),
+      canDigest ? api.get("/api/digest/current", { signal }) : Promise.resolve(null),
+      canTweak ? api.get("/api/tweaks", { signal }).catch((error) => { if (error && error.name === "AbortError") throw error; return { failed: error }; }) : Promise.resolve(null),
+    ]);
     // необязательное: названия профилей для текста «что изменится» и журнал внедрённого; нет права или сбой — экран работает без них
-    const [profiles, changelog] = await Promise.all([
+    const [profiles, changelog] = canDigest ? await Promise.all([
       api.get("/api/profiles", { signal }).catch(() => null),
       api.get("/api/changelog", { query: { from: isoDay(new Date(Date.now() - CHANGELOG_DAYS * 86400000)) }, signal }).catch(() => null),
-    ]);
-    return { feed: feed.items || [], digest, profiles: profiles && profiles.items, changelog: changelog && changelog.items };
+    ]) : [null, null];
+    return { feed: feed.items || [], digest, tweaks, profiles: profiles && profiles.items, changelog: changelog && changelog.items };
   };
 
   const view = (data) => {
@@ -177,7 +188,7 @@ export function render(box, ctx) {
         mailStatus.el,
         h("div.hint", { style: "margin-top:10px" }, "Принятое применится ночью (задача apply_digest): каждое изменение запишется в журнал с именем руководителя и датой.")));
     };
-    drawDigest(data.digest);
+    if (data.digest) drawDigest(data.digest);
     env.refreshDigest = async () => {
       try {
         const fresh = await api.get("/api/digest/current", { signal });
@@ -195,12 +206,25 @@ export function render(box, ctx) {
           h("div.sub", c.author ? `Решение руководителя по сводке · ${c.author}` : "Решение руководителя по сводке")))))
         : h("p.hint", { style: "margin:0 6px" }, "Пока ничего не внедрено.");
 
-    return h("div.split",
-      h("div", h("h2.sechead", "Чат обучения агента"), h("div.card",
-        h("div.t2", { style: "margin-bottom:12px" }, "Сюда рекрутеры пишут замечания, рекомендации и критику. Агент накапливает всё, что вы написали, ищет повторяющееся и раз в неделю присылает руководителю отдела персонала сводку с предложениями и анкетой. Решение принимает руководитель, после этого изменение попадает в работу системы."),
+    // ---------------- личные поправки (правая колонка): предложения агента и «Мои поправки»
+    let personal = null;
+    if (data.tweaks && !data.tweaks.failed) personal = personalLearning({ api, signal, initial: data.tweaks });
+    const personalBox = personal ? [personal.proposals, personal.mine]
+      : data.tweaks ? h("div.card", h("div.t1", "Личные поправки не загрузились"), h("div.t2", errorText(data.tweaks.failed)))
+        : null;
+
+    const head = [
+      h("div", h("h2.sechead", "Мой чат с агентом"), h("div.card",
+        h("div.t2", { style: "margin-bottom:4px" }, CHAT_INTRO),
+        h("p.hint", { style: "margin:0 0 12px" }, CHAT_CAPTION),
         chat, canWrite ? composer : h("p.hint", { style: "margin:12px 0 0" }, "Писать агенту можно с правом «писать в чат обучения»: у вашей роли его нет, лента открыта для чтения."))),
-      h("div", h("h2.sechead", "Сводка для руководителя отдела персонала"), digestBox,
-        appliedList ? [h("h2.sechead", "Что уже внедрено"), appliedList] : null));
+      personalBox ? h("div.stack", personalBox) : null,
+    ];
+    return [
+      personalBox ? h("div.split", head) : h("div", head[0]),
+      canDigest ? h("div", { style: "margin-top:22px" }, h("h2.sechead", "Сводка для руководителя отдела персонала"), digestBox,
+        appliedList ? [h("h2.sechead", "Что уже внедрено"), appliedList] : null) : null,
+    ];
   };
 
   return mountAsync(box, load, view, { signal });

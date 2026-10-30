@@ -48,6 +48,11 @@ export function scoreBadge(score) {
     h("b", typeof score === "number" ? score : "—"), h("span", "из 100"));
 }
 
+/** «мой 84» рядом со значком балла: балл с личными поправками (T13); у кого поправок нет, поле null и значка нет. */
+export function myScoreChip(row) {
+  return row && typeof row.my_score === "number" ? h("span.chip.b", { "data-tip": "my-score" }, `мой ${row.my_score}`) : null;
+}
+
 export const chip = (text, tone = "", tip = null) => h("span.chip", { class: tone || null, "data-tip": tip }, text);
 
 const TEMPLATE_TIP = "Модель недоступна или кончился пакет";

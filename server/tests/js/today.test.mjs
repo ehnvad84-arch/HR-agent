@@ -91,3 +91,14 @@ test("normalizeToday: пустой ответ — пустой день", () => 
   assert.equal(data.empty, true);
   assert.equal(data.badge, 0);
 });
+
+test("S11: передачи руководителей — на бейдже вкладки и не дают дню быть пустым", () => {
+  assert.equal(isEmptyDay({ signals: [], actions: [], stalled: [], meetings: [], handoffs: [{ id: 1 }] }), false);
+  assert.equal(isEmptyDay({ signals: [], actions: [], stalled: [], meetings: [], handoffs: [] }), true);
+  assert.equal(badgeCount({ signals: [1], actions: [1], stalled: [1], meetings: [1], handoffs: [1, 2, 3] }), 5);
+  const data = normalizeToday({ handoffs: [{ id: 7, person_id: 3 }] });
+  assert.equal(data.handoffs.length, 1);
+  assert.equal(data.badge, 1);
+  assert.equal(data.empty, false);
+  assert.deepEqual(normalizeToday({}).handoffs, []);
+});

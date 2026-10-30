@@ -29,6 +29,7 @@
         <div class="mark" aria-hidden="true">Р</div>
         <h1 class="h1">Подбор</h1>
         <div class="right">
+          <span class="bellslot" id="bell"></span>
           <div class="theme" id="theme" role="group" aria-label="Тема оформления"></div>
           <span class="unit" id="unit" hidden></span>
           <span class="who" id="who"></span>
@@ -39,6 +40,8 @@
       <div class="seg" id="tabs" role="tablist" aria-label="Разделы рабочего места"></div>
       <!-- ход загрузки резюме hh: у руководителя подбора, на всех экранах; строит js/load-status.js -->
       <div class="loadstatus" id="loadstatus" role="status" aria-live="polite"></div>
+      <!-- красная полоса тревоги о загрузке: у всего отдела персонала, пока кто-то не нажмёт «Разбираюсь»; строит js/notify.js -->
+      <div class="alarmslot" id="alarm"></div>
     </div>
   </header>
   <main id="view" role="tabpanel" tabindex="-1"></main>

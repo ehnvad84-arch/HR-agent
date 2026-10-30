@@ -195,19 +195,24 @@ tbody tr.trow{cursor:pointer}
 .sechead .dot.o{background:var(--orange-ink)}
 .sechead .dot.r{background:var(--red-ink)}
 .sechead .dot.b{background:var(--blue-ink)}
+.sechead .dot.v{background:var(--violet-ink)}
 .zone{border-radius:18px;padding:10px;margin-bottom:6px}
 .zone.z1{background:color-mix(in srgb,var(--green-tint) 55%, transparent)}
 .zone.z2{background:color-mix(in srgb,var(--orange-tint) 55%, transparent)}
 .zone.z3{background:color-mix(in srgb,var(--red-tint) 45%, transparent)}
 .zone.z4{background:color-mix(in srgb,var(--blue-tint) 45%, transparent)}
+.zone.z5{background:color-mix(in srgb,var(--violet-tint) 55%, transparent)}
 .zone .card{border-left:4px solid transparent}
 .zone.z1 .card{border-left-color:var(--green-ink)}
 .zone.z2 .card{border-left-color:var(--orange-ink)}
 .zone.z3 .card{border-left-color:var(--red-ink)}
 .zone.z4 .card{border-left-color:var(--blue-ink)}
+.zone.z5 .card{border-left-color:var(--violet-ink)}
 .zone.z2 .card .t1::before{content:"⏳ ";font-size:13px}
 .zone.z3 .card .t1::before{content:"⌛ ";font-size:13px}
 .zone.z4 .card .t1::before{content:"📅 ";font-size:13px}
+.zone.noicon .card .t1::before{content:none}
+blockquote.quote{margin:8px 0 0;padding:6px 12px;border-left:3px solid var(--violet-ink);color:var(--ink2);font-size:14px;white-space:pre-line}
 
 /* --------------------------------- фото и аватары (П:157–162) --------------------------------- */
 .face{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;overflow:hidden;
@@ -628,3 +633,28 @@ table.access td .chip{display:inline-block;line-height:1.35}
 .guidemine .guidelist{columns:2;column-gap:28px}
 .guidemine .guidelist li{break-inside:avoid}
 @media (max-width:640px){.guidemine .guidelist{columns:1}}
+
+/* --------------------------------- сообщения о загрузках: колокольчик и красная полоса (S20) --------------------------------- */
+.bellslot{position:relative;display:inline-flex}
+.bell{position:relative;display:inline-grid;place-items:center;width:34px;height:34px;border:0;border-radius:10px;background:var(--card2);color:var(--ink2);cursor:pointer}
+.bell:hover{filter:brightness(.96)}
+.bell.alarm{background:var(--red-tint);color:var(--red-ink)}
+.bellbadge{position:absolute;top:-5px;right:-5px;box-sizing:border-box;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red-ink);
+  color:var(--on-fill);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.bellbadge[hidden]{display:none}
+.bellpanel{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:min(400px,calc(100vw - 24px));max-height:70vh;overflow:auto;padding:14px;border-radius:var(--r);
+  background:var(--card);box-shadow:var(--shadow),0 0 0 .5px var(--sep);color:var(--ink);text-align:left;font-size:14px;font-weight:400}
+.bellpanel:focus-visible{outline:none}
+.bellhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.bellist{list-style:none;margin:0;padding:0}
+.bellitem{padding:10px 0;border-top:.5px solid var(--sep)}
+.bellitem:first-child{border-top:0}
+.bellitem .bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.alarmslot:empty{display:none}
+.alarmslot{padding:0 0 10px}
+.alarmbar{border-radius:12px;padding:10px 14px;background:var(--red-tint);color:var(--ink);box-shadow:inset 4px 0 0 var(--red-ink)}
+.alarmbar.taken{background:var(--orange-tint);box-shadow:inset 4px 0 0 var(--orange-ink)}
+.alrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
+.alsub{flex:1 1 auto;min-width:0;color:var(--ink2)}
+.tw{display:inline-flex;align-items:center;gap:4px}
+@media (max-width:720px){.bellpanel{position:fixed;left:12px;right:12px;top:72px;width:auto}}

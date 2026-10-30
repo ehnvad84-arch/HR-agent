@@ -4,8 +4,8 @@ import test from "node:test";
 
 import { hashFor, parseHash } from "../../web/js/router.js";
 import {
-  COLUMNS, apiRequest, ariaSort, canShowFit, columnTitle, filtersActive, fitAvailability, fitBarText, fitEmptyText, fitQuery, fitRoleTitle, nextSort, pageInfo, parseState,
-  similarityText, sourceTitle, stateToQuery, whereTitle,
+  COLUMNS, MY_COLUMN, apiRequest, ariaSort, canShowFit, columnTitle, filtersActive, fitAvailability, fitBarText, fitEmptyText, fitQuery, fitRoleTitle, nextSort, pageInfo, parseState,
+  similarityText, sourceTitle, stateToQuery, tableColumns, whereTitle,
 } from "../../web/js/screens/base-model.js";
 
 test("колонки таблицы — как в прототипе, у каждой своё имя сортировки для API", () => {
@@ -198,4 +198,24 @@ test("S49: «Подходящие кандидаты» видна у каждо�
   // портрет к должности не привязан
   assert.deepEqual(fitAvailability(null), { active: false, tip: "fit-button-no-profile" });
   assert.deepEqual(fitAvailability(undefined), { active: false, tip: "fit-button-no-profile" });
+});
+
+// ------------------------------------------------------------------ «мой балл» и «Передать» (manager-cabinet)
+
+test("T13: «Мой балл» — после «Балла», только когда есть личные поправки; «Передать» — в конце, только руководителю", () => {
+  assert.deepEqual(MY_COLUMN, { key: "my", title: "Мой балл", sort: "my", type: "num" });
+  assert.deepEqual(tableColumns({}).map((c) => c.key), COLUMNS.map((c) => c.key));
+  assert.deepEqual(tableColumns({ hasMy: true }).map((c) => c.key), ["name", "city", "role", "dept", "score", "my", "where", "source", "socn", "upd"]);
+  assert.deepEqual(tableColumns({ handoff: true }).map((c) => c.key).slice(-2), ["upd", "act"]);
+  const both = tableColumns({ hasMy: true, handoff: true });
+  assert.equal(both.length, 11);
+  assert.equal(both.at(-1).sort, null);   // по действию не сортируют
+});
+
+test("T13: сортировка по моему баллу допустима в адресе; сначала числа вниз", () => {
+  assert.equal(parseState({ sort: "my" }).sort, "my");
+  assert.deepEqual(nextSort(parseState({}), "my"), { sort: "my", dir: "desc", page: 0 });
+  assert.deepEqual(apiRequest(parseState({ sort: "my", dir: "desc" })).query, { sort: "my", dir: "desc", page: 0 });
+  assert.equal(ariaSort(parseState({ sort: "my" }), "my"), "descending");
+  assert.equal(columnTitle(MY_COLUMN, parseState({ fit: "hw_lead" })), "Мой балл");
 });

@@ -3,6 +3,7 @@
 import { api } from "./js/api.js";
 import { $, h, mount } from "./js/dom.js";
 import { loadStatus } from "./js/load-status.js";
+import { notify } from "./js/notify.js";
 import { renderLoginPage, requestLogin } from "./js/login.js";
 import { NO_ACCESS_TEXT, NO_UNIT_TEXT, activeTab, headerLine, navFor, noUnit } from "./js/nav-model.js";
 import { startRouter } from "./js/router.js";
@@ -90,7 +91,8 @@ function enterApp() {
   el.app.hidden = false;
   buildNav();
   renderUser(session.user, { whoEl: el.who, avaEl: el.ava });
-  loadStatus.attach({ api, session, box: $("#loadstatus") });   // полоса хода загрузки резюме — только с правом settings.edit
+  loadStatus.attach({ api, session, box: $("#loadstatus") });   // полоса хода загрузки резюме — только с правом collect.run
+  notify.attach({ api, session, slot: $("#bell"), alarmSlot: $("#alarm") });   // колокольчик и красная полоса тревоги — только отделу персонала
   if (router) router.refresh();
   else router = startRouter(renderRoute);
   el.view.focus({ preventScroll: true });
@@ -100,6 +102,7 @@ function enterApp() {
 function showNoAccess() {
   if (screenAbort) screenAbort.abort();
   loadStatus.detach();
+  notify.detach();
   mount(el.view);
   closeAllSheets();
   el.boot.hidden = true;
@@ -131,6 +134,7 @@ function showLogin() {
 /** Выход: с экрана уходят все данные о людях, открытые окна закрываются, адрес сбрасывается. */
 function leaveApp() {
   loadStatus.detach();
+  notify.detach();
   if (screenAbort) screenAbort.abort();
   mount(el.view);
   closeAllSheets();
@@ -160,6 +164,7 @@ session.subscribe((user, previous) => {
   if (previous && previous.id !== user.id) {
     buildNav();   // роль другого человека — другие вкладки
     loadStatus.attach({ api, session, box: $("#loadstatus") });   // права другого человека могут отличаться
+    notify.attach({ api, session, slot: $("#bell"), alarmSlot: $("#alarm") });
     if (router) router.refresh();
   }
 });

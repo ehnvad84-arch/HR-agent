@@ -4,12 +4,13 @@
 import { h, mount } from "../dom.js";
 import { absoluteDay } from "../format.js";
 import { chip, face, personHref, personName } from "../people.js";
+import { handoffControl, loadHandoffMap } from "../handoff.js";
 import { loadResumesButton } from "../hh-load.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorCard, loadingLine } from "../ui.js";
 import {
-  COLUMNS, WHERE_VALUES, apiRequest, ariaSort, columnTitle, filtersActive, fitBarText, fitEmptyText, fitRoleTitle, nextSort, pageInfo, parseState,
-  similarityText, sourceTitle, stateToQuery, whereTitle,
+  WHERE_VALUES, apiRequest, ariaSort, columnTitle, filtersActive, fitBarText, fitEmptyText, fitRoleTitle, nextSort, pageInfo, parseState,
+  similarityText, sourceTitle, stateToQuery, tableColumns, whereTitle,
 } from "./base-model.js";
 
 const DEBOUNCE_MS = 400;
@@ -17,6 +18,9 @@ const WHERE_PILLS = { candidate: "cand", watched: "watch", observed: "obs" };
 
 export function render(box, ctx) {
   const { api, signal } = ctx;
+  const canHandoff = ctx.session.can("handoff.create");   // руководитель: «Передать» в строке
+  let hasMy = false;            // есть личные поправки: колонка «Мой балл» после «Балла», сортировка по ней по умолчанию
+  let handed = new Map();       // человек → его последняя передача: бейдж вместо кнопки
   let state = parseState(ctx.query);
   let current = null;           // AbortController последнего запроса: новый запрос отменяет прежний
   let loadTimer = null;
@@ -55,16 +59,23 @@ export function render(box, ctx) {
 
   // ---------------------------------------------------------------- заголовки
 
-  const headerCells = COLUMNS.map((column) => {
-    const arrow = h("span.dir", { "aria-hidden": "true" }, "↕");
-    const label = h("span", column.title);   // у балла при выбранной должности подпись другая
-    const th = h("th", { scope: "col", "aria-sort": "none", onClick: () => sortBy(column.sort) },
-      h("button", { type: "button", "data-tip": "sort" }, label, " ", arrow));
-    return { column, th, arrow, label };
-  });
-  mount(headerRow, headerCells.map((c) => c.th));
+  let headerCells = [];
+  const buildHeaders = () => {
+    headerCells = tableColumns({ hasMy, handoff: canHandoff }).map((column) => {
+      const arrow = h("span.dir", { "aria-hidden": "true" }, "↕");
+      const label = h("span", column.title);   // у балла при выбранной должности подпись другая
+      const th = column.sort
+        ? h("th", { scope: "col", "aria-sort": "none", onClick: () => sortBy(column.sort) }, h("button", { type: "button", "data-tip": "sort" }, label, " ", arrow))
+        : h("th", { scope: "col" }, h("span.sr-only", column.title));
+      return { column, th, arrow, label };
+    });
+    mount(headerRow, headerCells.map((c) => c.th));
+    drawHeaders();
+    drawFilterCells();
+  };
   const drawHeaders = () => {
     for (const { column, th, arrow, label } of headerCells) {
+      if (!column.sort) continue;
       label.textContent = columnTitle(column, state);
       const order = ariaSort(state, column.sort);
       th.setAttribute("aria-sort", order);
@@ -90,9 +101,9 @@ export function render(box, ctx) {
   const scoreInput = h("input", { type: "number", min: 0, max: 100, placeholder: "от", "aria-label": "Фильтр: Балл от", "data-tip": "filter",
     onInput: (e) => typed(() => setFilter("score_min", /^\d{1,3}$/.test(e.target.value) ? e.target.value : "")) });
   const controls = { dept: deptSelect, role: roleSelect, where: whereSelect, source: sourceSelect, city: cityInput, score: scoreInput };
-  mount(filterRow,
-    h("th"), h("th", cityInput, cityList), h("th", roleSelect), h("th", deptSelect), h("th", scoreInput),
-    h("th", whereSelect), h("th", sourceSelect), h("th"), h("th"));
+  const drawFilterCells = () => mount(filterRow,
+    h("th"), h("th", cityInput, cityList), h("th", roleSelect), h("th", deptSelect), h("th", scoreInput), hasMy ? h("th") : null,
+    h("th", whereSelect), h("th", sourceSelect), h("th"), h("th"), canHandoff ? h("th") : null);
 
   const typed = (action) => {
     clearTimeout(typing);
@@ -193,9 +204,10 @@ export function render(box, ctx) {
     const tr = h("tr.trow", { onClick: (event) => { if (!event.target.closest("a, button")) open(); } },
       h("td.name", h("span.namewrap", face(row, { size: "md" }), h("a.link", { href: personHref(row.person_id) }, personName(row)))),
       h("td", dash(row.city)), h("td", dash(row.role_title)), h("td.hint", dash(row.dept)),
-      h("td.num", dash(row.score)), h("td", pill(row.where)),
+      h("td.num", dash(row.score)), hasMy ? h("td.num", { "data-tip": "my-score" }, dash(row.my_score)) : null, h("td", pill(row.where)),
       h("td", (row.sources || []).map(sourceTitle).join(", ") || "—"),
-      h("td.num", row.socn || "—"), h("td.hint", row.updated ? absoluteDay(row.updated) : "—"));
+      h("td.num", row.socn || "—"), h("td.hint", row.updated ? absoluteDay(row.updated) : "—"),
+      canHandoff ? h("td", handoffControl({ api, signal, session: ctx.session, person: row, existing: handed.get(row.person_id) || null, short: true, variant: "tint" })) : null);
     return tr;
   }
 
@@ -228,6 +240,7 @@ export function render(box, ctx) {
 
   function showTable(data) {
     remember(data.items);
+    if (!hasMy && (data.items || []).some((r) => typeof r.my_score === "number")) { hasMy = true; buildHeaders(); }   // личные поправки появились: колонка «Мой балл»
     searchBox.hidden = true;
     tableBox.hidden = false;
     const info = pageInfo(data);
@@ -241,7 +254,7 @@ export function render(box, ctx) {
     if (!filtersActive(state) && !state.vacancy && !state.fit) ctx.setBadge("base", data.total);
 
     drawBar(data);
-    mount(tbody, data.items.length ? data.items.map(rowFor) : h("tr", h("td.hint", { colspan: COLUMNS.length }, emptyContent())));
+    mount(tbody, data.items.length ? data.items.map(rowFor) : h("tr", h("td.hint", { colspan: headerCells.length }, emptyContent())));
 
     mount(pager, info.pages > 1 ? [
       h("button.b", { type: "button", disabled: !info.hasPrev, onClick: () => goPage(info.page - 1) }, "← Назад"),
@@ -274,7 +287,7 @@ export function render(box, ctx) {
     } else {
       tableBox.hidden = false;
       searchBox.hidden = true;
-      mount(tbody, h("tr", h("td", { colspan: COLUMNS.length }, card)));
+      mount(tbody, h("tr", h("td", { colspan: headerCells.length }, card)));
       mount(pager, null);
     }
   }
@@ -290,7 +303,7 @@ export function render(box, ctx) {
     loadTimer = setTimeout(() => {
       if (current !== controller) return;
       if (request.kind === "search") { searchBox.hidden = false; tableBox.hidden = true; mount(searchBox, loadingLine()); }
-      else mount(tbody, h("tr", h("td.hint", { colspan: COLUMNS.length }, "Загружаю…")));
+      else mount(tbody, h("tr", h("td.hint", { colspan: headerCells.length }, "Загружаю…")));
     }, 300);
     try {
       const data = await api.get(request.path, { query: request.query, signal: controller.signal });
@@ -312,9 +325,21 @@ export function render(box, ctx) {
 
   mount(box, tools, searchHint, searchBox, tableBox);
   searchBox.hidden = true;
-  drawHeaders();
+  buildHeaders();
   drawFilters();
-  load();
+  // личные поправки и передачи нужны до первой выдачи: от них зависят колонки и сортировка по умолчанию; нет ответа — работаем без них
+  Promise.all([
+    api.get("/api/tweaks", { signal }).catch(() => null),
+    canHandoff ? loadHandoffMap(api, signal).catch(() => new Map()) : Promise.resolve(new Map()),
+  ]).then(([tweaks, map]) => {
+    handed = map;
+    if (tweaks && (tweaks.items || []).some((t) => t.state === "active")) {
+      hasMy = true;
+      if (!ctx.query.sort) state = { ...state, sort: "my", dir: "desc" };   // по умолчанию — по моему баллу
+      buildHeaders();
+    }
+    load();
+  });
   // полный список подразделений и должностей — из действующих профилей; не пришёл — берём значения из данных
   api.get("/api/profiles", { signal }).then((reply) => {
     profiles = (reply.items || []).filter((p) => p.state === "approved");

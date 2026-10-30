@@ -13,11 +13,19 @@ export const COLUMNS = [
   { key: "upd", title: "Последнее изменение", sort: "upd", type: "date" },
 ];
 
+export const MY_COLUMN = { key: "my", title: "Мой балл", sort: "my", type: "num" };
+
+/** Колонки таблицы: «Мой балл» после «Балла» — если есть личные поправки; «Передать» в конце — у руководителя (право handoff.create). */
+export function tableColumns({ hasMy = false, handoff = false } = {}) {
+  const columns = COLUMNS.flatMap((c) => (c.key === "score" && hasMy ? [c, MY_COLUMN] : [c]));
+  return handoff ? [...columns, { key: "act", title: "Передать", sort: null, type: "action" }] : columns;
+}
+
 export const WHERE_VALUES = ["observed", "watched", "dropped", "candidate"];
 const WHERE_TITLES = { observed: "наблюдение", watched: "ведётся особо", dropped: "категорически нет", candidate: "кандидат" };
 const SOURCE_TITLES = { hh: "hh.ru", trudvsem: "Работа России", habr: "Хабр Карьера", avito: "Авито Работа", manual: "Ручной ввод" };
 export const FILTER_KEYS = ["dept", "city", "role", "score_min", "where", "source"];
-const SORT_KEYS = COLUMNS.map((c) => c.sort);
+const SORT_KEYS = [...COLUMNS.map((c) => c.sort), MY_COLUMN.sort];
 
 /** Адрес «Подходящие кандидаты» из «Базы должностей»: код портрета, по баллу этой должности, лучшие сверху. */
 export const fitQuery = (code) => ({ fit: code, sort: "score", dir: "desc" });

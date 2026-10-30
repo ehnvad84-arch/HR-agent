@@ -27,7 +27,7 @@ export const SCREENS = {
   profiles: { title: "База должностей", perm: "base.read", render: renderProfiles },
   learn: { title: "Обучение агента", perm: "base.read", render: renderLearn },
   logs: { title: "Журнал и отчёт", perm: "report.read", render: renderLogs },
-  access: { title: "Доступ", perm: "access.manage", render: renderAccess },
+  access: { title: "Доступ", perm: "invite.issue", render: renderAccess },   // специалисту — только «Выдать код» (права внутри экрана)
   funnel: { title: "Воронка", perm: "base.read", render: renderFunnel },
   arch: { title: "Схема", perm: "base.read", render: renderSchema },
 };

@@ -8,8 +8,10 @@ import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, loadingLine, mountAsync, sheet, toast } from "../ui.js";
 import { loadResumesButton } from "../hh-load.js";
+import { isCabinet } from "../nav-model.js";
 import { openImportSheet } from "../import-sheet.js";
 import { fitAvailability, fitQuery } from "./base-model.js";
+import { myPositionsNote, positionStatus, saveLabel } from "./manager-model.js";
 import { weightControl } from "../weight-input.js";
 import {
   allUnitIds, breakdownLines, buildTree, canLoadPosition, filterTree, orgFileError, orgHeading, orgResultText, positionLink, positionState, rateText, rootOptions,
@@ -115,6 +117,7 @@ function docSheet({ api, signal, profile, onDone }) {
 function listScreen(box, ctx) {
   const { api, signal, session } = ctx;
   const canMap = session.can("org.map");
+  const cabinet = isCabinet(session.user);   // «Мои должности»: дерево подразделения руководителя, правка — на утверждение
   let q = "";
   let dept = "";
   let total = null;
@@ -137,13 +140,15 @@ function listScreen(box, ctx) {
 
   const header = h("div.card",
     heading,
-    h("div.t2", "Справочник должностей компании и портретов поиска по каждой. Изменившаяся должность правится: портрет любой должности правит любой рекрутер; "
-      + "сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение, до утверждения выдача считается по прежней версии."),
+    h("div.t2", cabinet
+      ? "Должности вашего подразделения и вложенных и их портреты поиска. Правка создаёт новую версию с вашим именем; её утверждает руководитель отдела персонала, до утверждения балл считается по прежней версии."
+      : "Справочник должностей компании и портретов поиска по каждой. Изменившаяся должность правится: портрет любой должности правит любой рекрутер; "
+        + "сохранение создаёт новую версию с вашим именем и уходит руководителю отдела персонала на утверждение, до утверждения выдача считается по прежней версии."),
     h("div.btns",
       // оргструктуру обновляет тот, у кого есть право сопоставлять её с портретами (руководитель подбора)
       canMap ? h("button.b.fill", { type: "button", onClick: () => orgSheet({ api, signal, sync: org && org.sync, onDone: () => init() }) }, "Обновить из 1С") : null,
-      h("button.b", { type: "button", onClick: () => ctx.go("logs") }, "Журнал изменений"),
-      h("button.b.tint", { type: "button", onClick: () => approversSheet(api, signal) }, "Кто утверждает")));
+      session.can("report.read") ? h("button.b", { type: "button", onClick: () => ctx.go("logs") }, "Журнал изменений") : null,
+      cabinet ? null : h("button.b.tint", { type: "button", onClick: () => approversSheet(api, signal) }, "Кто утверждает")));
   const tools = h("form.tools", { role: "search", style: "margin-top:14px", onSubmit: (e) => e.preventDefault() },
     h("label.sr-only", { for: "profile-q" }, "Поиск должности"), search, deptSelect, foldButtons, found);
 
@@ -176,6 +181,7 @@ function listScreen(box, ctx) {
   // ---------------- дерево подразделений как в 1С (S47)
   const positionRow = (p) => {
     const info = positionState(p);
+    const mine = cabinet && p.profile ? positionStatus(p.profile) : null;   // «утверждён» / «ждёт утверждения — правка …»
     const link = positionLink(p);
     const load = canLoadPosition(p) ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.profile.id, title: p.profile.title || p.title, geo: p.profile.geo } }) : null;
     // должность из нескольких подразделений — одна строка; разбивка по подразделениям раскрывается кнопкой и не открывает портрет
@@ -194,8 +200,8 @@ function listScreen(box, ctx) {
     const row = h(link ? "div.li.stretch" : "div.li", { style: link ? null : "cursor:default" },
       h("div", h("div", { style: "font-weight:600" }, link ? h("a.main", { href: hashFor("profiles", { id: link }) }, p.title) : p.title),
         h("div.sub", rateText(p), toggle ? [" ", toggle] : null)),
-      p.profile && p.profile.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
-      h("span.pill", { class: info.pill }, info.text),
+      !mine && p.profile && p.profile.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
+      mine ? chip(mine.text, mine.tone) : h("span.pill", { class: info.pill }, info.text),
       h("div.rowbtns", fitButton(ctx, p.profile ? p.profile.code : null, p.title, p.profile ? p.profile.state : null), load),
       link ? h("span.chev", "›") : null);
     return h("div.posbox", row, open ? h("ul.breakdown", { id: listId, "aria-label": `Подразделения: ${p.title}` }, lines.map((line) => h("li", line))) : null);
@@ -217,7 +223,7 @@ function listScreen(box, ctx) {
   };
   const drawTree = () => {
     const all = treeCounts(forest);
-    heading.textContent = orgHeading(all);
+    heading.textContent = cabinet ? orgHeading(all).replace("База должностей", "Мои должности") : orgHeading(all);
     const shown = filterTree(forest, { q, deptId: dept });
     found.textContent = `${treeCounts(shown).positions} из ${all.positions} показано`;
     mount(deptSelect, [h("option", { value: "" }, "Все подразделения"), ...rootOptions(forest).map((o) => h("option", { value: String(o.id) }, o.title))]);
@@ -257,9 +263,10 @@ function listScreen(box, ctx) {
   async function loadOrg() {
     org = null;
     forest = [];
-    if (!session.can("org.read")) return;
+    if (!cabinet && !session.can("org.read")) return;
     try {
-      org = await api.get("/api/org", { signal });
+      // руководителю — дерево только его поддерева (/api/my/positions), остальным — вся оргструктура
+      org = await api.get(cabinet ? "/api/my/positions" : "/api/org", { signal });
       forest = buildTree(org.units);
     } catch (error) {
       if (error && error.name === "AbortError") throw error;
@@ -287,6 +294,7 @@ function editorScreen(box, ctx, id) {
   const { api, signal, session } = ctx;
   const canEdit = session.can("profile.edit");
   const canApprove = session.can("profile.approve");
+  const cabinet = isCabinet(session.user);   // руководитель: «Отправить на утверждение», без «Утвердить»
   const pid = encodeURIComponent(id);
 
   const load = async () => {
@@ -356,7 +364,7 @@ function editorScreen(box, ctx, id) {
     });
 
     // ---------------- действия
-    const save = h("button.b.blue", { type: "button", onClick: async () => {
+    const save = h("button.b.blue", { type: "button", "data-tip": saveLabel(cabinet), onClick: async () => {
       saveStatus.clear();
       const form = readForm();
       const problem = validateForm(form);
@@ -377,10 +385,11 @@ function editorScreen(box, ctx, id) {
         ctx.go("profiles", { id: created.id });
       } catch (error) {
         if (error && error.name === "AbortError") return;
-        saveStatus.show(error);   // 422: текст проверки; введённое остаётся
+        // 403 у руководителя: должность не из его подразделения; 422 — текст проверки; введённое остаётся
+        saveStatus.show(cabinet && error && error.status === 403 ? "Эту должность править нельзя: она не в вашем подразделении" : error);
         save.disabled = false;
       }
-    } }, "Сохранить как новую версию");
+    } }, saveLabel(cabinet));
 
     const previewBox = h("div", { "aria-live": "polite" });
     const previewButton = h("button.b.fill", { type: "button", onClick: async () => {
@@ -426,6 +435,8 @@ function editorScreen(box, ctx, id) {
     const mine = notice && notice.id === String(profile.id) ? notice : null;
     notice = null;
     const banners = [
+      cabinet && myPositionsNote(Boolean(profile.shared)) ? h("div.note", { role: "note" }, myPositionsNote(true)) : null,   // общая должность: один портрет на всех
+      profile.state === "pending" && profile.author ? h("div.note", { role: "note" }, `Автор правки: ${profile.author}${profile.created_at ? `, ${absoluteDay(profile.created_at)}` : ""}.`) : null,
       mine ? h("div.note", { role: "status" }, mine.text, mine.link ? [" ", h("a.link", { href: hashFor("arch") }, "Ход пересчёта — в «Схеме»")] : null) : null,
       isEmpty ? h("div.note", { role: "note" }, "Критерии ещё не заполнены — заполните и отправьте на утверждение. Пока портрет пустой, подбор по этой должности не идёт.")
         : profile.state !== "approved" ? h("div.note", { role: "note" },
@@ -451,7 +462,7 @@ function editorScreen(box, ctx, id) {
         h("div.t2", `${profile.dept} · версия ${profile.version}`),
         h("div.chips", h("span.pill", { class: info.pill }, info.text))),
       ), h("div.t2", { style: "margin-top:10px" },
-        "Правка портрета. Сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение; до утверждения выдача считается по прежней версии."),
+        "Правка портрета. Сохранение создаёт новую версию с вашим именем и уходит руководителю отдела персонала на утверждение; до утверждения выдача считается по прежней версии."),
       banners.length ? h("div.stack", { style: "margin-top:12px" }, banners) : null,
       loadId || profile.state !== "approved" ? h("div.btns", profile.state !== "approved" && !isEmpty && canEdit ? previewButton : null,
         profile.state !== "approved" && canApprove ? approve : null, isEmpty && canApprove ? h("span.hint", "Сначала заполните критерии") : null,
@@ -471,7 +482,7 @@ function editorScreen(box, ctx, id) {
         section("Ещё признаки", "Эти признаки агент считает по резюме сам, отдельного поля у них нет: правится только вес.",
           extraFeatures().map(([key, label, hint]) => row(h("div", h("div", { style: "font-weight:600" }, label), h("div.hint", { style: "margin-top:2px" }, hint)), weightInputs[key]))),
         h("div.savebar", canEdit ? save : h("p.hint", { style: "margin:0" }, "У вас нет права править профили: поля только для чтения."),
-          h("span.hint", "Выдача считается по прежней версии до утверждения."), saveStatus.el)),
+          h("span.hint", cabinet ? "До утверждения балл считается по прежней версии" : "Выдача считается по прежней версии до утверждения."), saveStatus.el)),
       h("div.card", { style: "margin-top:14px" }, h("div.t1", { style: "margin-bottom:10px" }, "Должностная инструкция"), diLine,
         h("p.hint", { style: "margin:8px 0 0" },
           "Загрузили новую редакцию — создаётся черновая версия профиля, молча профиль не меняется: её нужно отредактировать и отправить на утверждение.")),

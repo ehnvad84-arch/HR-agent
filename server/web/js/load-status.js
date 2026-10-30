@@ -1,4 +1,4 @@
-// Полоса хода загрузки резюме hh под вкладками на всех экранах (S48). Только у роли с правом settings.edit (загрузка тратит лимит hh).
+// Полоса хода загрузки резюме hh под вкладками на всех экранах (S48). Только у роли с правом collect.run (загрузка тратит лимит hh).
 // Опрашивает GET /api/hh/collect/status: 3 с пока идёт загрузка, раз в минуту иначе (виден и прогон по расписанию в 18:00).
 // После «Загрузить» окно закрывается, человек остаётся на своём экране, а полоса сразу пишет «Запускаю загрузку…».
 // Всё из API выводится только текстом (h(), textContent).
@@ -82,7 +82,7 @@ export function createLoadStatus({ now = () => Date.now(), storage = browserStor
   function attach({ api: client, session, box: element }) {
     api = client;
     box = element;
-    if (!session.can("settings.edit")) {
+    if (!session.can("collect.run")) {
       detach();
       return;
     }
