@@ -12,7 +12,7 @@
   - `schema_recruiting.sql` — схема базы, разворачивается как есть; дополнения MVP — только миграциями в `server/migrations/`
   - `Рабочее_место_рекрутера.html` — прототип интерфейса, эталон экранов и текстов
   - `Мануал_рекрутера.md`, `Презентация_для_рекрутеров.pdf` — для заказчика; `.docx` и `.pdf` собираются скриптами `build_docx.py`, `build_deck_recruiters.py`, руками не правятся
-- `server/` — код MVP (ветка `feature/mvp`): `hr/` — бизнес-логика и API, `migrations/`, `tests/`
+- `server/` — код: `hr/` — бизнес-логика и API, `migrations/` — дополнения к схеме (служебное в схеме `ops`), `tests/`
 - `docs/` — PRD, правила (`docs/rules/`), рабочие папки фич (`docs/work/<slug>/`)
 - `.workflow/` — процесс разработки. Не редактировать: обновляется из Vadims workflow.
 
@@ -27,12 +27,17 @@
 
 ## HOW — команды
 
-- Установка: `cd server && uv venv -p 3.12 .venv && uv pip install -r requirements.txt`
-- База для разработки: `python -m hr.cli migrate` (нужен PostgreSQL 16 с pgvector и pg_trgm, адрес в `DATABASE_URL`)
-- Запуск API: `uvicorn hr.main:app --reload` · фоновые задачи: `python -m hr.worker`
-- Тесты: `cd server && pytest` · один тест: `pytest tests/test_scoring.py::test_name`
-- Линтер: `ruff check server`
-- Весь контур: `docker compose up -d`
+Все команды — из `server/`.
+
+- Установка: `uv venv -p 3.12 .venv && uv pip install -r requirements.txt`
+- База: PostgreSQL 16 с pgvector и pg_trgm (`docker run -p 5432:5432 pgvector/pgvector:pg16`; без Docker — сборка из исходников, при gcc ≥ 15 нужен `CFLAGS=-std=gnu17`). Адрес — в `DATABASE_URL`.
+- Схема и миграции: `python -m hr.cli migrate`
+- Тесты: `DATABASE_URL=postgresql://…/ruware_hr_test pytest` — имя базы обязано оканчиваться на `_test`, фикстура пересоздаёт её схемы · один тест: `pytest tests/test_migrate.py::test_sources_seeded`
+- Линтер: `ruff check .` (настройки в `pyproject.toml`)
+- Проверка зависимостей: `pip-audit -r requirements.txt` — до каждого мержа и при новой зависимости
+- Фоновая задача вручную: `python -m hr.cli run <collect_hh|import_files|mark_gone|score|alerts|collect_social>`
+- hh: `python -m hr.cli gen-key` → `SECRETS_KEY` в `.env`; `python -m hr.cli hh-auth` — ссылка авторизации; `python -m hr.cli hh-selftest` — проверка
+- Сквозной прогон без сети на вымышленных данных: `DATABASE_URL=postgresql://…/ruware_hr_demo python scripts/demo_core.py`
 
 ## Правила проекта
 

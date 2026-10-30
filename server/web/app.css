@@ -1,0 +1,660 @@
+/* Рабочее место отдела персонала. Оформление и классы — из прототипа Рабочее_место_рекрутера.html (П:NNN — строка прототипа).
+   Отличия от прототипа: цвета текста на цветных подложках и заливках — токены --*-ink и --on-fill (контраст AA),
+   рамки полей --field-line, окна — <dialog>, строки списков и карточки могут быть <a> и <button>, видимый фокус. */
+
+/* ============================ оформление в духе iOS (П:9–38) ============================ */
+:root{
+  --bg:#f2f2f7; --bg2:#ffffff; --card:#ffffff; --card2:#f7f7fa;
+  --ink:#1c1c1e; --ink2:#3a3a3c; --muted:#636366; --sep:rgba(60,60,67,.24);
+  --field-line:#86868b;
+  --green:#34c759; --green-tint:rgba(52,199,89,.14); --green-ink:#1a7431;
+  --blue:#007aff; --blue-tint:rgba(0,122,255,.12); --blue-ink:#005bb8;
+  --orange:#ff9500; --orange-tint:rgba(255,149,0,.14); --orange-ink:#9a5200;
+  --red:#ff3b30; --red-tint:rgba(255,59,48,.12); --red-ink:#c0201a;
+  --violet:#af52de; --violet-tint:rgba(175,82,222,.14); --violet-ink:#8a35b0;
+  --on-fill:#ffffff;
+  --r:16px; --rs:12px;
+  --shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 24px -16px rgba(0,0,0,.25);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --bg2:#0e0e10; --card:#1c1c1e; --card2:#2c2c2e;
+    --ink:#f2f2f7; --ink2:#d1d1d6; --muted:#a3a3a9; --sep:rgba(84,84,88,.6);
+    --field-line:#8e8e93;
+    --green:#30d158; --green-tint:rgba(48,209,88,.16); --green-ink:#30d158;
+    --blue:#0a84ff; --blue-tint:rgba(10,132,255,.18); --blue-ink:#64b0ff;
+    --orange:#ff9f0a; --orange-tint:rgba(255,159,10,.18); --orange-ink:#ff9f0a;
+    --red:#ff453a; --red-tint:rgba(255,69,58,.18); --red-ink:#ff8078;
+    --violet:#bf5af2; --violet-tint:rgba(191,90,242,.18); --violet-ink:#d58ff8;
+    --on-fill:#000000;
+    --shadow:none;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --bg2:#0e0e10; --card:#1c1c1e; --card2:#2c2c2e;
+  --ink:#f2f2f7; --ink2:#d1d1d6; --muted:#a3a3a9; --sep:rgba(84,84,88,.6);
+  --field-line:#8e8e93;
+  --green:#30d158; --green-tint:rgba(48,209,88,.16); --green-ink:#30d158;
+  --blue:#0a84ff; --blue-tint:rgba(10,132,255,.18); --blue-ink:#64b0ff;
+  --orange:#ff9f0a; --orange-tint:rgba(255,159,10,.18); --orange-ink:#ff9f0a;
+  --red:#ff453a; --red-tint:rgba(255,69,58,.18); --red-ink:#ff8078;
+  --violet:#bf5af2; --violet-tint:rgba(191,90,242,.18); --violet-ink:#d58ff8;
+  --on-fill:#000000;
+  --shadow:none;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font:16px/1.45 -apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  letter-spacing:-.01em;-webkit-font-smoothing:antialiased}
+[hidden]{display:none !important}
+a{color:var(--blue-ink)}
+code{font:.92em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--card2);padding:1px 6px;border-radius:6px}
+
+/* видимый фокус: кольцо 2 px на всех кнопках, полях и ссылках */
+:focus-visible{outline:2px solid var(--blue-ink);outline-offset:2px}
+#view:focus{outline:none}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);
+  white-space:nowrap;border:0}
+.skip{position:absolute;left:12px;top:-60px;z-index:80;font:inherit;font-size:14px;padding:8px 14px;
+  border:0;border-radius:10px;background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.skip:focus{top:8px}
+
+/* --------------------------------- шапка (П:45–62) --------------------------------- */
+.nav{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 82%, transparent);
+  backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--sep)}
+.navin{max-width:1180px;margin:0 auto;padding:10px 20px 0}
+.navtop{display:flex;align-items:center;gap:12px}
+.mark{width:32px;height:32px;border-radius:9px;
+  background:linear-gradient(160deg,var(--green-ink),color-mix(in srgb,var(--green-ink) 78%, #000));
+  color:var(--on-fill);display:grid;place-items:center;font-weight:700;font-size:15px;flex:none}
+.h1{font-size:26px;font-weight:700;letter-spacing:-.03em;margin:0}
+.navtop .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
+.navtop .who{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navtop .unit{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--ink2);font-size:13px}
+.ava{width:30px;height:30px;border-radius:50%;background:var(--green-tint);color:var(--green-ink);
+  display:grid;place-items:center;font-size:12px;font-weight:700}
+.linkbtn{font:inherit;font-size:14px;font-weight:600;border:0;background:transparent;color:var(--blue-ink);
+  padding:4px 8px;border-radius:8px;cursor:pointer}
+.linkbtn:hover{background:var(--blue-tint)}
+@media (max-width:760px){   /* масштаб 200 % на экране 1280 px: шапка складывается в две строки, а не уезжает вбок */
+  .navtop{flex-wrap:wrap;row-gap:6px}
+  .navtop .right{flex-wrap:wrap;justify-content:flex-end;row-gap:6px}
+  .navtop .who{max-width:180px}
+  .navtop .unit{max-width:240px}
+}
+.seg{display:flex;gap:2px;margin:10px 0 10px;padding:2px;background:var(--card2);border-radius:11px;
+  overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{font:inherit;font-size:14px;font-weight:500;border:0;background:transparent;color:var(--ink2);
+  padding:7px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:.18s}
+.seg button:focus-visible{outline-offset:-2px}
+.seg button.on,.seg button[aria-selected="true"]{background:var(--card);color:var(--ink);font-weight:600;
+  box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.seg .badge{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--muted)}
+.seg .badge:empty{display:none}
+
+main{max-width:1180px;margin:0 auto;padding:18px 20px 90px}
+.note{background:var(--orange-tint);color:var(--ink);border-radius:var(--r);padding:11px 15px;
+  font-size:14px;margin-bottom:18px}
+.sechead{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);
+  margin:24px 6px 8px}
+.sechead:first-child{margin-top:0}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* --------------------------------- карточки (П:72–90) --------------------------------- */
+.card{background:var(--card);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+.card.inset{background:var(--card2);box-shadow:none}
+.row{display:flex;gap:14px;align-items:flex-start}
+.grow{flex:1 1 300px;min-width:0}
+.t1{font-size:17px;font-weight:650;letter-spacing:-.02em}
+.t2{font-size:14.5px;color:var(--muted);margin-top:2px}
+.badge-score{flex:none;width:58px;height:58px;border-radius:15px;display:grid;place-items:center;
+  background:var(--green-tint);color:var(--green-ink);text-align:center}
+.badge-score b{display:block;font-size:20px;font-weight:700;line-height:1.05}
+.badge-score span{font-size:10px;color:var(--muted)}
+.badge-score.mid{background:var(--orange-tint);color:var(--orange-ink)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chip{font-size:12.5px;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--ink2)}
+.chip.g{background:var(--green-tint);color:var(--green-ink)}
+.chip.b{background:var(--blue-tint);color:var(--blue-ink)}
+.chip.o{background:var(--orange-tint);color:var(--orange-ink)}
+.chip.r{background:var(--red-tint);color:var(--red-ink)}
+.chip.v{background:var(--violet-tint);color:var(--violet-ink)}
+
+/* --------------------------------- кнопки (П:92–103) --------------------------------- */
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button.b{font:inherit;font-size:14.5px;font-weight:550;padding:8px 16px;border-radius:999px;border:0;
+  background:var(--card2);color:var(--ink);cursor:pointer;transition:.15s}
+button.b:hover{filter:brightness(1.06)}
+button.b:active{transform:scale(.97)}
+button.b.fill{background:var(--green-ink);color:var(--on-fill)}
+button.b.blue{background:var(--blue-ink);color:var(--on-fill)}
+button.b.tint{background:var(--green-tint);color:var(--green-ink)}
+button.b.danger{background:var(--red-tint);color:var(--red-ink)}
+button.b:disabled{opacity:.4;cursor:default}
+.link,a.link,button.link{color:var(--blue-ink);cursor:pointer}
+button.link{font:inherit;background:none;border:0;padding:0;text-align:left}
+
+/* --------------------------------- списки (П:105–111) --------------------------------- */
+.list{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.li{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:.5px solid var(--sep);cursor:pointer}
+.li:last-child{border-bottom:0}
+.li:hover{background:var(--card2)}
+.li .chev{margin-left:auto;color:var(--muted);font-size:18px}
+.li .sub{font-size:13.5px;color:var(--muted)}
+/* строка списка и мини-карточка — ссылка или кнопка, а не div с обработчиком */
+a.li,button.li,a.mini,button.mini{color:inherit;text-decoration:none;font:inherit;text-align:left}
+button.li{width:100%;background:none;border:0;border-bottom:.5px solid var(--sep)}
+button.li:last-child{border-bottom:0}
+a.li:focus-visible,button.li:focus-visible{outline-offset:-2px}
+
+/* --------------------------------- таблица (П:113–136) --------------------------------- */
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.search{flex:1 1 260px;font:inherit;font-size:15px;padding:10px 14px;border:1px solid var(--field-line);
+  border-radius:11px;background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+.tablewrap{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);overflow:auto;
+  max-height:calc(100vh - 230px);min-height:200px}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+th,td{text-align:left;padding:10px 14px;border-bottom:.5px solid var(--sep)}
+.tablewrap th,.tablewrap td{padding:10px 10px}
+table.base thead th:nth-child(5){min-width:76px}
+thead th{position:sticky;top:0;z-index:2;background:var(--card);font-size:12.5px;color:var(--muted);
+  font-weight:600;cursor:pointer;user-select:none;vertical-align:bottom}
+thead th button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;font-weight:inherit;text-align:left}
+thead th .dir{opacity:.6;font-size:11px}
+thead th.sorted{color:var(--green-ink)}
+thead th.sorted .dir{opacity:1}
+thead tr.filters th{top:40px;padding:6px 10px;cursor:default}
+thead tr.filters input,thead tr.filters select{width:0;min-width:100%;font:inherit;font-size:13px;padding:6px 9px;
+  border:1px solid var(--field-line);border-radius:9px;background:var(--card2);color:var(--ink)}
+tbody tr:hover{background:var(--card2)}
+td.name{font-weight:600}
+td.name .link{color:var(--ink)}
+td.name .link:hover{color:var(--blue-ink)}
+td.name a.link{text-decoration:none}
+td.name a.link:hover{text-decoration:underline}
+tbody tr.trow{cursor:pointer}
+.pager{display:flex;gap:12px;align-items:center;justify-content:center;margin:14px 0 0}
+.pager:empty{display:none}
+.pill{font-size:12.5px;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--muted);white-space:nowrap}
+.pill.obs{background:var(--blue-tint);color:var(--blue-ink)}
+.pill.watch{background:var(--violet-tint);color:var(--violet-ink)}
+.pill.cand{background:var(--green-tint);color:var(--green-ink)}
+.num{font-variant-numeric:tabular-nums;font-weight:600}
+
+/* --------------------------------- блоки экрана «Сегодня» (П:138–155) --------------------------------- */
+/* у каждого блока своя заливка, своя полоса слева и свой значок в заголовке: цвет не единственный признак */
+.sechead{display:flex;align-items:center;gap:8px}
+.sechead .dot{width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:11px;
+  color:var(--on-fill);background:var(--green-ink)}
+.sechead .dot.g{background:var(--green-ink)}
+.sechead .dot.o{background:var(--orange-ink)}
+.sechead .dot.r{background:var(--red-ink)}
+.sechead .dot.b{background:var(--blue-ink)}
+.sechead .dot.v{background:var(--violet-ink)}
+.zone{border-radius:18px;padding:10px;margin-bottom:6px}
+.zone.z1{background:color-mix(in srgb,var(--green-tint) 55%, transparent)}
+.zone.z2{background:color-mix(in srgb,var(--orange-tint) 55%, transparent)}
+.zone.z3{background:color-mix(in srgb,var(--red-tint) 45%, transparent)}
+.zone.z4{background:color-mix(in srgb,var(--blue-tint) 45%, transparent)}
+.zone.z5{background:color-mix(in srgb,var(--violet-tint) 55%, transparent)}
+.zone .card{border-left:4px solid transparent}
+.zone.z1 .card{border-left-color:var(--green-ink)}
+.zone.z2 .card{border-left-color:var(--orange-ink)}
+.zone.z3 .card{border-left-color:var(--red-ink)}
+.zone.z4 .card{border-left-color:var(--blue-ink)}
+.zone.z5 .card{border-left-color:var(--violet-ink)}
+.zone.z2 .card .t1::before{content:"⏳ ";font-size:13px}
+.zone.z3 .card .t1::before{content:"⌛ ";font-size:13px}
+.zone.z4 .card .t1::before{content:"📅 ";font-size:13px}
+.zone.noicon .card .t1::before{content:none}
+blockquote.quote{margin:8px 0 0;padding:6px 12px;border-left:3px solid var(--violet-ink);color:var(--ink2);font-size:14px;white-space:pre-line}
+
+/* --------------------------------- фото и аватары (П:157–162) --------------------------------- */
+.face{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;overflow:hidden;
+  background:var(--card2);color:var(--muted);font-size:14px;font-weight:700;border:1px solid var(--sep)}
+.face svg{width:100%;height:100%}
+.face img{width:100%;height:100%;object-fit:cover;display:block}
+.face.sm{width:28px;height:28px;font-size:11px}
+.face.md{width:56px;height:56px;font-size:16px}
+/* портрет у карточки сигнала: фото из резюме — вертикальное, сжатое до 320 px */
+.face.lg{width:96px;height:120px;border-radius:14px;font-size:26px;align-self:flex-start}
+/* сводка резюме справа на карточке сигнала: на узкой ширине (≈ 640 px) уходит под текст */
+.sigrow{flex-wrap:wrap}
+.sigrow .grow{flex:1 1 300px}
+.summary{flex:1 1 230px;max-width:290px;min-width:0;padding-left:14px;border-left:.5px solid var(--sep);font-size:13.5px;
+  max-height:176px;overflow:hidden}   /* справка одной высоты: карточки не вытягиваются */
+.summary dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.summary dt{color:var(--muted)}
+.summary dd{margin:0;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.summary .chips{margin-top:8px}
+.summary .chips .chip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;flex:0 1 auto}
+@media (max-width:720px){.summary{flex-basis:100%;max-width:none;padding-left:0;border-left:0;padding-top:10px;border-top:.5px solid var(--sep)}}
+.namewrap{display:flex;align-items:center;gap:10px}
+
+/* --------------------------------- переключатель темы (П:164–168) --------------------------------- */
+.theme{display:flex;gap:2px;padding:2px;background:var(--card2);border-radius:10px}
+.theme button{font:inherit;font-size:12.5px;border:0;background:transparent;color:var(--ink2);
+  padding:5px 10px;border-radius:8px;cursor:pointer}
+.theme button:focus-visible{outline-offset:-2px}
+.theme button.on,.theme button[aria-pressed="true"]{background:var(--card);color:var(--ink);font-weight:600}
+
+/* --------------------------------- формы (П:170–180) --------------------------------- */
+.form{display:grid;gap:12px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+.field input,.field textarea,.field select{width:100%;font:inherit;font-size:14.5px;padding:10px 12px;
+  border:1px solid var(--field-line);border-radius:12px;background:var(--card2);color:var(--ink);resize:vertical}
+.field textarea{min-height:68px}
+.field .fielderr{margin:5px 0 0;font-size:13px;color:var(--red-ink)}
+.field .fielderr:empty{display:none}
+::placeholder{color:var(--muted);opacity:1}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:720px){.two{grid-template-columns:1fr}}
+.fileline{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card2);border-radius:12px;padding:11px 13px}
+.fileline .ic{width:30px;height:30px;border-radius:9px;background:var(--blue-ink);color:var(--on-fill);display:grid;
+  place-items:center;font-size:11px;font-weight:700;flex:none}
+.formerror{margin:0;font-size:14px;color:var(--red-ink)}
+.formerror:empty{display:none}
+
+/* --------------------------------- воронка по вертикали (П:182–197) --------------------------------- */
+.stage{background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:10px;box-shadow:var(--shadow);
+  position:relative;overflow:hidden}
+.stage::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green-ink);opacity:.85}
+.stage.empty::before{background:var(--sep)}
+.stage .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stage .nm{font-size:16px;font-weight:650}
+.stage .cnt{font-size:13px;color:var(--muted)}
+.stage .meter{flex:1 1 180px;height:6px;border-radius:999px;background:var(--card2);overflow:hidden;min-width:120px}
+.stage .meter i{display:block;height:100%;border-radius:999px;background:var(--green-ink);opacity:.85}
+.stage .days{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.stage .cards{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.mini{background:var(--card2);border-radius:12px;padding:9px 12px;font-size:13.5px;min-width:190px;cursor:pointer}
+.mini:hover{background:var(--green-tint)}
+.mini b{display:block;font-weight:600}
+.mini span{color:var(--muted);font-size:12.5px}
+button.mini{border:0}
+a.mini,button.mini{display:block}
+.mini .open{display:block;color:inherit;text-decoration:none;font:inherit}
+.mini .open:hover b{text-decoration:underline}
+.mini .namewrap{gap:8px}
+.mini span{display:block}
+.mini[draggable="true"]{cursor:grab}
+button.b.sm{font-size:12.5px;padding:4px 12px;margin-top:8px}
+.stage h2.nm{margin:0}
+.stage.droptarget{outline:2px dashed var(--blue-ink);outline-offset:2px}
+
+/* --------------------------------- плашка активного фильтра (П:199–203) --------------------------------- */
+.filterbar{display:flex;align-items:center;gap:10px;background:var(--blue-tint);color:var(--blue-ink);
+  border-radius:12px;padding:9px 14px;margin-bottom:12px;font-size:14px}
+.filterbar button{font:inherit;font-size:13.5px;border:0;background:transparent;color:var(--blue-ink);
+  cursor:pointer;margin-left:auto;font-weight:600}
+
+/* --------------------------------- две колонки, досье (П:205–227) --------------------------------- */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:920px){.split{grid-template-columns:1fr}}
+.kv{width:100%;font-size:14.5px}
+.kv td{border:0;padding:5px 0;vertical-align:top}
+.kv td:first-child{color:var(--muted);width:42%}
+.feat{margin-bottom:12px}
+.feat .lbl{display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:5px}
+.bar{height:6px;background:var(--card2);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--green-ink)}
+.bar.low i{background:var(--orange-ink)}
+.tl{border-left:2px solid var(--sep);margin-left:6px;padding-left:16px}
+.tl .ev{margin-bottom:13px;position:relative;font-size:14px}
+.tl .ev::before{content:"";position:absolute;left:-21px;top:6px;width:8px;height:8px;border-radius:50%;
+  background:var(--green-ink);box-shadow:0 0 0 3px var(--green-tint)}
+.tl .ev time{display:block;color:var(--muted);font-size:12.5px}
+.soc{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border-radius:12px;background:var(--card2);margin-bottom:8px}
+.soc .ico{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:11px;
+  font-weight:700;color:#fff;flex:none}
+/* фоны значков сетей затемнены до 4,5:1 с белой буквой; в прототипе у LinkedIn был класс .li, он совпадал со строкой списка */
+.soc .gh{background:#48484a}.soc .tg{background:#1a73c9}.soc .vk{background:#4a76a8}
+.soc .ha{background:#2b7a9f}.soc .fo{background:#5c5c61}.soc .ok{background:#a85a00}
+.soc .in{background:#0a66c2}.soc .fb{background:#5a6a85}.soc .ig{background:#9b5d8f}
+.soc .x{background:#1c1c1e;border:1px solid var(--sep)}.soc .yt{background:#c4302b}.soc .dz{background:#2b2b2b}
+.soc .gl{background:#b2481c}.soc .tt{background:#2b2b2b}.soc .cf{background:#6e4aa3}.soc .ot{background:#5c5c61}
+
+/* --------------------------------- досье: места работы, разбор, подсказка --------------------------------- */
+h2.t1{margin:0 0 10px}
+.row h2.t1,.grow h2.t1{margin:0}
+.feat .detail{font-size:12.5px;color:var(--muted);margin-top:4px}
+.exp{padding:10px 0;border-bottom:.5px solid var(--sep)}
+.exp:first-of-type{padding-top:0}
+.exp:last-child{border-bottom:0;padding-bottom:0}
+.lines{white-space:pre-line}
+.explain{margin-top:8px}
+details summary{cursor:pointer;font-size:14px}
+.chip.tip{position:relative;cursor:help}
+
+/* --------------------------------- подсказки (S42) --------------------------------- */
+.tooltip{position:fixed;inset:auto;margin:0;max-width:320px;width:max-content;padding:9px 12px;border:0;border-radius:12px;
+  background:var(--ink);color:var(--bg);font-size:13.5px;line-height:1.4;letter-spacing:0;box-shadow:0 8px 24px rgba(0,0,0,.3);
+  pointer-events:none;overflow:visible}
+
+/* --------------------------------- профили должностей --------------------------------- */
+.chipbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border:1px solid var(--field-line);
+  border-radius:12px;background:var(--card2);cursor:text}
+.chipbox:focus-within{outline:2px solid var(--blue-ink);outline-offset:2px}
+.chiplist{display:contents}
+.field .chipbox input{flex:1 1 140px;width:auto;min-width:100px;border:0;padding:4px 2px;background:transparent;border-radius:0}
+.field .chipbox input:focus-visible{outline:none}
+.chip.removable{display:inline-flex;align-items:center;gap:2px;background:var(--card);box-shadow:0 0 0 1px var(--sep)}
+.chip.removable button{border:0;background:none;color:inherit;cursor:pointer;padding:0 2px 0 6px;font:inherit;font-size:15px;line-height:1}
+.diff .num{white-space:nowrap}
+
+/* --------------------------------- вакансии --------------------------------- */
+.sectionbar{display:flex;align-items:flex-end;gap:12px;margin-bottom:8px}
+.sectionbar .sechead{margin-bottom:0}
+.sectionbar .b{margin-left:auto}
+.sechead:not(:first-child){margin-top:24px}
+
+/* --------------------------------- письмо и контакты --------------------------------- */
+.sheet textarea.tall{min-height:240px}
+.contactrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:.5px solid var(--sep)}
+.contactrow:last-of-type{border-bottom:0}
+.contactrow > div{flex:1 1 200px;min-width:0}
+.cval{font-weight:600;font-size:16px;word-break:break-all;user-select:all}
+.contactrow .hint{flex-basis:100%}
+
+/* --------------------------------- чат (П:229–246) --------------------------------- */
+.chat{display:flex;flex-direction:column;gap:10px;max-height:460px;overflow-y:auto;padding-right:4px}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.msg .who{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-size:12px;font-weight:700;background:var(--blue-tint);color:var(--blue-ink)}
+.msg.agent .who{background:var(--green-tint);color:var(--green-ink)}
+.bubble{background:var(--card2);border-radius:14px;padding:10px 13px;font-size:14.5px;max-width:78%}
+.msg.agent .bubble{background:var(--green-tint)}
+.bubble .meta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:8px;flex-wrap:wrap}
+.composer{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.composer textarea{width:100%;min-height:86px;font:inherit;font-size:15px;padding:12px 14px;
+  border:1px solid var(--field-line);border-radius:14px;background:var(--card2);color:var(--ink);resize:vertical}
+.tagseg{display:flex;gap:2px;padding:2px;background:var(--card2);border-radius:11px;width:fit-content}
+.tagseg button{font:inherit;font-size:13.5px;border:0;background:transparent;color:var(--ink2);
+  padding:6px 13px;border-radius:9px;cursor:pointer}
+.tagseg button:focus-visible{outline-offset:-2px}
+.tagseg button.on,.tagseg button[aria-pressed="true"]{background:var(--card);color:var(--ink);font-weight:600}
+.counter{font-size:13px;color:var(--muted)}
+.counter.bad{color:var(--red-ink)}
+
+/* --------------------------------- окно: <dialog class="sheet"> (П:248–266) --------------------------------- */
+dialog.sheet{background:var(--card);color:var(--ink);width:min(560px,calc(100% - 24px));max-width:none;
+  border:0;border-radius:20px;padding:10px 20px 22px;max-height:88vh;overflow:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog.sheet[open]{animation:up .24s ease-out}
+dialog.sheet::backdrop{background:rgba(0,0,0,.45);backdrop-filter:blur(3px)}
+@keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+.grab{width:38px;height:5px;border-radius:3px;background:var(--sep);margin:0 auto 12px}
+.sheet h3{font-size:19px;margin:0 0 4px;letter-spacing:-.02em}
+.sheet .hint{font-size:14px;color:var(--muted);margin-bottom:12px}
+.sheet textarea{width:100%;min-height:150px;font:inherit;font-size:15px;padding:12px 14px;
+  border:1px solid var(--field-line);border-radius:14px;background:var(--card2);color:var(--ink);resize:vertical}
+.sheet .reasons{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.sheet .reasons button{font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;border:0;
+  background:var(--card2);color:var(--ink2);cursor:pointer}
+.sheet .reasons button:hover{background:var(--blue-tint);color:var(--blue-ink)}
+.sheetfoot{display:flex;gap:10px;align-items:center;margin-top:14px}
+.sheetfoot .counter{margin-right:auto}
+.sheetfoot.end{justify-content:flex-end}
+.choices{border:0;margin:0 0 4px;padding:0;display:grid;gap:8px}
+.choices legend{font-size:12.5px;color:var(--muted);margin-bottom:6px;padding:0}
+.choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--card2);cursor:pointer}
+.choice input{margin-top:4px;accent-color:var(--blue-ink)}
+.choice .t2{display:block;margin-top:2px}
+.choice:has(input:checked){background:var(--blue-tint)}
+.choice:has(:focus-visible){outline:2px solid var(--blue-ink);outline-offset:2px}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--card);
+  color:var(--ink);padding:12px 18px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.3);
+  font-size:14.5px;z-index:2000;opacity:0;pointer-events:none;transition:.25s;max-width:min(560px,calc(100% - 24px))}
+.toast.show{opacity:1}
+.toast:empty{display:none}
+svg{width:100%;height:auto;display:block}
+.hint{font-size:13.5px;color:var(--muted)}
+/* выполненное действие: тело карточки гаснет, итог «✓ что сделано» остаётся читаемым (П:1850–1855) */
+.card.done .cardbody{opacity:.5}
+.result{margin:10px 0 0;font-size:14.5px;font-weight:600;color:var(--ink)}
+.result:empty{display:none}
+.result:focus{outline:none}
+.t1 a{color:inherit;text-decoration:none}
+.t1 a:hover{text-decoration:underline}
+
+/* --------------------------------- состояния: загрузка, пусто, ошибка --------------------------------- */
+.loading{margin:0;padding:18px 6px;color:var(--muted);font-size:14.5px}
+.empty{text-align:left}
+.errorcard{background:var(--red-tint);box-shadow:none}
+.errorcard .t1{color:var(--ink)}
+.errorcard .t2{color:var(--ink2)}
+
+/* --------------------------------- страница входа и начальная загрузка --------------------------------- */
+.boot{min-height:60vh;display:grid;place-items:center;color:var(--muted)}
+.loginwrap{min-height:100vh;display:grid;place-items:center;padding:24px}
+.logincard{width:min(380px,100%);padding:26px 24px 20px}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.logincard .form{margin-top:16px}
+.logincard .hint{margin:16px 0 0}
+.logincard button.b{width:100%;padding:11px 16px}
+.relogin .form{margin-top:8px}
+
+/* --------------------------------- уменьшенное движение --------------------------------- */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+
+/* --------------------------------- печать досье в PDF (П:275–282) --------------------------------- */
+@media print{
+  /* бумага всегда светлая, даже если на экране ночная тема */
+  :root:root:root{
+    --bg:#ffffff; --card:#ffffff; --card2:#f2f2f4; --ink:#000000; --ink2:#222222; --muted:#4a4a4e; --sep:#bbbbbb;
+    --green-tint:rgba(52,199,89,.14); --blue-tint:rgba(0,122,255,.12); --orange-tint:rgba(255,149,0,.14);
+    --red-tint:rgba(255,59,48,.12); --violet-tint:rgba(175,82,222,.14);
+    --green-ink:#1a7431; --blue-ink:#005bb8; --orange-ink:#9a5200; --red-ink:#c0201a; --violet-ink:#8a35b0;
+  }
+  .nav,.note,.btns,.filterbar,.toast,dialog,.tools,.skip,.sr-only,.noprint,.tooltip{display:none !important}   /* .noprint — контакты в бумагу не идут */
+  main{padding:0;max-width:none}
+  body{background:#fff;color:#000}
+  .card,.list{box-shadow:none;border:1px solid #ccc}   /* длинная карточка может идти на следующую страницу */
+  .bar,.bar i,.soc .ico,.chip,.badge-score,.tl .ev::before{-webkit-print-color-adjust:exact;print-color-adjust:exact}   /* полосы и значки — и без галочки «Фон» в окне печати */
+  .feat,.exp,.soc,.ev,.kv tr,h2{break-inside:avoid}
+  h2{break-after:avoid}
+  .split{grid-template-columns:1fr}
+}
+
+/* --------------------------------- журнал и отчёт (S32, S33, S40) --------------------------------- */
+.tagseg.wrap{flex-wrap:wrap;width:auto;margin:8px 0 12px}
+.periodbar{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:10px 0 6px}
+.periodbar .field{margin:0}
+.periodbar .field input{width:auto;min-width:150px}
+.logsum{font-size:14px;color:var(--ink2);margin-top:3px}
+.logmore{margin-top:4px}
+.loglines{margin:6px 0 0;padding-left:20px;font-size:14px;color:var(--ink2)}
+.loglines li{margin:3px 0}
+.repgroup{margin-top:12px}
+.repgroup:first-child{margin-top:0}
+.repgroup > summary{padding:2px 0}
+
+/* --------------------------------- схема (S34) --------------------------------- */
+.livecounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.livecount{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 18px}
+.livecount .n{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.livecount .l{font-size:13.5px;color:var(--muted);margin-top:2px}
+table.runs thead th{cursor:default}
+table.runs td{vertical-align:top}
+table.runs tr.never td{color:var(--muted)}
+.runcode{font-size:12px;font-weight:400;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.runfacts{min-width:260px}
+table.runs td:nth-child(n+2):nth-child(-n+4){white-space:nowrap}
+table.runs td.name{min-width:190px}
+
+/* галочка согласия в окне платного контакта */
+.consent{display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;font-size:14.5px;cursor:pointer}
+.consent input{width:20px;height:20px;margin:1px 0 0;flex:none;accent-color:var(--green);cursor:pointer}
+
+/* --------------------------------- портрет должности: секции, веса у своих признаков --------------------------------- */
+.pgroup{margin-top:14px}
+.pgroup > .t1{margin:0}
+.pdesc{margin:2px 0 16px;font-size:14px;color:var(--muted)}
+.wsum{margin:0 0 14px;padding:10px 14px;background:var(--card2);border-radius:12px}
+.weightsum{margin:0;font-size:14.5px;font-weight:600}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:start;padding:14px 0;border-top:.5px solid var(--sep)}
+.wsum + .prow{border-top:0;padding-top:4px}
+.prow:last-child{padding-bottom:0}
+.pfield{min-width:0}
+@media (max-width:720px){.prow{grid-template-columns:1fr;gap:10px}}
+.wgt{display:grid;gap:5px;justify-items:start;width:164px}
+.wcap{font-size:12.5px;color:var(--muted)}
+.wstep{display:flex;align-items:center;gap:2px;background:var(--card2);border:1px solid var(--field-line);border-radius:12px;padding:2px}
+.wbtn{width:32px;height:34px;border:0;border-radius:10px;background:var(--card);color:var(--ink);font:inherit;font-size:19px;
+  line-height:1;cursor:pointer;box-shadow:0 0 0 .5px var(--sep)}
+.wbtn:disabled{opacity:.4;cursor:default}
+.wnum{width:50px;text-align:center;font:inherit;font-size:16px;font-weight:700;border:0;background:transparent;color:var(--ink);padding:6px 2px}
+.wmeta{display:flex;align-items:center;gap:8px;width:100%}
+.wbar{flex:1;min-width:0;height:6px;border-radius:3px;background:var(--card2);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--green);border-radius:3px;transition:width .15s}
+.wshare{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.field textarea.autogrow{min-height:44px;resize:none;overflow:hidden}
+.savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;padding:12px 18px;
+  background:var(--card);border-radius:var(--r);box-shadow:var(--shadow),0 -1px 0 var(--sep)}
+.savebar .formerror{flex-basis:100%}
+.loadbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px}
+.pgroup .two{align-items:start}
+
+/* --------------------------------- «Загрузить резюме HH.ru» по должности (S46) --------------------------------- */
+.li.stretch{position:relative}
+.li.stretch a.main{color:inherit;text-decoration:none}
+.li.stretch a.main::after{content:"";position:absolute;inset:0}
+.li.stretch a.main:focus-visible{outline:none}
+.li.stretch a.main:focus-visible::after{outline:2px solid var(--blue-ink);outline-offset:-2px;border-radius:var(--r)}
+.li.stretch button{position:relative;z-index:1}
+button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
+.region{display:grid;gap:8px}
+.regionline{margin:0;font-size:14.5px;font-weight:600;color:var(--ink)}
+.areachips{display:flex;gap:6px;flex-wrap:wrap}
+.areachip{font:inherit;font-size:13.5px;border:0;border-radius:999px;padding:6px 13px;background:var(--card2);color:var(--ink2);cursor:pointer}
+.areachip[aria-pressed="true"],.areachip.on{background:var(--green-tint);color:var(--green-ink);font-weight:600}
+.areachip.removable{display:inline-flex;align-items:center;gap:4px;padding-right:6px;cursor:default}
+.areachip.removable button{border:0;background:none;color:inherit;font:inherit;font-size:16px;line-height:1;padding:0 6px;cursor:pointer}
+.arealist{margin-top:6px;max-height:210px;overflow:auto;border:1px solid var(--field-line);border-radius:12px;background:var(--card)}
+.areaopt{padding:9px 12px;cursor:pointer;font-size:14.5px}
+.areaopt[aria-selected="true"],.areaopt:hover{background:var(--card2)}
+.rowbtns{margin-left:auto;display:flex;gap:8px;align-items:center;justify-content:flex-end;flex:none}
+.li .rowbtns + .chev{margin-left:0}
+
+/* --------------------------------- ход загрузки резюме hh (S48) --------------------------------- */
+.loadstatus:empty{display:none}
+.loadstatus{padding:8px 0 10px}
+.lsbar{border-radius:12px;padding:9px 14px;background:var(--blue-tint);color:var(--ink)}
+.lsbar.done{background:var(--green-tint)}
+.lsbar.failed{background:var(--red-tint)}
+.lsrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
+.lstext{flex:1 1 auto;min-width:0;font-weight:600}
+.lsclose{border:0;background:none;color:inherit;font:inherit;font-size:20px;line-height:1;padding:0 6px;cursor:pointer;border-radius:8px}
+.lsclose:hover{background:color-mix(in srgb,var(--ink) 10%, transparent)}
+.lsprog{height:6px;margin-top:8px;border-radius:3px;background:color-mix(in srgb,var(--ink) 12%, transparent);overflow:hidden}
+.lsprog i{display:block;height:100%;background:var(--blue-ink);border-radius:3px;transition:width .4s}
+.lsprog.indeterminate i{width:35%;animation:lsmove 1.4s ease-in-out infinite}
+@keyframes lsmove{0%{margin-left:-35%}100%{margin-left:100%}}
+@media (prefers-reduced-motion:reduce){.lsprog.indeterminate i{animation:none;width:100%;opacity:.5}}
+.lsnote{margin-top:4px;font-size:12.5px;color:var(--muted)}
+
+/* --------------------------------- оргструктура 1С в «Базе должностей» (S47) --------------------------------- */
+.pill.warm{background:var(--orange-tint);color:var(--orange-ink);font-weight:600}
+.orgtree{display:grid;gap:10px;margin-top:14px}
+.orghead{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:12px;background:var(--card2);color:var(--ink);font:inherit;
+  font-size:14.5px;font-weight:650;text-align:left;cursor:pointer}
+.orghead:disabled{cursor:default;opacity:1}
+.orgchev{width:14px;color:var(--muted);flex:none}
+.orgtitle{flex:1 1 auto;min-width:0}
+.orgcount{font-size:12.5px;font-weight:500;color:var(--muted);white-space:nowrap}
+.orgbody{margin:8px 0 0 12px;padding-left:12px;border-left:2px solid var(--sep);display:grid;gap:10px}
+.orgnode .list{box-shadow:none;border:.5px solid var(--sep)}
+
+/* --------------------------------- «Подходящие кандидаты» (S49) --------------------------------- */
+.fitshort{display:none}
+@media (max-width:720px){
+  .fitfull{display:none}
+  .fitshort{display:inline}
+  .li.stretch,.orgnode .li{flex-wrap:wrap}
+  .li.stretch > div:first-child,.orgnode .li > div:first-child{flex:1 1 100%}
+  .rowbtns{margin-left:0;justify-content:flex-start;flex-wrap:wrap}
+  .li.stretch .chev{display:none}
+}
+button.b.inactive{opacity:.55;cursor:not-allowed;filter:none}
+button.b.inactive:hover{filter:none}
+button.b.inactive:active{transform:none}
+
+/* должность из нескольких подразделений — одна строка с разбивкой (T41) */
+.posbox{border-bottom:.5px solid var(--sep)}
+.posbox:last-child{border-bottom:0}
+.posbox > .li{border-bottom:0}
+.breaktoggle{border:0;background:none;padding:0 2px;font:inherit;font-size:13px;color:var(--blue-ink);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.breaktoggle::after{content:"▾";text-decoration:none;display:inline-block;margin-left:4px}
+.breaktoggle[aria-expanded="true"]::after{content:"▴"}
+.li.stretch .breaktoggle{position:relative;z-index:1}
+.li > div:first-child{min-width:0}
+.breakdown{margin:0;padding:6px 18px 12px 34px;list-style:none;display:grid;gap:3px;font-size:13.5px;color:var(--ink2);background:var(--card2)}
+.breakdown li::before{content:"· ";color:var(--muted)}
+
+/* --------------------------------- «Доступ» и вход по коду (manager-cabinet, S1–S4) --------------------------------- */
+table.access thead th{cursor:default}
+table.access td{vertical-align:middle}
+table.access tr.never td{color:var(--muted)}
+table.access td.name{min-width:200px}
+table.access tbody tr:focus-visible{outline:2px solid var(--blue-ink);outline-offset:-2px}
+.codebig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:700;letter-spacing:.12em;padding:18px;border-radius:14px;
+  background:var(--card2);text-align:center;user-select:all;word-break:break-all}
+.errtint:not(:empty){background:var(--red-tint);padding:9px 12px;border-radius:12px}
+@media (max-width:640px){
+  table.access th:first-child,table.access td.name{position:sticky;left:0;background:var(--card);z-index:1}
+}
+
+/* --------------------------------- «Как работает портал» (S19) --------------------------------- */
+.guidecard{padding:0}
+.guide > summary{cursor:pointer;padding:14px 18px;display:flex;align-items:baseline;flex-wrap:wrap;list-style-position:inside}
+.guide > summary:focus-visible{outline-offset:-2px}
+.guidebody{padding:0 18px 18px;max-width:960px}
+.guidebody h3{margin:20px 0 8px;font-size:15.5px;letter-spacing:-.01em}
+.guidebody p{margin:0 0 8px;color:var(--ink2);font-size:14.5px}
+.guidelist{margin:6px 0 0;padding-left:20px;color:var(--ink2);font-size:14.5px}
+.guidelist li{margin:4px 0}
+.guidemine{background:var(--card2);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14.5px}
+table.guidetable{font-size:13.5px;min-width:720px}
+table.guidetable th,table.guidetable td{vertical-align:top}
+table.guidetable thead th{position:static;cursor:default}
+table.guidetable tbody th{font-weight:500;color:var(--ink);min-width:220px}
+table.guidetable td.yes{color:var(--green-ink)}
+table.guidetable td.no{color:var(--muted)}
+table.guidetable th.me,table.guidetable td.me{background:var(--green-tint)}
+.guideme{font-weight:600;color:var(--green-ink)}
+table.access td .chip{display:inline-block;line-height:1.35}
+.guidemine .guidelist{columns:2;column-gap:28px}
+.guidemine .guidelist li{break-inside:avoid}
+@media (max-width:640px){.guidemine .guidelist{columns:1}}
+
+/* --------------------------------- сообщения о загрузках: колокольчик и красная полоса (S20) --------------------------------- */
+.bellslot{position:relative;display:inline-flex}
+.bell{position:relative;display:inline-grid;place-items:center;width:34px;height:34px;border:0;border-radius:10px;background:var(--card2);color:var(--ink2);cursor:pointer}
+.bell:hover{filter:brightness(.96)}
+.bell.alarm{background:var(--red-tint);color:var(--red-ink)}
+.bellbadge{position:absolute;top:-5px;right:-5px;box-sizing:border-box;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red-ink);
+  color:var(--on-fill);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.bellbadge[hidden]{display:none}
+.bellpanel{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:min(400px,calc(100vw - 24px));max-height:70vh;overflow:auto;padding:14px;border-radius:var(--r);
+  background:var(--card);box-shadow:var(--shadow),0 0 0 .5px var(--sep);color:var(--ink);text-align:left;font-size:14px;font-weight:400}
+.bellpanel:focus-visible{outline:none}
+.bellhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.bellist{list-style:none;margin:0;padding:0}
+.bellitem{padding:10px 0;border-top:.5px solid var(--sep)}
+.bellitem:first-child{border-top:0}
+.bellitem .bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.alarmslot:empty{display:none}
+.alarmslot{padding:0 0 10px}
+.alarmbar{border-radius:12px;padding:10px 14px;background:var(--red-tint);color:var(--ink);box-shadow:inset 4px 0 0 var(--red-ink)}
+.alarmbar.taken{background:var(--orange-tint);box-shadow:inset 4px 0 0 var(--orange-ink)}
+.alrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
+.alsub{flex:1 1 auto;min-width:0;color:var(--ink2)}
+.tw{display:inline-flex;align-items:center;gap:4px}
+@media (max-width:720px){.bellpanel{position:fixed;left:12px;right:12px;top:72px;width:auto}}

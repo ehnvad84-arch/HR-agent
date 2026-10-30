@@ -1681,6 +1681,12 @@ drawLogs();
 
 /* ============================ Воронка по вертикали ============================ */
 const funnelTotal = BOARD.reduce((s, c) => s + c.items.length, 0) || 1;
+/* «Карпов А. С.» → досье: в воронке фамилия с инициалами, в базе полное ФИО */
+const shortFio = fio => { const [l, f, m] = fio.split(" "); return `${l} ${f[0]}. ${m[0]}.`; };
+function openFromBoard(name){
+  const p = PEOPLE.find(x => shortFio(x.fio) === name);
+  p ? openDossier(p.id) : toast(`Досье «${name}» не найдено`);
+}
 el("#board").innerHTML = BOARD.map(c => `<div class="stage${c.items.length ? "" : " empty"}">
   <div class="top">
     <span class="nm">${c.st}</span>
@@ -1689,7 +1695,8 @@ el("#board").innerHTML = BOARD.map(c => `<div class="stage${c.items.length ? "" 
     <span class="days">${c.items.length ? "в среднем " + (2 + c.items.length * 2) + " дн. на этапе" : "никого"}</span>
   </div>
   ${c.items.length ? `<div class="cards">${c.items.map(i =>
-      `<div class="mini" onclick="toast('Карточка: ${i[0]}')"><b>${i[0]}</b><span>${i[1]}</span></div>`).join("")}</div>` : ""}
+      `<div class="mini" role="button" tabindex="0" title="Открыть досье" onclick="openFromBoard('${i[0]}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openFromBoard('${i[0]}')}"><b>${i[0]}</b><span>${i[1]}</span></div>`).join("")}</div>` : ""}
   </div>`).join("");
 
 /* ============================ решения с обязательным комментарием ============================ */

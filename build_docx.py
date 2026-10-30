@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Документы проекта из Markdown в оформленный .docx.
 
-    python build_tz_docx.py  →  ТЗ_для_инженеров_развёртывание.docx и Мануал_рекрутера.docx
+    python build_docx.py  →  ТЗ, мануал рекрутера и инструкция по площадкам подбора (.docx)
 
 Источник один — Markdown. Документы Word руками не правятся: правится Markdown и
 пересобирается, иначе две версии разъедутся.
@@ -21,6 +21,8 @@ from docx.shared import Cm, Pt, RGBColor
 DOCS = [
     ("ТЗ_для_инженеров_развёртывание.md", "ТЗ для инженеров"),
     ("Мануал_рекрутера.md", "Мануал рекрутера"),
+    ("Мануал_руководителя.md", "Мануал руководителя", 40),   # короткий: свой порог проверки
+    ("Площадки_подбора_инструкция.md", "Площадки подбора"),
 ]
 
 INK = RGBColor(0x1A, 0x1A, 0x1A)
@@ -106,7 +108,7 @@ def split_row(line):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def build(src_name, podpis):
+def build(src_name, podpis, min_paragraphs=80):
     SRC = pathlib.Path(src_name)
     OUT = SRC.with_suffix(".docx")
     if not SRC.exists():
@@ -196,11 +198,11 @@ def build(src_name, podpis):
           f"таблиц {counts['t']}, блоков кода {counts['code']}, пунктов списков {counts['li']}")
     # проверка: документ читается обратно и не потерял содержимое
     back = Document(OUT)
-    assert len(back.paragraphs) > 80, f"{OUT}: подозрительно мало абзацев"
+    assert len(back.paragraphs) > min_paragraphs, f"{OUT}: подозрительно мало абзацев"
     assert len(back.tables) == counts["t"], f"{OUT}: таблиц в файле меньше, чем собрано"
     print(f"  проверка: в файле {len(back.paragraphs)} абзацев и {len(back.tables)} таблиц")
 
 
 if __name__ == "__main__":
-    for name, podpis in DOCS:
-        build(name, podpis)
+    for name, podpis, *rest in DOCS:
+        build(name, podpis, *rest)
