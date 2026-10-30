@@ -15,7 +15,7 @@ from ..db import ConnFactory, one
 from ..deps import get_clock, get_conn_factory, get_hh_http
 
 router = APIRouter()
-Manager = Annotated[auth.User, Depends(auth.require("settings.edit"))]
+Manager = Annotated[auth.User, Depends(auth.require("collect.run"))]   # все специалисты отдела персонала (S13)
 Conn = Annotated[ConnFactory, Depends(get_conn_factory)]
 
 

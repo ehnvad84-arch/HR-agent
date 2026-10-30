@@ -1,7 +1,7 @@
 """T14 workplace: вакансии — список, создание, закрытие с комментарием, «Открыть заново» (S21, S23, S38; 23, 24)."""
 import psycopg
 import pytest
-from factories import profile
+from factories import org, profile, user
 
 from hr import db
 
@@ -16,7 +16,18 @@ def prof(conn):
     return profile(conn)
 
 
+BOSS: dict = {}
+
+
+@pytest.fixture(autouse=True)
+def boss(conn):
+    """manager-cabinet S12: заказчик обязателен — у каждой вакансии теста он есть."""
+    BOSS["id"] = user(conn, "boss", "hiring_manager")
+    return BOSS["id"]
+
+
 def create(c, h, prof, **kw):
+    kw.setdefault("hiring_manager_id", BOSS["id"])
     return c.post("/api/vacancy", json={"role_profile_id": prof["id"], "title": prof["title"], **kw}, headers=h)
 
 
@@ -68,3 +79,28 @@ def test_s38_reopen(conn, api, prof):
     a = db.one(conn, "SELECT action, object_type FROM audit_log WHERE object_id = %s AND user_id = %s", (vid, uid))
     assert a == {"action": "edit", "object_type": "vacancy"}
     assert c.post(f"/api/vacancy/{vid}/reopen", json={}, headers=h).status_code == 409
+
+
+def test_s12_responsible_and_customer(conn, api, clock):
+    o = org(conn, clock.now())
+    c, h, uid = api("recruiter")
+    head = user(conn, "sales_head", "hiring_manager", o["units"]["u-sales"])
+    assert c.get(f"/api/vacancy/defaults?role_profile_id={o['sales']['id']}").json()["hiring_manager_id"] == head
+    r = c.post("/api/vacancy", json={"role_profile_id": o["sales"]["id"], "title": "МПП"}, headers=h)
+    v = db.one(conn, "SELECT recruiter_id, hiring_manager_id FROM vacancy WHERE id = %s", (r.json()["id"],))
+    assert v == {"recruiter_id": uid, "hiring_manager_id": head}
+    nobody = c.post("/api/vacancy", json={"role_profile_id": o["eng"]["id"], "title": "Инж"}, headers=h)
+    assert nobody.status_code == 422 and "заказчик" in nobody.json()["message"]
+    bad = c.post("/api/vacancy", json={"role_profile_id": o["sales"]["id"], "title": "МПП", "recruiter_id": head},
+                 headers=h)
+    assert bad.status_code == 422
+    assert {u["id"] for u in c.get("/api/staff?kind=managers").json()["items"]} >= {head}
+    lst = c.get("/api/vacancies").json()["open"]
+    assert any(x["hiring_manager"] == "Проверочный sales_head" for x in lst)
+
+
+def test_s13_collect_rights(api):
+    m, _, _ = api("hiring_manager")
+    assert m.get("/api/hh/limits").status_code == 403
+    r, _, _ = api("recruiter")
+    assert r.get("/api/hh/limits").status_code != 403

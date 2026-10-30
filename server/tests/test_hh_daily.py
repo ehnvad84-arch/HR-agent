@@ -74,7 +74,7 @@ def test_s44_limits_endpoint_and_permission(conn, api):
     fake = Limited(15)
     c, _, _ = client_with(api, fake)
     assert c.get("/api/hh/limits").json() == {"views_left": 15, "package_left": 9000}
-    r, _, _ = client_with(api, fake, "recruiter")
+    r, _, _ = client_with(api, fake, "hiring_manager")   # S13: загрузка — у всего отдела персонала
     assert r.get("/api/hh/limits").status_code == 403
 
 
@@ -138,7 +138,7 @@ def test_s48_progress_visible_in_status(conn, conn_factory, clock, api):
     pr = body["run"]["progress"]
     assert pr["full_total"] == 2 and pr["full_done"] == 2 and pr["profiles"] == 1 and pr["stage"] == "photos"
     assert body["run"]["ok"] is True and body["run"]["stats"]["seen"] == 4
-    r, _, _ = client_with(api, fake, "recruiter")
+    r, _, _ = client_with(api, fake, "hiring_manager")   # S13: загрузка — у всего отдела персонала
     assert r.get("/api/hh/collect/status").status_code == 403
 
 

@@ -41,6 +41,8 @@ class VacancyIn(BaseModel):
     title: str
     headcount: int = 1
     target_date: date | None = None
+    recruiter_id: int | None = None
+    hiring_manager_id: int | None = None
 
 
 @router.post("/api/vacancy")
@@ -48,8 +50,23 @@ def create(body: VacancyIn, user: Editor, conn_factory: Conn):
     def go():
         with conn_factory() as conn:
             return {"id": vacancies.create(conn, body.role_profile_id, body.title, user.id, body.headcount,
-                                           body.target_date)}
+                                           body.target_date, body.recruiter_id, body.hiring_manager_id)}
     return _errors(go)
+
+
+@router.get("/api/staff")
+def staff(kind: str, user: Editor, conn_factory: Conn):
+    if kind not in ("hr", "managers"):
+        raise HTTPException(422, {"error": "validation", "message": "kind — hr или managers"})
+    with conn_factory() as conn:
+        return {"items": vacancies.staff(conn, kind)}
+
+
+@router.get("/api/vacancy/defaults")
+def defaults(role_profile_id: int, user: Editor, conn_factory: Conn):
+    with conn_factory() as conn:
+        return vacancies.default_manager(conn, role_profile_id) or {"hiring_manager_id": None,
+                                                                     "hiring_manager": None}
 
 
 class CloseIn(BaseModel):
