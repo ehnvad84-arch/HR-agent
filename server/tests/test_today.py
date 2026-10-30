@@ -31,7 +31,7 @@ def test_s05_empty_day(api):
     c, _, _ = api()
     r = c.get("/api/today")
     assert r.status_code == 200
-    assert r.json() == {"signals": [], "actions": [], "stalled": [], "meetings": []}
+    assert r.json() == {"signals": [], "actions": [], "stalled": [], "meetings": [], "handoffs": []}
 
 
 def test_s04_signals_with_card_and_limit(conn, clock, api):
