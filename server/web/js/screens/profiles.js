@@ -6,10 +6,13 @@ import { h, mount, uid } from "../dom.js";
 import { absoluteDay, plural } from "../format.js";
 import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
-import { confirmSheet, emptyCard, errorCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
-import { expectCollect } from "../hh-load-model.js";
+import { confirmSheet, emptyCard, errorCard, errorLine, field, loadingLine, mountAsync, sheet, toast } from "../ui.js";
 import { loadResumesButton } from "../hh-load.js";
 import { weightControl } from "../weight-input.js";
+import {
+  allUnitIds, buildTree, canLoadPosition, filterTree, orgFileError, orgHeading, orgResultText, positionLink, positionState, rateText, rootOptions,
+  syncText, treeCounts,
+} from "./org-model.js";
 import {
   FEATURES, GEO_OPTIONS, changesFor, docError, extraFeatures, formFromProfile, groupByDept, previewText, roleTitle, rowSub, stateInfo,
   validateForm, weightShare, weightSum, weightSumText,
@@ -20,13 +23,54 @@ let notice = null;   // {id, text}: итог прошлого действия, 
 
 // ------------------------------------------------------------------ окна
 
-function newPositionSheet() {
-  const win = sheet({ title: "Новая должность", width: "480px",
-    hint: "Профиль новой должности с нуля здесь пока не заводится: это делается при обмене с 1С, вместе со справочником подразделений. "
-      + "Сейчас можно править портрет существующей должности и заменять её должностную инструкцию." });
-  const ok = h("button.b.fill", { type: "button", onClick: () => win.close("ok") }, "Понятно");
-  win.body.append(h("div.sheetfoot.end", ok));
-  win.show(ok);
+/**
+ * «Обновить из 1С» (S47): взять последнюю выгрузку из обменного каталога или выбрать файл вручную (.json до 5 МБ).
+ * Ошибки сервера (404 «нет выгрузки», 422 «не применена») — текстом в окне. После успеха onDone(reply) перерисовывает список.
+ */
+function orgSheet({ api, signal, sync, onDone }) {
+  const win = sheet({ title: "Обновить из 1С", width: "520px",
+    hint: "Оргструктура берётся из отчёта 1С «Организационная структура». Сотрудники из файла не читаются и не хранятся: сохраняется только число ставок." });
+  const status = errorLine();
+  const fileInput = h("input", { type: "file", accept: ".json,application/json", hidden: true, "aria-label": "Файл выгрузки 1С" });
+  let busy = false;
+  const buttons = [];
+  const run = async (request) => {
+    if (busy) return;
+    status.clear();
+    busy = true;
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      const reply = await request();
+      win.close("ok");
+      toast(orgResultText(reply));
+      onDone(reply);
+    } catch (error) {
+      if (error && error.name === "AbortError") { win.close("cancel"); return; }
+      status.show(error);
+      busy = false;
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  };
+  const take = h("button.b.fill", { type: "button", onClick: () => run(() => api.post("/api/org/refresh", {}, { signal, timeoutMs: 60000 })) },
+    "Взять последнюю выгрузку 1С");
+  const pick = h("button.link", { type: "button", onClick: () => fileInput.click() }, "Выбрать файл выгрузки…");
+  buttons.push(take, pick);
+  fileInput.addEventListener("change", () => {
+    const chosen = fileInput.files && fileInput.files[0];
+    const problem = orgFileError(chosen);
+    if (problem) {
+      status.show(problem);
+      fileInput.value = "";
+      return;
+    }
+    const data = new FormData();
+    data.append("file", chosen);
+    run(() => api.upload("/api/org/upload", data, { signal, timeoutMs: 60000 }));
+  });
+  win.body.append(h("p.t2", { style: "margin:0 0 12px" }, syncText(sync)), h("div.btns", { style: "margin-top:0" }, take),
+    h("p", { style: "margin:12px 0 0" }, pick), fileInput, status.el,
+    h("div.sheetfoot.end", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена")));
+  win.show(take);
 }
 
 /** «Кто утверждает» (S39): роли с правом profile.approve и люди с этими ролями; только чтение. */
@@ -96,37 +140,44 @@ function docSheet({ api, signal, profile, onDone }) {
 
 function listScreen(box, ctx) {
   const { api, signal, session } = ctx;
+  const canMap = session.can("org.map");
   let q = "";
   let dept = "";
   let total = null;
   let depts = new Map();
   let current = null;
   let timer = null;
+  let org = null;          // ответ GET /api/org: последняя выгрузка 1С и подразделения; нет — прежний плоский список
+  let forest = [];         // дерево подразделений с должностями (пустые скрыты)
+  const collapsed = new Set();
+  let items = [];
 
   const heading = h("div.t1");
   const search = h("input.search", { id: "profile-q", type: "search", "data-tip": "profile-search", placeholder: "Поиск должности: электронщик, ОТК, продажи, бухгалтер…", autocomplete: "off",
-    onInput: () => { clearTimeout(timer); timer = setTimeout(() => { q = search.value.trim(); load(); }, DEBOUNCE_MS); } });
+    onInput: () => { clearTimeout(timer); timer = setTimeout(() => { q = search.value.trim(); if (forest.length) draw(); else load(); }, DEBOUNCE_MS); } });
   const deptSelect = h("select.search", { "aria-label": "Подразделение", style: "flex:0 0 240px", onChange: () => { dept = deptSelect.value; draw(); } });
   const found = h("span.hint", { role: "status" });
   const results = h("div");
-  let items = [];
+  const foldButtons = h("span", { style: "display:contents" });
 
   const header = h("div.card",
     heading,
     h("div.t2", "Справочник должностей компании и портретов поиска по каждой. Изменившаяся должность правится: портрет любой должности правит любой рекрутер; "
       + "сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение, до утверждения выдача считается по прежней версии."),
     h("div.btns",
-      h("button.b.fill", { type: "button", onClick: () => newPositionSheet() }, "Новая должность"),
+      // оргструктуру обновляет тот, у кого есть право сопоставлять её с портретами (руководитель подбора)
+      canMap ? h("button.b.fill", { type: "button", onClick: () => orgSheet({ api, signal, sync: org && org.sync, onDone: () => init() }) }, "Обновить из 1С") : null,
       h("button.b", { type: "button", onClick: () => ctx.go("logs") }, "Журнал изменений"),
       h("button.b.tint", { type: "button", onClick: () => approversSheet(api, signal) }, "Кто утверждает")));
   const tools = h("form.tools", { role: "search", style: "margin-top:14px", onSubmit: (e) => e.preventDefault() },
-    h("label.sr-only", { for: "profile-q" }, "Поиск должности"), search, deptSelect, found);
+    h("label.sr-only", { for: "profile-q" }, "Поиск должности"), search, deptSelect, foldButtons, found);
 
-  const draw = () => {
+  const drawFlat = () => {
     const shown = dept ? items.filter((p) => p.dept_code === dept) : items;
     found.textContent = `${shown.length} из ${total ?? items.length} показано`;
     const count = total ?? items.length;
     heading.textContent = `База должностей: ${count} ${plural(count, "карточка", "карточки", "карточек")}`;
+    mount(foldButtons);
     mount(deptSelect, [h("option", { value: "" }, "Все подразделения"),
       ...[...depts.entries()].sort((a, b) => a[1].localeCompare(b[1], "ru")).map(([code, title]) => h("option", { value: code }, title))]);
     deptSelect.value = dept;
@@ -139,8 +190,7 @@ function listScreen(box, ctx) {
       h("div.list", group.items.map((p) => {
         const info = stateInfo(p.state);
         // «Загрузить резюме HH.ru» — у утверждённых должностей и только с правом settings.edit; строка целиком по-прежнему открывает должность
-        const load = p.state === "approved" ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.id, title: p.title, geo: p.geo },
-          onStarted: () => { expectCollect(); ctx.go("arch"); } }) : null;
+        const load = p.state === "approved" ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.id, title: p.title, geo: p.geo } }) : null;
         return h("div.li.stretch",
           h("div", h("div", { style: "font-weight:600" }, h("a.main", { href: hashFor("profiles", { id: p.id }) }, p.title)), h("div.sub", rowSub(p))),
           p.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
@@ -148,7 +198,50 @@ function listScreen(box, ctx) {
       })))));
   };
 
+  // ---------------- дерево подразделений как в 1С (S47)
+  const positionRow = (p) => {
+    const info = positionState(p);
+    const link = positionLink(p);
+    const load = canLoadPosition(p) ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.profile.id, title: p.profile.title || p.title, geo: p.profile.geo } }) : null;
+    return h(link ? "div.li.stretch" : "div.li", { style: link ? null : "cursor:default" },
+      h("div", h("div", { style: "font-weight:600" }, link ? h("a.main", { href: hashFor("profiles", { id: link }) }, p.title) : p.title), h("div.sub", rateText(p))),
+      p.profile && p.profile.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
+      h("span.pill", { class: info.pill }, info.text), load, link ? h("span.chev", "›") : null);
+  };
+  const unitNode = (node, forced) => {
+    const open = forced || !collapsed.has(node.id);   // при поиске всё найденное развёрнуто
+    const toggle = () => {
+      if (collapsed.has(node.id)) collapsed.delete(node.id);
+      else collapsed.add(node.id);
+      draw();
+      const again = results.querySelector(`[data-unit="${node.id}"]`);
+      if (again) again.focus();
+    };
+    return h("div.orgnode",
+      h("button.orghead", { type: "button", "aria-expanded": open, "data-tip": "org-unit", dataset: { unit: node.id }, disabled: forced ? true : null, onClick: toggle },
+        h("span.orgchev", { "aria-hidden": "true" }, open ? "▾" : "▸"), h("span.orgtitle", node.title),
+        h("span.orgcount", `${node.count} ${plural(node.count, "должность", "должности", "должностей")}`)),
+      open ? h("div.orgbody", node.positions.length ? h("div.list", node.positions.map(positionRow)) : null, node.children.map((child) => unitNode(child, forced))) : null);
+  };
+  const drawTree = () => {
+    const all = treeCounts(forest);
+    heading.textContent = orgHeading(all);
+    const shown = filterTree(forest, { q, deptId: dept });
+    found.textContent = `${treeCounts(shown).positions} из ${all.positions} показано`;
+    mount(deptSelect, [h("option", { value: "" }, "Все подразделения"), ...rootOptions(forest).map((o) => h("option", { value: String(o.id) }, o.title))]);
+    deptSelect.value = dept;
+    mount(foldButtons,
+      h("button.b", { type: "button", onClick: () => { allUnitIds(forest).forEach((id) => collapsed.add(id)); draw(); } }, "Свернуть всё"),
+      h("button.b", { type: "button", onClick: () => { collapsed.clear(); draw(); } }, "Развернуть всё"));
+    mount(results, shown.length ? h("div.orgtree", shown.map((node) => unitNode(node, Boolean(q)))) : emptyCard("Ничего не найдено"));
+  };
+  const draw = () => (forest.length ? drawTree() : drawFlat());
+
   async function load() {
+    if (forest.length) {   // дерево строится из GET /api/org: плоский список не нужен
+      draw();
+      return;
+    }
     if (current) current.abort();
     const controller = new AbortController();
     current = controller;
@@ -168,8 +261,32 @@ function listScreen(box, ctx) {
     }
   }
 
+  /** Оргструктура 1С: нет права, нет выгрузки или сбой — остаётся прежний плоский список. */
+  async function loadOrg() {
+    org = null;
+    forest = [];
+    if (!session.can("org.read")) return;
+    try {
+      org = await api.get("/api/org", { signal });
+      forest = buildTree(org.units);
+    } catch (error) {
+      if (error && error.name === "AbortError") throw error;
+    }
+    dept = "";
+  }
+
+  async function init() {
+    mount(results, loadingLine());
+    try {
+      await loadOrg();
+    } catch {
+      return;   // ушли с экрана
+    }
+    await load();
+  }
+
   mount(box, header, tools, results);
-  load();
+  init();
 }
 
 // ------------------------------------------------------------------ редактор версии
@@ -288,7 +405,8 @@ function editorScreen(box, ctx, id) {
       }
     } }, "Предпросмотр изменений");
 
-    const approve = h("button.b.fill", { type: "button", onClick: async () => {
+    const isEmpty = profile.state === "empty";   // портрет-заготовка из 1С: критериев ещё нет, утвердить нельзя
+    const approve = h("button.b.fill", { type: "button", disabled: isEmpty, onClick: async () => {
       const agreed = await confirmSheet({ title: `Утвердить версию ${profile.version}?`, confirmText: "Утвердить",
         hint: "Версия начнёт действовать: выдача перейдёт на новые настройки, а вся база будет пересчитана в фоне. Действие записывается в журнал изменений." });
       if (!agreed) return;
@@ -308,8 +426,7 @@ function editorScreen(box, ctx, id) {
 
     // «Загрузить резюме HH.ru» по этой должности: берётся действующий (утверждённый) портрет — свой или соседней версии
     const loadId = profile.state === "approved" ? profile.id : (approvedRow ? approvedRow.id : null);
-    const loadButton = loadId ? loadResumesButton({ api, signal, session, variant: "tint", role: { id: loadId, title: profile.title, geo: profile.geo },
-      onStarted: () => { expectCollect(); ctx.go("arch"); } }) : null;
+    const loadButton = loadId ? loadResumesButton({ api, signal, session, variant: "tint", role: { id: loadId, title: profile.title, geo: profile.geo } }) : null;
 
     // ---------------- части экрана
     const section = (heading, text, ...children) => h("section.card.pgroup", h("h2.t1", heading), h("p.pdesc", text), children);
@@ -318,9 +435,10 @@ function editorScreen(box, ctx, id) {
     notice = null;
     const banners = [
       mine ? h("div.note", { role: "status" }, mine.text, mine.link ? [" ", h("a.link", { href: hashFor("arch") }, "Ход пересчёта — в «Схеме»")] : null) : null,
-      profile.state !== "approved" ? h("div.note", { role: "note" },
-        `Версия ${profile.version}${profile.state === "draft" ? " собрана из новой инструкции и" : ""} ждёт утверждения: выдача пока считается по `,
-        approvedRow ? [`версии ${approvedRow.version} (`, h("a.link", { href: hashFor("profiles", { id: approvedRow.id }) }, "открыть"), ")"] : "прежней версии", ".") : null,
+      isEmpty ? h("div.note", { role: "note" }, "Критерии ещё не заполнены — заполните и отправьте на утверждение. Пока портрет пустой, подбор по этой должности не идёт.")
+        : profile.state !== "approved" ? h("div.note", { role: "note" },
+          `Версия ${profile.version}${profile.state === "draft" ? " собрана из новой инструкции и" : ""} ждёт утверждения: выдача пока считается по `,
+          approvedRow ? [`версии ${approvedRow.version} (`, h("a.link", { href: hashFor("profiles", { id: approvedRow.id }) }, "открыть"), ")"] : "прежней версии", ".") : null,
       pendingId ? h("div.note", { role: "note" }, "Есть версия, ждёт утверждения: ",
         h("a.link", { href: hashFor("profiles", { id: pendingId }) }, "открыть версию"), ".") : null,
     ].filter(Boolean);
@@ -343,8 +461,8 @@ function editorScreen(box, ctx, id) {
       ), h("div.t2", { style: "margin-top:10px" },
         "Правка портрета. Сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение; до утверждения выдача считается по прежней версии."),
       banners.length ? h("div.stack", { style: "margin-top:12px" }, banners) : null,
-      loadId || profile.state !== "approved" ? h("div.btns", profile.state !== "approved" && canEdit ? previewButton : null,
-        profile.state !== "approved" && canApprove ? approve : null, loadButton) : null,
+      loadId || profile.state !== "approved" ? h("div.btns", profile.state !== "approved" && !isEmpty && canEdit ? previewButton : null,
+        profile.state !== "approved" && canApprove ? approve : null, isEmpty && canApprove ? h("span.hint", "Сначала заполните критерии") : null, loadButton) : null,
       status.el, previewBox),
       // портрет собран по смыслу: «Кто нужен» → «Как ищем» (у каждого поля свой вес) → «Ещё признаки»; кнопка сохранения закреплена внизу
       h("div.pedit",

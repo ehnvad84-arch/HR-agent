@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  AREA_DEBOUNCE_MS, DAILY_LIMIT, EXPECT_MS, EXPLAIN, FALLBACK_AREAS, ROLE_EXPLAIN, STARTED_TOAST, areaForGeo, areaLine, canSearchAreas, canStart,
-  collectBody, countError, defaultCount, exhaustedText, expectCollect, limitsText, moveHighlight, normalizeAreas, normalizeLimits, parseCount,
-  roleSheetTitle, takeExpectation,
+  AREA_DEBOUNCE_MS, DAILY_LIMIT, EXPLAIN, FALLBACK_AREAS, ROLE_EXPLAIN, STARTED_TOAST, areaForGeo, areaLine, canSearchAreas, canStart,
+  collectBody, countError, defaultCount, exhaustedText, limitsText, moveHighlight, normalizeAreas, normalizeLimits, parseCount,
+  roleSheetTitle,
 } from "../../web/js/hh-load-model.js";
 
 test("остаток из ответа /api/hh/limits: число просмотров и пакет", () => {
@@ -66,16 +66,6 @@ test("S44: число вне 1…остаток не отправляется", 
 test("по умолчанию в поле весь остаток", () => {
   assert.equal(defaultCount(311), "311");
   assert.equal(defaultCount(0), "");
-});
-
-test("после запуска «Схема» ждёт новый прогон collect_hh ограниченное время", () => {
-  assert.equal(EXPECT_MS, 20000);
-  assert.equal(takeExpectation(1000), null);
-  expectCollect(1000);
-  assert.deepEqual(takeExpectation(5000), { job: "collect_hh", until: 21000 });
-  assert.equal(takeExpectation(5001), null);   // ожидание забирается один раз
-  expectCollect(1000);
-  assert.equal(takeExpectation(1000 + EXPECT_MS + 1), null);   // устарело
 });
 
 // ------------------------------------------------------------------ по должности и региону (S46)

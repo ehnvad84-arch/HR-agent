@@ -4,7 +4,6 @@ import { actBtn, actionCard, perform } from "../cards.js";
 import { h, mount } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
 import { blockedSheet, contactSheet, quietDecline } from "../contact-ui.js";
-import { expectCollect } from "../hh-load-model.js";
 import { loadResumesButton } from "../hh-load.js";
 import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
 import { TOASTS, resultText, takenText } from "../decisions-model.js";
@@ -200,10 +199,9 @@ function zone(num, tone, cls, title, cards, emptyText) {
 
 // ------------------------------------------------------------------ экран
 
-/** «Загрузить резюме HH.ru» над блоками — только с правом settings.edit; после запуска ход виден на «Схеме». */
+/** «Загрузить резюме HH.ru» над блоками — только с правом settings.edit; после запуска ход виден в полосе под вкладками. */
 function loadBar(env) {
-  const button = loadResumesButton({ api: env.api, signal: env.signal, session: env.session, variant: "fill",
-    onStarted: () => { expectCollect(); env.go("arch"); } });
+  const button = loadResumesButton({ api: env.api, signal: env.signal, session: env.session, variant: "fill" });
   return button ? h("div.loadbar", button, h("span.hint", "Скачать полные резюме с hh вручную, в пределах дневного лимита просмотров")) : null;
 }
 

@@ -1,12 +1,13 @@
 // Кнопка «Загрузить резюме HH.ru» и окно «сколько» (S44, S46): вручную скачать полные резюме с hh в пределах дневного лимита просмотров.
 // Только с правом settings.edit (руководитель подбора): загрузка тратит лимит hh. Сервер сам проверяет 1…остаток и отвечает 422.
 // Два режима: общий («Сегодня», «База») и по одной должности и региону («База должностей»).
-// После запуска — переход на «Схему», где виден ход прогона collect_hh. Всё из API выводится только текстом (h(), textContent).
+// После запуска окно закрывается, а ход виден в полосе под вкладками на любом экране (load-status.js). Всё из API выводится только текстом (h(), textContent).
 import { h, mount, uid } from "./dom.js";
 import {
   AREA_DEBOUNCE_MS, EXPLAIN, FALLBACK_AREAS, ROLE_EXPLAIN, STARTED_TOAST, areaForGeo, areaLine, canSearchAreas, canStart, collectBody,
   countError, defaultCount, exhaustedText, limitsText, moveHighlight, normalizeAreas, normalizeLimits, roleSheetTitle,
 } from "./hh-load-model.js";
+import { loadStatus } from "./load-status.js";
 import { errorLine, field, sheet, toast } from "./ui.js";
 
 /**
@@ -108,7 +109,7 @@ function regionPicker({ api, signal, quick, initial, fallback }) {
 /**
  * Окно «Загрузить резюме»: остаток просмотров и пакета, поле числа (по умолчанию весь остаток), «Загрузить» только для 1…остаток.
  * Ошибки (422, 503 «hh не настроен», 502 «hh не ответил») — текстом в окне, окно не закрывается.
- *   onStarted(reply) — вызывается после запуска (reply: {started, count, views_left}).
+ *   onStarted(reply) — необязательно: вызывается после запуска (reply: {started, count, views_left}).
  *   role — {id, title, geo}: загрузка по одной должности и региону (S46); регион по умолчанию берётся из портрета (geo).
  */
 export function openLoadSheet({ api, signal, onStarted, role = null }) {
@@ -160,6 +161,7 @@ export function openLoadSheet({ api, signal, onStarted, role = null }) {
         const reply = await api.post("/api/hh/collect", collectBody({ count: count.input.value, profileId: role ? role.id : null, areaId: selected ? selected.id : null }), { signal });
         win.close("started");
         toast(STARTED_TOAST);
+        loadStatus.started();   // человек остаётся на своём экране, ход виден в полосе под вкладками
         if (onStarted) onStarted(reply);
       } catch (error) {
         if (error && error.name === "AbortError") { win.close("cancel"); return; }

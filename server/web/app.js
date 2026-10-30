@@ -2,6 +2,7 @@
 // Сами экраны — js/screens/*.js (реестр в screens/index.js).
 import { api } from "./js/api.js";
 import { $, mount } from "./js/dom.js";
+import { loadStatus } from "./js/load-status.js";
 import { renderLoginPage, requestLogin } from "./js/login.js";
 import { startRouter } from "./js/router.js";
 import { SCREENS } from "./js/screens/index.js";
@@ -67,6 +68,7 @@ function enterApp() {
   el.loginPage.hidden = true;
   el.app.hidden = false;
   renderUser(session.user, { whoEl: el.who, avaEl: el.ava });
+  loadStatus.attach({ api, session, box: $("#loadstatus") });   // полоса хода загрузки резюме — только с правом settings.edit
   if (router) router.refresh();
   else router = startRouter(renderRoute);
   el.view.focus({ preventScroll: true });
@@ -83,6 +85,7 @@ function showLogin() {
 
 /** Выход: с экрана уходят все данные о людях, открытые окна закрываются, адрес сбрасывается. */
 function leaveApp() {
+  loadStatus.detach();
   if (screenAbort) screenAbort.abort();
   mount(el.view);
   closeAllSheets();
@@ -109,7 +112,10 @@ $("#skip").addEventListener("click", () => el.view.focus());
 session.subscribe((user, previous) => {
   if (!user) return;
   renderUser(user, { whoEl: el.who, avaEl: el.ava });
-  if (previous && previous.id !== user.id && router) router.refresh();
+  if (previous && previous.id !== user.id) {
+    loadStatus.attach({ api, session, box: $("#loadstatus") });   // права другого человека могут отличаться
+    if (router) router.refresh();
+  }
 });
 
 // забытое необработанное обещание (например, кнопка без try/catch) не должно молчать (S35)

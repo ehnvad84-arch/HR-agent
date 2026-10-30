@@ -4,7 +4,6 @@
 import { h, mount } from "../dom.js";
 import { absoluteDay } from "../format.js";
 import { chip, face, personHref, personName } from "../people.js";
-import { expectCollect } from "../hh-load-model.js";
 import { loadResumesButton } from "../hh-load.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorCard, loadingLine } from "../ui.js";
@@ -37,8 +36,8 @@ export function render(box, ctx) {
   const tools = h("form.tools", { role: "search" },
     h("label.sr-only", { for: "base-q" }, "Поиск по смыслу"), search,
     h("button.b.fill", { type: "submit" }, "Найти"), resetButton,
-    // «Загрузить резюме» — только с правом settings.edit; после запуска ход виден на «Схеме»
-    loadResumesButton({ api, signal, session: ctx.session, onStarted: () => { expectCollect(); ctx.go("arch"); } }), found);
+    // «Загрузить резюме» — только с правом settings.edit; после запуска ход виден в полосе под вкладками
+    loadResumesButton({ api, signal, session: ctx.session }), found);
   const searchHint = h("p.hint", { style: "margin:-4px 6px 12px" },
     "Поиск по смыслу: опишите словами, кто нужен, например «схемотехник Altium». Показывается список по близости; фильтры таблицы в нём не действуют.");
   const searchBox = h("div", { "aria-live": "polite" });

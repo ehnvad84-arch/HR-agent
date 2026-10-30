@@ -6,7 +6,6 @@ export const DAILY_LIMIT = 500;   // дневной лимит просмотр�
 export const EXPLAIN = "Поиск бесплатный; полное резюме тратит один просмотр из дневного лимита hh — тот же лимит, что на сайте. "
   + "Контакты не открываются. Каждый день в 18:00 по Москве остаток выбирается автоматически.";
 export const STARTED_TOAST = "Загрузка запущена";
-export const EXPECT_MS = 20000;   // сколько «Схема» ждёт появления нового прогона после запуска
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 
@@ -38,22 +37,6 @@ export function countError(text, left) {
 
 export const canStart = (text, left) => left >= 1 && countError(text, left) === "";
 export const defaultCount = (left) => (left >= 1 ? String(left) : "");
-
-// ------------------------------------------------------------------ после запуска
-
-let expecting = null;   // {job, until}: экран «Схема» после запуска ждёт, пока прогон появится в ops.job_run
-
-/** Запомнить, что запустили сбор: «Схема» (в том числе после перехода с «Базы») будет ждать новый прогон. */
-export function expectCollect(now = Date.now()) {
-  expecting = { job: "collect_hh", until: now + EXPECT_MS };
-}
-
-/** Забрать ожидание (один раз); устаревшее не возвращается. */
-export function takeExpectation(now = Date.now()) {
-  const found = expecting && expecting.until >= now ? expecting : null;
-  expecting = null;
-  return found;
-}
 
 // ------------------------------------------------------------------ по должности и региону (S46)
 

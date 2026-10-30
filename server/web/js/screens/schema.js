@@ -3,15 +3,12 @@
 // Всё из API выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
 import { timeLabel } from "../format.js";
-import { EXPECT_MS, takeExpectation } from "../hh-load-model.js";
 import { chip } from "../people.js";
 import { mountAsync, toast } from "../ui.js";
-import { countTiles, hasRunning, jobRows, runChanged } from "./schema-model.js";
+import { countTiles, hasRunning, jobRows } from "./schema-model.js";
 import { schemeSvg } from "./schema-svg.js";
 
 const POLL_MS = 3000;   // как часто перечитывать, пока что-то идёт
-const WAIT_MS = 1000;   // после ручного запуска сбора: как часто смотреть, появился ли прогон (он стартует в фоне, чуть позже ответа)
-const startedAt = (jobs, job) => ((jobs || []).find((row) => row.job === job) || {}).started_at ?? null;
 
 function runRow(run) {
   const facts = run.facts.length ? h("div", run.facts.join(", ")) : run.empty ? h("div.t2", { style: "margin:0" }, run.empty) : null;
@@ -28,8 +25,6 @@ export function render(box, ctx) {
   const { api, signal } = ctx;
   let timer = null;
   let running = new Set();   // задачи, которые шли при прошлом обновлении: когда закончатся — скажем об этом
-  let waiting = null;        // {job, until, baseline}: человек запустил сбор, ждём, когда прогон появится в ops.job_run
-  const wait = (found, jobs) => { waiting = found ? { job: found.job, until: Date.now() + EXPECT_MS, baseline: startedAt(jobs, found.job) } : null; };
 
   const load = () => api.get("/api/schema", { signal });
 
@@ -53,10 +48,8 @@ export function render(box, ctx) {
         if (running.has(row.job) && !nowRunning.has(row.job)) toast(`${row.title}: ${row.statusText}`);
       }
       running = nowRunning;
-      if (waiting && (runChanged(fresh.jobs, waiting.job, waiting.baseline) || nowRunning.has(waiting.job) || Date.now() > waiting.until)) waiting = null;
       clearTimeout(timer);
       if (hasRunning(fresh.jobs, now)) timer = setTimeout(() => refresh({ quiet: true }), POLL_MS);
-      else if (waiting) timer = setTimeout(() => refresh({ quiet: true }), WAIT_MS);
     };
 
     const refresh = async ({ quiet = false } = {}) => {
@@ -71,7 +64,6 @@ export function render(box, ctx) {
     };
     signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
 
-    wait(takeExpectation(), data.jobs);   // сюда перешли с «Сегодня» или «Базы» после «Загрузить резюме HH.ru»
     draw(data);
 
     return [

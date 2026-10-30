@@ -8,7 +8,8 @@ export const FEATURES = [["exp_years", "Опыт по профилю"], ["keywor
   ["open_code", "Открытый код"]];
 export const GEO_OPTIONS = [["krasnodar", "Краснодар"], ["remote_ru", "Удалённо по России"], ["relocation_ru", "Переезд по России"]];
 const ROLES = { head_recruiter: "Руководитель отдела персонала", recruiter: "Рекрутер", hiring_manager: "Нанимающий руководитель", director: "Директор" };
-const STATES = { approved: { text: "действует", pill: "cand" }, pending: { text: "ждёт утверждения", pill: "watch" }, draft: { text: "черновик", pill: "obs" } };
+const STATES = { approved: { text: "действует", pill: "cand" }, pending: { text: "ждёт утверждения", pill: "watch" }, draft: { text: "черновик", pill: "obs" },
+  empty: { text: "критерии не заполнены", pill: "warm" } };
 const OPEN_CODE_DEPTS = new Set(["rnd_hw", "rnd_sw"]);   // инженерные разработки и разработка ПО: открытый код считается
 
 export const roleTitle = (role) => ROLES[role] || String(role ?? "");
@@ -18,7 +19,8 @@ export const stateInfo = (state) => STATES[state] || { text: String(state ?? "")
 export function rowSub(item) {
   const date = item.approved_at ? new Date(item.approved_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "";
   const tail = item.state === "approved" ? `в. ${item.version}${date ? ` от ${date}` : ""}, утверждена`
-    : item.state === "pending" ? `в. ${item.version}, ждёт утверждения` : "черновик из ДИ, не утверждён";
+    : item.state === "pending" ? `в. ${item.version}, ждёт утверждения`
+      : item.state === "empty" ? "критерии не заполнены" : "черновик из ДИ, не утверждён";
   return `${item.dept} · ${tail}`;
 }
 

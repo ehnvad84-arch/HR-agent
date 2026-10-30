@@ -111,13 +111,6 @@ export function jobRows(jobs, now = new Date()) {
 /** Идёт ли сейчас хоть одна задача (не прерванная): пока идёт, экран перечитывает данные. */
 export const hasRunning = (jobs, now = new Date()) => (jobs || []).some((row) => statusOf(row, now) === "running");
 
-/** Появился ли новый прогон задачи после ручного запуска: сравниваем начало прогона с тем, что было, а не часы браузера. */
-export function runChanged(jobs, job, baselineStartedAt) {
-  const row = (jobs || []).find((r) => r.job === job);
-  if (!row) return false;
-  return baselineStartedAt === null || baselineStartedAt === undefined || row.started_at !== baselineStartedAt;
-}
-
 // ------------------------------------------------------------------ живые цифры
 
 const TILES = [["observations", "Резюме в базе"], ["persons", "Карточек людей"], ["candidates", "Кандидатов"],
