@@ -9,7 +9,7 @@
 
 ### Сервер
 
-- [ ] T1 — миграции `006_user_role_no_access.sql` и `007_manager_cabinet.sql`: таблицы `ops.user_sync`, `ops.user_override`, `ops.invite_code`, `ops.handoff`, `ops.user_tweak`, `ops.user_match`, индексы, настройки, матрица прав по ролям с записью в `agent_change` · сценарий: S1–S16 · проверка: auto · исполнитель: main
+- [x] T1 — миграции `006_user_role_no_access.sql` и `007_manager_cabinet.sql`: таблицы `ops.user_sync`, `ops.user_override`, `ops.invite_code`, `ops.handoff`, `ops.user_tweak`, `ops.user_match`, индексы, настройки, матрица прав по ролям с записью в `agent_change` · сценарий: S1–S16 · проверка: auto · исполнитель: main
   Готово, когда: `test_migrate.py` зелёный, в `public` по-прежнему 46 таблиц, права ролей совпадают с таблицей спеки.
 - [ ] T2 — `hr/scope.py` (`for_user`: поддерево, коды должностей, вакансии), зависимость `auth.require_scoped`, поле `scope` в `/api/me` (`reason: no_unit`); тест-страж проверен на синтетическом маршруте-нарушителе · сценарий: S5, S17, S18 · проверка: auto · исполнитель: main
   Готово, когда: `server/tests/test_scope.py` зелёный: поддерево с вложенными, корень у директора, пусто и `no_unit` без подразделения, страж ловит синтетический маршрут.

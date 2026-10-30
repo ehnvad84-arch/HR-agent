@@ -51,7 +51,7 @@ def test_workplace_permissions_logged(conn):
               ("head_recruiter", "vacancy.edit"), ("head_recruiter", "feedback.write")):
         assert p in perms, p
     assert ("hiring_manager", "contact.open") not in perms
-    assert db.val(conn, "SELECT count(*) FROM agent_change WHERE kind = 'permission'") == 1
+    assert db.val(conn, "SELECT count(*) FROM agent_change WHERE kind = 'permission'") == 2
 
 
 def test_workplace_settings(conn):
@@ -76,3 +76,22 @@ def test_photo_over_10kb_rejected(conn):
         with conn.transaction():
             db.run(conn, "INSERT INTO ops.person_photo (observation_id, data, state) VALUES (%s, %s, 'ok')",
                    (r.observation_id, b"x" * 10241))
+
+
+def test_manager_cabinet_tables_and_rights(conn):
+    """T1 manager-cabinet: новое — в ops, права по матрице спеки, роль no_access без прав."""
+    names = {r["table_name"] for r in db.rows(conn, """SELECT table_name FROM information_schema.tables
+                                                        WHERE table_schema = 'ops'""")}
+    assert {"user_sync", "user_override", "invite_code", "handoff", "user_tweak", "user_match"} <= names
+    perms = {(r["role"], r["permission"]) for r in db.rows(conn, "SELECT role::text, permission FROM role_permission")}
+    for role in ("recruiter", "head_recruiter"):
+        for p in ("base.all", "collect.run", "handoff.review", "invite.issue", "digest.read", "tweak.own"):
+            assert (role, p) in perms, (role, p)
+    assert ("head_recruiter", "handoff.all") in perms and ("recruiter", "handoff.all") not in perms
+    for role in ("hiring_manager", "director"):
+        for p in ("base.read", "profile.edit", "handoff.create", "tweak.own"):
+            assert (role, p) in perms, (role, p)
+        for p in ("base.all", "contact.open", "person.take", "collect.run", "settings.edit"):
+            assert (role, p) not in perms, (role, p)
+    assert not db.rows(conn, "SELECT 1 FROM role_permission WHERE role = 'no_access'")
+    assert db.setting(conn, "handoff_comment_min") == 50 and db.setting(conn, "invite_code_hours") == 72
