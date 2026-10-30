@@ -167,7 +167,7 @@ sleep 2
 
 systemctl --user daemon-reload
 systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer ruware-trudvsem.timer \
-    ruware-load-watchdog.timer ruware-feedback-week.timer
+    ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer
 # без входа в систему службы пользователя не живут после перезагрузки — включаем «linger»
 loginctl enable-linger "$USER" || echo "Не удалось включить linger: выполните  sudo loginctl enable-linger $USER"
 
