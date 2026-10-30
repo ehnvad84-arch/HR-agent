@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from . import db, hh, web
+from .api import access as access_api
 from .api import actions as actions_api
 from .api import base as base_api
 from .api import contacts as contacts_api
@@ -33,7 +34,8 @@ for _r in (session_api.router, today_api.router, person_api.router, decisions_ap
            funnel_api.router, actions_api.router, contacts_api.router,
            base_api.router, vacancies_api.router, profiles_api.router,
            learning_api.router, reports_api.router,
-           hh_collect_api.router, org_api.router, my_api.router):
+           hh_collect_api.router, org_api.router, my_api.router,
+           access_api.router):
     app.include_router(_r)
 
 

@@ -27,7 +27,8 @@ from .deps import get_clock, get_conn_factory
 COOKIE = "hr_session"
 CSRF_HEADER = "X-CSRF-Token"
 SESSION_ONLY = "session"            # право «любой вошедший»: /api/me, выход
-OPEN_ROUTES = {"/api/login", "/api/oauth/hh/callback"}
+OPEN_ROUTES = {"/api/login", "/api/login/code", "/api/oauth/hh/callback"}
+NO_ACCESS = {"error": "no_access", "message": "Доступ не выдан, обратитесь в отдел персонала"}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
@@ -194,6 +195,8 @@ def require(permission: str, csrf: bool | None = None):
         if not found:
             raise HTTPException(401, {"error": "auth", "message": "Войдите в рабочее место"})
         user, csrf_hash = found
+        if user.role == "no_access":   # S4: сотрудник без роли видит только объяснение
+            raise HTTPException(403, NO_ACCESS)
         if permission != SESSION_ONLY and permission not in user.permissions:
             raise HTTPException(403, {"error": "forbidden", "message": "Недостаточно прав"})
         if csrf or (csrf is None and request.method not in SAFE_METHODS):
