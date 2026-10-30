@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  JOBS, STALE_HOURS, countTiles, durationText, hasRunning, jobRows, jobTitle, profilesLabel, runInfo, statFacts, zonesTitle,
+  JOBS, STALE_HOURS, countTiles, durationText, hasRunning, jobRows, jobTitle, profilesLabel, runChanged, runInfo, statFacts, zonesTitle,
 } from "../../web/js/screens/schema-model.js";
 
 const NOW = new Date(2026, 9, 29, 15, 0, 0);
@@ -166,4 +166,15 @@ test("надписи на самой схеме берут цифры из ба�
   assert.equal(zonesTitle({ observations: 100, persons: 55, candidates: 1 }), "База на сервере компании — две зоны: 100 резюме, 55 карточек, 1 кандидат");
   assert.equal(zonesTitle({ observations: 1240, persons: 22, candidates: 3 }), "База на сервере компании — две зоны: 1 240 резюме, 22 карточки, 3 кандидата");
   assert.equal(zonesTitle(null), "База на сервере компании — две зоны");
+});
+
+test("после ручного запуска: появился ли новый прогон задачи (не по часам браузера, а по началу прогона)", () => {
+  const old = { job: "collect_hh", started_at: at(29, 13, 0), finished_at: at(29, 13, 5), ok: true, stats: {} };
+  const fresh = { job: "collect_hh", started_at: at(29, 18, 0), finished_at: null, ok: null, stats: {} };
+  assert.equal(runChanged([old], "collect_hh", old.started_at), false);
+  assert.equal(runChanged([fresh], "collect_hh", old.started_at), true);
+  assert.equal(runChanged([], "collect_hh", old.started_at), false);
+  assert.equal(runChanged([fresh], "collect_hh", null), true);   // раньше не запускалась — любой прогон новый
+  assert.equal(runChanged([], "collect_hh", null), false);
+  assert.equal(runChanged(null, "collect_hh", null), false);
 });

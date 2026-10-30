@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  actionOutcome, approvedText, confirmTexts, contactKindTitle, contactPlan, draftKind, errorHint, hiddenLabels, isLetter,
+  actionOutcome, approvedText, canConfirm, confirmTexts, contactKindTitle, contactPlan, draftKind, errorHint, hiddenLabels, isLetter,
 } from "../../web/js/contacts-model.js";
 
 test("S16: контакт уже открыт — сразу показываем, без окна подтверждения", () => {
@@ -32,9 +32,20 @@ test("контакт уже доступен hh без списания — ок
   assert.equal(plan.mode, "confirm");
   assert.equal(plan.willSpend, false);
   assert.deepEqual(confirmTexts(plan), {
-    text: "Контакт уже доступен: списания не будет. Действие запишется в журнал доступа.", button: "Открыть контакт" });
+    text: "Контакт уже доступен: списания не будет. Действие запишется в журнал доступа.", button: "Открыть контакт", consent: null });
   assert.deepEqual(confirmTexts({ willSpend: true }), {
-    text: "Спишется один контакт hh. Действие запишется в журнал доступа.", button: "Открыть за 1 контакт" });
+    text: "Вы откроете телефон и почту кандидата. hh спишет один контакт из оплаченного пакета — вернуть его нельзя. "
+      + "Открытие запишется в журнал доступа с вашим именем.",
+    button: "Открыть за 1 контакт", consent: "Понимаю, что сейчас будет списан платный контакт hh" });
+});
+
+test("платный контакт: без галочки «Понимаю…» подтвердить нельзя; без списания галочка не нужна", () => {
+  assert.equal(canConfirm({ willSpend: true }, false), false);
+  assert.equal(canConfirm({ willSpend: true }, undefined), false);
+  assert.equal(canConfirm({ willSpend: true }, true), true);
+  assert.equal(canConfirm({ willSpend: false }, false), true);
+  assert.equal(canConfirm({ willSpend: false }, true), true);
+  assert.equal(confirmTexts({ willSpend: false }).consent, null);   // нет галочки — нечего отмечать
 });
 
 test("скрытые поля называются по-русски, незнакомое — как пришло", () => {

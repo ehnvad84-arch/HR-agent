@@ -176,3 +176,16 @@ test("get blob: файл выгрузки приходит вместе с им�
   assert.equal(await out.blob.text(), "docx");
   assert.equal(calls[0].init.headers["X-CSRF-Token"], "tok1");
 });
+
+test("экран ушёл, пока читалось тело ответа: это AbortError, а не пустой ответ (иначе экран получит null)", async () => {
+  const ctl = new AbortController();
+  const slowBody = (init) => {
+    const response = json(200, { items: [] });
+    response.json = () => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new DOMException("x", "AbortError"))));
+    return response;
+  };
+  const { client } = setup({ replies: [slowBody] });
+  const p = client.get("/api/base", { signal: ctl.signal });
+  setTimeout(() => ctl.abort(), 20);
+  await assert.rejects(p, (e) => e.name === "AbortError");
+});

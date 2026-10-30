@@ -112,7 +112,10 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
         if (response.ok && as === "blob") {
           payload = { blob: await response.blob(), filename: filenameFrom(response.headers.get("content-disposition")) };
         } else if (type.includes("json")) {
-          payload = await response.json().catch(() => null);
+          payload = await response.json().catch((error) => {
+            if (signal && signal.aborted) throw error;   // экран ушёл посреди чтения тела: это отмена, а не пустой ответ
+            return null;
+          });
         } else {
           payload = null;
           if (response.ok) await response.arrayBuffer().catch(() => null);

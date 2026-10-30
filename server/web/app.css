@@ -484,3 +484,7 @@ table.runs tr.never td{color:var(--muted)}
 .runfacts{min-width:260px}
 table.runs td:nth-child(n+2):nth-child(-n+4){white-space:nowrap}
 table.runs td.name{min-width:190px}
+
+/* галочка согласия в окне платного контакта */
+.consent{display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;font-size:14.5px;cursor:pointer}
+.consent input{width:20px;height:20px;margin:1px 0 0;flex:none;accent-color:var(--green);cursor:pointer}

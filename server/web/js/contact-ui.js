@@ -1,6 +1,6 @@
 // Платный контакт hh (S16, S17): окно «Спишется один контакт hh», предупреждение о скрытых контактах, показ контактов.
 // Значения контактов приходят только из GET /api/candidate/{id}/contacts и показываются только в досье, текстом.
-import { confirmTexts, contactPlan, errorHint } from "./contacts-model.js";
+import { canConfirm, confirmTexts, contactPlan, errorHint } from "./contacts-model.js";
 import { h } from "./dom.js";
 import { personName } from "./people.js";
 import { errorLine, sheet } from "./ui.js";
@@ -29,8 +29,9 @@ export function blockedSheet(plan, person) {
 }
 
 /**
- * Окно подтверждения платного контакта. Фокус — на «Отмена». Подтверждение: POST /api/action/{id}/approve;
- * ошибка (занят сбор hh, лимит, сбой) показывается в окне, действие остаётся в очереди.
+ * Окно подтверждения платного контакта. Фокус — на «Отмена». Платный контакт подтверждается только после галочки
+ * «Понимаю, что сейчас будет списан платный контакт hh»: она снята при каждом открытии окна и нигде не запоминается.
+ * Подтверждение: POST /api/action/{id}/approve; ошибка (занят сбор hh, лимит, сбой) показывается в окне, действие остаётся в очереди.
  * plan — из contactPlan(); возвращает Promise<"opened" | "cancel">.
  */
 export function contactSheet({ api, signal, actionId, plan, person }) {
@@ -38,24 +39,35 @@ export function contactSheet({ api, signal, actionId, plan, person }) {
   const win = sheet({ title: "Открыть контакт?", hint: texts.text, width: "460px" });
   const status = errorLine();
   const cancel = h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена");
-  const open = h("button.b.fill", { type: "button", "data-tip": texts.button, onClick: async () => {
+  const consent = texts.consent ? h("input", { type: "checkbox", name: "consent", onChange: () => update() }) : null;
+  let busy = false;
+  const open = h("button.b.fill", { type: "button", disabled: !canConfirm(plan, false), "data-tip": texts.button, onClick: async () => {
+    if (busy || !canConfirm(plan, consent && consent.checked)) return;
     status.clear();
+    busy = true;
     cancel.disabled = true;
-    open.disabled = true;
+    update();
     try {
       await api.post(`/api/action/${encodeURIComponent(actionId)}/approve`, {}, { signal });
       win.close("opened");
     } catch (error) {
       if (error && error.name === "AbortError") { win.close("cancel"); return; }
       status.show(`${error.message || "Не удалось открыть контакт."} ${errorHint(error)}`.trim());
+      busy = false;
       cancel.disabled = false;
-      open.disabled = false;
+      update();
     }
   } }, texts.button);
-  win.body.append(
+  function update() {
+    open.disabled = busy || !canConfirm(plan, consent && consent.checked);
+    if (consent) consent.disabled = busy;
+  }
+  // append() превращает null в текст «null»: пустые части в окно не передаём
+  win.body.append(...[
     h("p", { style: "margin:0 0 10px" }, `Кандидат: ${personName(person)}`),
     plan.hidden.length ? h("div.note", { role: "note" }, `hh скрыл у соискателя: ${plan.hidden.join(", ")}. Остальное будет открыто.`) : null,
-    status.el, h("div.sheetfoot.end", cancel, open));
+    consent ? h("label.consent", { "data-tip": "contact-consent" }, consent, h("span", texts.consent)) : null,
+    status.el, h("div.sheetfoot.end", cancel, open)].filter(Boolean));
   win.show(cancel);
   return win.closed.then((outcome) => (outcome === "opened" ? "opened" : "cancel"));
 }
