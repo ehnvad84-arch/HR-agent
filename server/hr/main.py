@@ -15,6 +15,7 @@ from .api import base as base_api
 from .api import contacts as contacts_api
 from .api import decisions as decisions_api
 from .api import funnel as funnel_api
+from .api import handoff as handoff_api
 from .api import hh_collect as hh_collect_api
 from .api import learning as learning_api
 from .api import my as my_api
@@ -35,7 +36,7 @@ for _r in (session_api.router, today_api.router, person_api.router, decisions_ap
            base_api.router, vacancies_api.router, profiles_api.router,
            learning_api.router, reports_api.router,
            hh_collect_api.router, org_api.router, my_api.router,
-           access_api.router):
+           access_api.router, handoff_api.router):
     app.include_router(_r)
 
 
