@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, learning
+from .. import auth, learning, scope
 from ..clock import Clock
 from ..db import ConnFactory
 from ..deps import get_clock, get_conn_factory, get_llm_http
@@ -25,7 +25,8 @@ class FeedbackIn(BaseModel):
 
 
 @router.get("/api/feedback")
-def feed(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+def feed(us: Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("base.read"))],
+         conn_factory: Conn):
     with conn_factory() as conn:
         return {"items": learning.feed(conn)}
 
@@ -41,7 +42,7 @@ def post(body: FeedbackIn, user: Annotated[auth.User, Depends(auth.require("feed
 
 
 @router.get("/api/digest/current")
-def digest(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+def digest(user: Annotated[auth.User, Depends(auth.require("digest.read"))], conn_factory: Conn):
     with conn_factory() as conn:
         return learning.current(conn) or {"proposals": []}
 

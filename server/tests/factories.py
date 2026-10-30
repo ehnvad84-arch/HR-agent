@@ -95,3 +95,16 @@ def user(conn, login: str, role: str, unit_id: int | None = None) -> int:
     return db.val(conn, """INSERT INTO app_user (login, full_name, role, org_unit_id) VALUES (%s, %s, %s, %s)
                            ON CONFLICT (login) DO UPDATE SET role = EXCLUDED.role, org_unit_id = EXCLUDED.org_unit_id
                            RETURNING id""", (login, f"Проверочный {login}", role, unit_id))
+
+
+def own_unit(conn, user_id: int, role_code: str, name: str = "Проверочный отдел") -> int:
+    """Подразделение руководителя с одной должностью, связанной с портретом role_code."""
+    uid = db.val(conn, "INSERT INTO org_unit (external_id, title) VALUES (%s, %s) RETURNING id",
+                 (f"u-{user_id}-{role_code}", name))
+    key = f"title:{role_code}"
+    db.run(conn, """INSERT INTO job_role_map (job_external_id, job_title, role_code) VALUES (%s, %s, %s)
+                    ON CONFLICT (job_external_id) DO NOTHING""", (key, role_code, role_code))
+    db.run(conn, """INSERT INTO staff_position (external_id, org_unit_id, job_external_id, job_title, rates_total)
+                    VALUES (%s, %s, %s, %s, 1)""", (f"p-{user_id}-{role_code}", uid, key, role_code))
+    db.run(conn, "UPDATE app_user SET org_unit_id = %s WHERE id = %s", (uid, user_id))
+    return uid

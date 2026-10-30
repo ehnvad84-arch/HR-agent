@@ -1,5 +1,5 @@
 """T5 workplace: досье (S6) без значений контактов; просмотр нанимающим руководителем — в audit_log."""
-from factories import hh_item, profile, source
+from factories import hh_item, own_unit, profile, source
 
 from hr import db
 from hr.normalize import normalize
@@ -49,6 +49,8 @@ def test_unknown_person_404(api):
 def test_hiring_manager_view_is_audited(conn, clock, api):
     pid = strong(conn, clock)
     c, _, uid = api("hiring_manager")
+    assert c.get(f"/api/person/{pid}").status_code == 404   # вне подразделения — как будто нет (manager-cabinet)
+    own_unit(conn, uid, "engineer_hw_lead")
     assert c.get(f"/api/person/{pid}").status_code == 200
     row = db.one(conn, "SELECT * FROM audit_log WHERE user_id = %s", (uid,))
     assert row["action"] == "view" and row["object_type"] == "person" and row["object_id"] == pid

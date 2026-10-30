@@ -6,9 +6,9 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import auth, jobs, pipeline, profiles
+from .. import auth, jobs, pipeline, profiles, scope
 from ..clock import Clock
-from ..db import ConnFactory
+from ..db import ConnFactory, val
 from ..deps import get_clock, get_conn_factory
 
 router = APIRouter()
@@ -27,27 +27,45 @@ def _errors(fn):
         raise HTTPException(422, {"error": "validation", "message": f"Проверьте: {e}"}) from None
 
 
+Scoped = Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("base.read"))]
+Editor = Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("profile.edit"))]
+
+
+def _own(conn, sc: scope.Scope, profile_id: int, write: bool = False) -> None:
+    """Портрет вне поддерева руководителя: чтение — 404, правка — 403 (S8)."""
+    if sc.all:
+        return
+    code = val(conn, "SELECT code FROM role_profile WHERE id = %s", (profile_id,))
+    if code is None or not sc.code_ok(code):
+        if write and code is not None:
+            raise HTTPException(403, {"error": "forbidden",
+                                      "message": "Эту должность править нельзя: она не в вашем подразделении"})
+        raise HTTPException(404, {"error": "not_found", "message": "Профиль не найден"})
+
+
 @router.get("/api/profiles")
-def listing(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn,
-            q: str | None = None):
+def listing(us: Scoped, conn_factory: Conn, q: str | None = None):
     with conn_factory() as conn:
-        return {"items": profiles.listing(conn, q)}
+        items = profiles.listing(conn, q)
+    sc = us[1]
+    return {"items": items if sc.all else [p for p in items if sc.code_ok(p["code"])]}
 
 
 @router.get("/api/profile/{profile_id}")
-def get(profile_id: int, user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+def get(profile_id: int, us: Scoped, conn_factory: Conn):
     def go():
         with conn_factory() as conn:
+            _own(conn, us[1], profile_id)
             return profiles.get(conn, profile_id)
     return _errors(go)
 
 
 @router.post("/api/profile/{profile_id}")
-def edit(profile_id: int, user: Annotated[auth.User, Depends(auth.require("profile.edit"))], conn_factory: Conn,
-         clock: Now, changes: Annotated[dict, Body()]):
+def edit(profile_id: int, us: Editor, conn_factory: Conn, clock: Now, changes: Annotated[dict, Body()]):
     def go():
         with conn_factory() as conn:
-            return profiles.edit(conn, profile_id, changes, user.id, clock.now())
+            _own(conn, us[1], profile_id, write=True)
+            return profiles.edit(conn, profile_id, changes, us[0].id, clock.now())
     return _errors(go)
 
 
@@ -68,27 +86,28 @@ def approve(profile_id: int, user: Annotated[auth.User, Depends(auth.require("pr
 
 
 @router.get("/api/profile/{profile_id}/preview")
-def preview(profile_id: int, user: Annotated[auth.User, Depends(auth.require("profile.edit"))],
-            conn_factory: Conn):
+def preview(profile_id: int, us: Editor, conn_factory: Conn):
     def go():
         with conn_factory() as conn:
+            _own(conn, us[1], profile_id)
             return profiles.preview(conn, profile_id)
     return _errors(go)
 
 
 @router.get("/api/approvers")
-def approvers(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+def approvers(us: Scoped, conn_factory: Conn):
     with conn_factory() as conn:
         return profiles.approvers(conn)
 
 
 @router.post("/api/profile/{profile_id}/doc")
-def upload_doc(profile_id: int, user: Annotated[auth.User, Depends(auth.require("profile.edit"))],
-               conn_factory: Conn, clock: Now, file: Annotated[UploadFile, File()],
+def upload_doc(profile_id: int, us: Editor, conn_factory: Conn, clock: Now, file: Annotated[UploadFile, File()],
                revision: Annotated[str | None, Form()] = None):
     data = file.file.read(64 * 1024 * 1024 + 1)   # предел размера проверяет profiles.upload_doc
 
     def go():
         with conn_factory() as conn:
-            return profiles.upload_doc(conn, profile_id, file.filename or "ДИ", data, revision, user.id, clock.now())
+            _own(conn, us[1], profile_id, write=True)
+            return profiles.upload_doc(conn, profile_id, file.filename or "ДИ", data, revision, us[0].id,
+                                       clock.now())
     return _errors(go)

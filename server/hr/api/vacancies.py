@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, vacancies
+from .. import auth, scope, vacancies
 from ..clock import Clock
 from ..db import ConnFactory
 from ..deps import get_clock, get_conn_factory
@@ -30,9 +30,10 @@ def _errors(fn):
 
 
 @router.get("/api/vacancies")
-def listing(user: Annotated[auth.User, Depends(auth.require("base.read"))], conn_factory: Conn):
+def listing(us: Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("base.read"))],
+            conn_factory: Conn):
     with conn_factory() as conn:
-        return vacancies.listing(conn)
+        return vacancies.listing(conn, None if us[1].all else us[1].vacancies)
 
 
 class VacancyIn(BaseModel):

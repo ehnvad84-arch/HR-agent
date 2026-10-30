@@ -24,7 +24,8 @@ class Invalid(ValueError):
     pass
 
 
-def listing(conn: psycopg.Connection) -> dict:
+def listing(conn: psycopg.Connection, only: frozenset[int] | None = None) -> dict:
+    """only — вакансии скоупа руководителя (manager-cabinet); None — все."""
     items = rows(conn, """
         SELECT v.id, v.title, v.headcount, v.opened_at, v.target_date, v.state, v.origin::text AS origin,
                v.closed_at, v.close_comment, v.norm_days, v.role_profile_id, rp.code AS role_code,
@@ -33,7 +34,8 @@ def listing(conn: psycopg.Connection) -> dict:
                 WHERE cv.vacancy_id = v.id AND c.status NOT IN ('hired', 'rejected_by_us', 'rejected_by_candidate',
                                                                 'refused_contact', 'no_show')) AS in_work
         FROM vacancy v JOIN role_profile rp ON rp.id = v.role_profile_id
-        ORDER BY v.opened_at DESC, v.id DESC""")
+        WHERE %s::bigint[] IS NULL OR v.id = ANY(%s)
+        ORDER BY v.opened_at DESC, v.id DESC""", (list(only) if only is not None else None,) * 2)
     return {"open": [v for v in items if v["state"] in ("open", "on_hold")],
             "closed": [v for v in items if v["state"] in ("closed", "cancelled")]}
 

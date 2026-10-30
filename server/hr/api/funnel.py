@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, funnel
+from .. import auth, funnel, scope
 from ..clock import Clock
 from ..db import ConnFactory
 from ..deps import get_clock, get_conn_factory
@@ -40,8 +40,11 @@ def move(candidate_id: int, body: StatusIn, user: Annotated[auth.User, Depends(a
 
 
 @router.get("/api/vacancy/{vacancy_id}/funnel")
-def vacancy_funnel(vacancy_id: int, user: Annotated[auth.User, Depends(auth.require("base.read"))],
+def vacancy_funnel(vacancy_id: int,
+                   us: Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("base.read"))],
                    conn_factory: Conn, clock: Now):
+    if not us[1].vacancy_ok(vacancy_id):
+        raise NOT_FOUND
     try:
         with conn_factory() as conn:
             return funnel.funnel(conn, vacancy_id, clock.now())

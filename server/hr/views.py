@@ -87,6 +87,47 @@ def today(conn: psycopg.Connection, now: datetime) -> dict:
     return {"signals": signals, "actions": actions, "stalled": stalled, "meetings": meetings}
 
 
+_MANAGER_VACANCIES = """
+    SELECT v.id, v.title, v.headcount, v.target_date, rp.code AS role_code, u.full_name AS recruiter,
+           (SELECT count(*) FROM match m JOIN role_profile x ON x.id = m.role_profile_id
+            WHERE x.code = rp.code AND x.id IN (CURRENT) AND m.score >= %s) AS matching
+    FROM vacancy v JOIN role_profile rp ON rp.id = v.role_profile_id
+    LEFT JOIN app_user u ON u.id = v.recruiter_id
+    WHERE v.state = 'open' AND v.id = ANY(%s) ORDER BY v.opened_at DESC"""
+
+
+def manager_today(conn: psycopg.Connection, sc, now: datetime) -> dict:
+    """manager-cabinet S6: новые и изменившиеся люди по должностям поддерева, открытые вакансии поддерева
+    со счётом подходящих, его передачи. Без действий, зависших и встреч отдела персонала."""
+    limit = int(setting(conn, "daily_cards_limit", 12))
+    signals = rows(conn, """
+        SELECT a.id AS alert_id, a.person_id, a.reason::text AS reason, a.headline, a.created_at,
+               rp.id AS role_profile_id, rp.title AS role_title, m.score
+        FROM alert a
+        JOIN role_profile rp ON rp.id = a.role_profile_id
+        LEFT JOIN match m ON m.person_id = a.person_id AND m.role_profile_id = a.role_profile_id
+        WHERE a.state = 'new' AND rp.code = ANY(%s)
+        ORDER BY m.score DESC NULLS LAST, a.created_at DESC
+        LIMIT %s""", (list(sc.codes), limit))
+    floor = int(setting(conn, "watch_threshold", 60))
+    vacancies = rows(conn, _MANAGER_VACANCIES.replace("(CURRENT)", f"({CURRENT})"), (floor, list(sc.vacancies)))
+    people = cards(conn, [r["person_id"] for r in signals])
+    for r in signals:
+        r.update(_card(people.get(r["person_id"])))
+    return {"signals": signals, "vacancies": vacancies, "handoffs": []}
+
+
+def for_manager(d: dict, sc) -> dict:
+    """Досье руководителю (M2): только баллы его должностей, без ссылок на резюме площадки, следов в сети и
+    решений отдела персонала — через них выходят на человека в обход отдела персонала."""
+    d["matches"] = [m for m in d["matches"] if sc.code_ok(m["role_code"])]
+    for o in d["observations"]:
+        o.pop("url", None)
+    for k in ("social", "decisions"):
+        d.pop(k, None)
+    return d
+
+
 # ------------------------------------------------------------------ досье
 
 def _experience(raw: dict) -> list[dict]:
@@ -163,6 +204,7 @@ WITH best AS (
            d.code AS dept_code, d.title AS dept
     FROM match m JOIN role_profile rp ON rp.id = m.role_profile_id JOIN department d ON d.id = rp.department_id
     WHERE (%(code)s::text IS NULL OR rp.code = %(code)s) AND rp.id IN (CURRENT)
+      AND (%(codes)s::text[] IS NULL OR rp.code = ANY(%(codes)s))
     ORDER BY m.person_id, m.score DESC
 ), people AS (
     SELECT p.id AS person_id, p.label, p.city, p.last_event_at AS updated, p.candidate_id,
@@ -193,15 +235,18 @@ LIMIT %(limit)s OFFSET %(offset)s"""
 
 
 def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min=None, where=None, source=None,
-         sort="score", direction="desc", page=0, role_code=None) -> dict:
+         sort="score", direction="desc", page=0, role_code=None, codes=None) -> dict:
     """S19, S22: таблица людей. Сортировка — только по колонкам из SORTS (имя колонки в SQL не из запроса).
     role_code — подходящие к вакансии: только оценки по этому профилю, без «не наш» по нему и без dropped."""
     if sort not in SORTS or direction not in ("asc", "desc"):
         raise ValueError("сортировка")
     size = int(setting(conn, "base_page_size", 50))
-    sql = _BASE.replace("(CURRENT)", f"({CURRENT})").format(join="JOIN" if role_code else "LEFT JOIN",
+    # codes — должности руководителя (manager-cabinet): только люди с баллом по ним
+    sql = _BASE.replace("(CURRENT)", f"({CURRENT})").format(join="JOIN" if role_code or codes is not None
+                                                             else "LEFT JOIN",
                                                              order=SORTS[sort], dir=direction)
-    items = rows(conn, sql, {"code": role_code, "dept": dept, "city": city, "role": role, "score_min": score_min,
+    items = rows(conn, sql, {"code": role_code, "codes": list(codes) if codes is not None else None,
+                             "dept": dept, "city": city, "role": role, "score_min": score_min,
                              "where": where, "source": source, "limit": size, "offset": max(page, 0) * size})
     total = items[0]["total"] if items else 0
     for r in items:

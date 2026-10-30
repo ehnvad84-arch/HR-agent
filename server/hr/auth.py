@@ -209,8 +209,9 @@ def require_scoped(permission: str, csrf: bool | None = None):
     Маршруты с base.read обязаны брать её — это держит тест routes_unscoped."""
     base = require(permission, csrf)
 
-    def dependency(user: Annotated[User, Depends(base)],
-                   conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)]):
+    # base — замыкание: в отложенной аннотации FastAPI его не найдёт, поэтому Depends — значением по умолчанию
+    def dependency(conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)],
+                   user: User = Depends(base)):  # noqa: B008
         with conn_factory() as conn:
             return user, scope_mod.for_user(conn, user)
 
