@@ -203,6 +203,34 @@ def from_trudvsem(item: dict) -> Norm:
     ))
 
 
+# Открытые данные «Работы России» (csv/cv.csv, разделитель «|»): в простых текстовых полях пробелы
+# заменены дефисами, списки — JSON. Дата рождения, пол и возраст для подбора не нужны и не хранятся.
+TRUDVSEM_PLAIN = ("positionName", "localityName", "relocation", "scheduleType", "busyType", "typicalPosition")
+TRUDVSEM_JSON = ("workExperienceList", "educationList", "hardSkills", "skills", "softSkills")
+TRUDVSEM_DROP = ("birthday", "gender", "age")
+
+
+def trudvsem_csv_row(cells: dict) -> dict:
+    """Строка выгрузки → словарь для from_trudvsem и для хранения как raw."""
+    out = {k: v for k, v in cells.items() if k not in TRUDVSEM_DROP and v not in (None, "")}
+    for k in TRUDVSEM_PLAIN:
+        if isinstance(out.get(k), str):
+            out[k] = out[k].replace("-", " ").strip()
+    for k in TRUDVSEM_JSON:
+        if isinstance(out.get(k), str):
+            try:
+                out[k] = json.loads(out[k])
+            except ValueError:
+                out.pop(k)
+    reloc = (out.get("relocation") or "").lower()
+    out["relocation"] = None if not reloc else not reloc.startswith("не ")
+    salary = _int(out.get("salary")) or _int(out.get("salaryMin"))
+    out["salary"] = salary or None
+    if out.get("candidateId") and out.get("id"):
+        out["url"] = f"https://trudvsem.ru/cv/card/{out['candidateId']}/{out['id']}"
+    return out
+
+
 # ------------------------------------------------------------------ выгрузка из кабинета, ручной ввод
 
 FILE_ALIASES = {

@@ -4,8 +4,9 @@ import test from "node:test";
 
 import { hashFor, parseHash } from "../../web/js/router.js";
 import {
-  FEATURES, GEO_OPTIONS, changesFor, conditionLines, conditionsFromLines, defaultWeights, docError, formFromProfile, groupByDept,
-  parseMoney, previewText, roleTitle, rowSub, splitChips, stateInfo, validateForm, weightSum,
+  EXTRA_FEATURES, FEATURES, FEATURE_FIELDS, GEO_OPTIONS, changesFor, conditionLines, conditionsFromLines, defaultWeights, docError, formFromProfile, groupByDept,
+  extraFeatures, featureLabel, parseMoney, previewText, roleTitle, rowSub, splitChips, stateInfo, stepWeight, validateForm, weightShare, weightSum,
+  weightSumText,
 } from "../../web/js/screens/profiles-model.js";
 
 const PROFILE = {
@@ -158,4 +159,45 @@ test("адрес редактора: #/profiles и #/profiles/<id>", () => {
   assert.equal(hashFor("profiles", { id: 12 }), "#/profiles/12");
   assert.equal(hashFor("profiles"), "#/profiles");
   assert.equal(parseHash("#/profiles/1/2"), null);
+});
+
+test("портрет: вес стоит у поля, которое задаёт признак; остальные признаки — в блоке «Ещё признаки»", () => {
+  assert.deepEqual(FEATURE_FIELDS, { keywords: "keywords", donor_company: "donors", geo: "geo", salary: "salary" });
+  assert.deepEqual(EXTRA_FEATURES, ["exp_years", "title_match", "tenure", "open_code"]);
+  // каждый признак показан ровно один раз: либо у своего поля, либо в «Ещё признаках»
+  const placed = [...Object.keys(FEATURE_FIELDS), ...EXTRA_FEATURES].sort();
+  assert.deepEqual(placed, FEATURES.map(([key]) => key).sort());
+  assert.deepEqual(extraFeatures().map(([key]) => key), ["exp_years", "title_match", "tenure", "open_code"]);
+  assert.equal(extraFeatures().every(([, label, hint]) => label.length > 0 && hint.length > 10), true);
+  assert.equal(featureLabel("donor_company"), "Опыт в компании-доноре");
+  assert.equal(featureLabel("неведомое"), "неведомое");
+});
+
+test("вес: доля от суммы для полоски (сумма 0 — доли нет)", () => {
+  const weights = { exp_years: "20", keywords: 20, title_match: "15", donor_company: 10, tenure: 15, geo: 10, salary: 10, open_code: 0 };
+  assert.equal(weightShare(weights, "keywords"), 20);
+  assert.equal(weightShare(weights, "exp_years"), 20);
+  assert.equal(weightShare(weights, "open_code"), 0);
+  assert.equal(weightShare({ a: 1, b: 2 }, "a"), 33);   // округление до целого процента
+  assert.equal(weightShare({ a: 0, b: 0 }, "a"), 0);
+  assert.equal(weightShare({ a: "x", b: 5 }, "b"), 100);   // мусор в поле не считается
+  assert.equal(weightShare({}, "a"), 0);
+});
+
+test("степпер веса: шаг 5, от 0 до 100, пустое и мусор считаются нулём", () => {
+  assert.equal(stepWeight("20", 1), "25");
+  assert.equal(stepWeight("20", -1), "15");
+  assert.equal(stepWeight("2", -1), "0");
+  assert.equal(stepWeight("0", -1), "0");
+  assert.equal(stepWeight("98", 1), "100");
+  assert.equal(stepWeight("100", 1), "100");
+  assert.equal(stepWeight("", 1), "5");
+  assert.equal(stepWeight("abc", 1), "5");
+  assert.equal(stepWeight("12", 1), "17");   // не кратное пяти — просто прибавляем
+});
+
+test("сумма весов одной строкой", () => {
+  assert.equal(weightSumText(100), "Сумма весов: 100 — сервер приводит к 100");
+  assert.equal(weightSumText(110), "Сумма весов: 110 — сервер приводит к 100");
+  assert.equal(weightSumText(0), "Сумма весов: 0 — сервер приводит к 100");
 });

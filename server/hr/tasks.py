@@ -46,6 +46,7 @@ class Task:
 TASKS: dict[str, Task] = {
     "collect_hh": Task(collect.collect_hh, ("source:hh",)),
     "collect_hh_daily": Task(collect.collect_hh_daily, ("source:hh",)),
+    "collect_trudvsem": Task(collect.collect_trudvsem, ("source:trudvsem",)),
     "import_files": Task(files.import_files),
     "mark_gone": Task(collect.mark_gone, ("source:hh",)),
     "score": Task(score),

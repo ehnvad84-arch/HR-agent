@@ -1,6 +1,7 @@
 """Задачи сбора резюме: hh (официальное API). Сбора со страниц нет (раздел 7 ТЗ, never.md)."""
 from __future__ import annotations
 
+import csv
 import logging
 from datetime import timedelta
 
@@ -12,7 +13,7 @@ from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
 from .http import PageBudget, RateLimiter, client
 from .jobs import JobError, JobNotConfigured, JobStats
-from .normalize import normalize
+from .normalize import normalize, trudvsem_csv_row
 
 log = logging.getLogger(__name__)
 
@@ -187,4 +188,74 @@ def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = N
     stats.extra = {**stats.extra, "views_left": left, "full_cap": cap}
     # фото — тем же проходом: новые карточки сразу с лицом
     stats.extra["photos"] = photos.fetch_photos(conn_factory, clock=clock, limiter=limiter).new
+    return stats
+
+
+# ------------------------------------------------------------------ «Работа России»
+
+TRUDVSEM_CV = "https://opendata.trudvsem.ru/csv/cv.csv"
+
+
+def _csv_lines(response: httpx.Response):
+    """Строки потока с концами строк: csv сам склеит поля с переносами внутри кавычек."""
+    tail = ""
+    for chunk in response.iter_text():
+        tail += chunk
+        *lines, tail = tail.split("\n")
+        for line in lines:
+            yield line + "\n"
+    if tail:
+        yield tail
+
+
+def collect_trudvsem(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
+                     **_) -> JobStats:
+    """Задача collect_trudvsem (ночь с понедельника на вторник): открытые данные «Работы России» — один файл
+    резюме по всей стране (около 32 ГБ), читается потоком без сохранения. В базу идут только резюме региона
+    trudvsem_region, обновлённые за trudvsem_max_age_days, и только прошедшие порог по действующим портретам."""
+    clock = clock or SYSTEM
+    now = clock.now()
+    http = http or client(get_config().hh_user_agent)
+    stats = JobStats()
+    with conn_factory() as conn:
+        src = one(conn, "SELECT * FROM source WHERE code = 'trudvsem'")
+        if not src or not src["is_active"]:
+            raise JobNotConfigured("источник «Работа России» выключен")
+        region = str(setting(conn, "trudvsem_region", "2300000000000"))
+        oldest = now - timedelta(days=int(setting(conn, "trudvsem_max_age_days", 365)))
+        profiles = pipeline.current_profiles(conn)
+    if not profiles:
+        stats.note = "нет утверждённых портретов должностей"
+        return stats
+    csv.field_size_limit(16 * 1024 * 1024)
+    with http.stream("GET", TRUDVSEM_CV, timeout=httpx.Timeout(60.0, read=600.0)) as r:
+        r.raise_for_status()
+        rows = csv.reader(_csv_lines(r), delimiter="|")
+        header = next(rows, None)
+        if not header or "stateRegionCode" not in header:
+            raise JobNotConfigured("формат выгрузки резюме «Работы России» изменился")
+        col = header.index("stateRegionCode")
+        for cells in rows:
+            if len(cells) != len(header) or cells[col] != region:
+                continue
+            stats.seen += 1
+            try:
+                raw = trudvsem_csv_row(dict(zip(header, cells, strict=True)))
+                n = normalize("trudvsem", raw)
+                if not n.updated_at_src or n.updated_at_src < oldest:
+                    stats.skipped += 1
+                    continue
+                with conn_factory() as conn:
+                    if pipeline.passes_threshold(conn, n, profiles) is None:
+                        stats.skipped += 1
+                        continue
+                    res = pipeline.process(conn, src, n, raw, now)
+                stats.new += int(res.new)
+                stats.changed += int(res.changed)
+                stats.persons += int(res.person_created)
+                stats.alerts += res.alerts
+            except Exception:  # noqa: BLE001 — одно битое резюме не роняет выгрузку
+                log.exception("резюме «Работы России» не принято")
+                stats.errors += 1
+    stats.extra = {"region": region}
     return stats

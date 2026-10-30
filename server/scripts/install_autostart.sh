@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Автозапуск на время проб (T35, S43): база, портал и ежедневный сбор hh в 18:00 по Москве.
 # Запускает человек один раз:  bash ~/projects/HR-agent/server/scripts/install_autostart.sh
-# Службы — systemd пользователя (без root): ruware-pg, ruware-portal, таймер ruware-hh-daily.
+# Службы — systemd пользователя (без root): ruware-pg, ruware-portal, таймеры ruware-hh-daily и ruware-trudvsem.
 # Ключи читаются из server/.env и ~/.config/ruware-hr/session_key при старте службы, в файлы служб не копируются.
-# Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer
+# Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer ruware-trudvsem.timer
 set -euo pipefail
 
 APP="$HOME/projects/HR-agent/server"
@@ -67,18 +67,41 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
+cat > "$UNITS/ruware-trudvsem.service" <<EOF
+[Unit]
+Description=Рувер: «Работа России» — резюме Краснодарского края под портреты должностей
+After=ruware-pg.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP
+ExecStart=/bin/bash -c '$ENV_LOAD; exec .venv/bin/python -m hr.cli run collect_trudvsem'
+EOF
+
+cat > "$UNITS/ruware-trudvsem.timer" <<EOF
+[Unit]
+Description=Рувер: «Работа России» в ночь с понедельника на вторник, 01:00 по Москве
+
+[Timer]
+OnCalendar=Tue *-*-* 01:00:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # то, что сейчас запущено вручную, уступает службам
 "$PG/bin/pg_ctl" -D "$DATA" status >/dev/null 2>&1 && "$PG/bin/pg_ctl" -D "$DATA" stop -m fast || true
 pkill -f "uvicorn hr.main:app --host 127.0.0.1 --port 8000" || true
 sleep 2
 
 systemctl --user daemon-reload
-systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer
+systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer ruware-trudvsem.timer
 # без входа в систему службы пользователя не живут после перезагрузки — включаем «linger»
 loginctl enable-linger "$USER" || echo "Не удалось включить linger: выполните  sudo loginctl enable-linger $USER"
 
 sleep 5
 echo
 systemctl --user --no-pager status ruware-pg.service ruware-portal.service | grep -E "●|Active:"
-systemctl --user --no-pager list-timers ruware-hh-daily.timer | head -3
+systemctl --user --no-pager list-timers ruware-hh-daily.timer ruware-trudvsem.timer | head -4
 curl -s -o /dev/null -w "Портал отвечает: HTTP %{http_code}\n" http://127.0.0.1:8000/ || echo "Портал пока не отвечает — подождите 10 секунд и проверьте снова"

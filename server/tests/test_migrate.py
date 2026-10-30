@@ -19,7 +19,7 @@ def test_sources_seeded(conn):
     src = {r["code"]: r for r in db.rows(conn, "SELECT code, kind, mode, is_active FROM source")}
     assert set(src) >= {"hh", "trudvsem", "habr", "avito", "manual"}
     assert src["hh"]["is_active"] and src["hh"]["mode"] == "api"
-    assert not src["trudvsem"]["is_active"], "«Работа России» выключена до проверки эндпойнта (Решения)"
+    assert src["trudvsem"]["is_active"], "«Работа России» включена миграцией 004 (решение человека 2026-10-30)"
     assert not src["avito"]["is_active"]
     assert src["habr"]["mode"] == "cabinet_export"
 
