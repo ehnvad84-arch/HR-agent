@@ -8,6 +8,7 @@ import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, loadingLine, mountAsync, sheet, toast } from "../ui.js";
 import { loadResumesButton } from "../hh-load.js";
+import { fitAvailability, fitQuery } from "./base-model.js";
 import { weightControl } from "../weight-input.js";
 import {
   allUnitIds, buildTree, canLoadPosition, filterTree, orgFileError, orgHeading, orgResultText, positionLink, positionState, rateText, rootOptions,
@@ -20,6 +21,21 @@ import {
 
 const DEBOUNCE_MS = 350;
 let notice = null;   // {id, text}: итог прошлого действия, который показывает экран версии после перехода
+
+/**
+ * «Подходящие кандидаты» (S49): «База», отфильтрованная по баллу этой должности, лучшие сверху. Видна у каждой должности: рабочая у
+ * действующего портрета, у остальных неактивна (aria-disabled, не disabled — чтобы работала подсказка, почему). Нужно только право
+ * base.read, как у самого экрана. На узкой ширине подпись короче. state — состояние портрета или null, если портрета у должности нет.
+ */
+function fitButton(ctx, code, title, state, variant = "tint rowbtn") {
+  const { active, tip } = fitAvailability(state);
+  return h("button.b", { type: "button", class: [variant, active ? null : "inactive"], "data-tip": tip, "aria-disabled": active ? null : "true",
+    "aria-label": `Подходящие кандидаты: ${title}`,
+    onClick: (event) => {
+      event.preventDefault();
+      if (active && code) ctx.go("base", {}, fitQuery(code));
+    } }, h("span.fitfull", "Подходящие кандидаты"), h("span.fitshort", "Подходящие"));
+}
 
 // ------------------------------------------------------------------ окна
 
@@ -194,7 +210,7 @@ function listScreen(box, ctx) {
         return h("div.li.stretch",
           h("div", h("div", { style: "font-weight:600" }, h("a.main", { href: hashFor("profiles", { id: p.id }) }, p.title)), h("div.sub", rowSub(p))),
           p.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
-          h("span.pill", { class: info.pill }, info.text), load, h("span.chev", "›"));
+          h("span.pill", { class: info.pill }, info.text), h("div.rowbtns", fitButton(ctx, p.code, p.title, p.state), load), h("span.chev", "›"));
       })))));
   };
 
@@ -206,7 +222,8 @@ function listScreen(box, ctx) {
     return h(link ? "div.li.stretch" : "div.li", { style: link ? null : "cursor:default" },
       h("div", h("div", { style: "font-weight:600" }, link ? h("a.main", { href: hashFor("profiles", { id: link }) }, p.title) : p.title), h("div.sub", rateText(p))),
       p.profile && p.profile.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
-      h("span.pill", { class: info.pill }, info.text), load, link ? h("span.chev", "›") : null);
+      h("span.pill", { class: info.pill }, info.text), h("div.rowbtns", fitButton(ctx, p.profile ? p.profile.code : null, p.title, p.profile ? p.profile.state : null), load),
+      link ? h("span.chev", "›") : null);
   };
   const unitNode = (node, forced) => {
     const open = forced || !collapsed.has(node.id);   // при поиске всё найденное развёрнуто
@@ -425,7 +442,7 @@ function editorScreen(box, ctx, id) {
     } }, "Утвердить");
 
     // «Загрузить резюме HH.ru» по этой должности: берётся действующий (утверждённый) портрет — свой или соседней версии
-    const loadId = profile.state === "approved" ? profile.id : (approvedRow ? approvedRow.id : null);
+    const loadId = profile.state === "approved" ? profile.id : (approvedRow && approvedRow.state === "approved" ? approvedRow.id : null);
     const loadButton = loadId ? loadResumesButton({ api, signal, session, variant: "tint", role: { id: loadId, title: profile.title, geo: profile.geo } }) : null;
 
     // ---------------- части экрана
@@ -462,7 +479,8 @@ function editorScreen(box, ctx, id) {
         "Правка портрета. Сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение; до утверждения выдача считается по прежней версии."),
       banners.length ? h("div.stack", { style: "margin-top:12px" }, banners) : null,
       loadId || profile.state !== "approved" ? h("div.btns", profile.state !== "approved" && !isEmpty && canEdit ? previewButton : null,
-        profile.state !== "approved" && canApprove ? approve : null, isEmpty && canApprove ? h("span.hint", "Сначала заполните критерии") : null, loadButton) : null,
+        profile.state !== "approved" && canApprove ? approve : null, isEmpty && canApprove ? h("span.hint", "Сначала заполните критерии") : null,
+        fitButton(ctx, profile.code, profile.title, loadId ? "approved" : profile.state, "tint"), loadButton) : null,
       status.el, previewBox),
       // портрет собран по смыслу: «Кто нужен» → «Как ищем» (у каждого поля свой вес) → «Ещё признаки»; кнопка сохранения закреплена внизу
       h("div.pedit",

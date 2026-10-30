@@ -533,8 +533,8 @@ button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
 .arealist{margin-top:6px;max-height:210px;overflow:auto;border:1px solid var(--field-line);border-radius:12px;background:var(--card)}
 .areaopt{padding:9px 12px;cursor:pointer;font-size:14.5px}
 .areaopt[aria-selected="true"],.areaopt:hover{background:var(--card2)}
-.li.stretch .rowbtn{margin-left:auto}
-.li.stretch .rowbtn + .chev{margin-left:0}
+.rowbtns{margin-left:auto;display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.li .rowbtns + .chev{margin-left:0}
 
 /* --------------------------------- ход загрузки резюме hh (S48) --------------------------------- */
 .loadstatus:empty{display:none}
@@ -564,3 +564,17 @@ button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
 .orgcount{font-size:12.5px;font-weight:500;color:var(--muted);white-space:nowrap}
 .orgbody{margin:8px 0 0 12px;padding-left:12px;border-left:2px solid var(--sep);display:grid;gap:10px}
 .orgnode .list{box-shadow:none;border:.5px solid var(--sep)}
+
+/* --------------------------------- «Подходящие кандидаты» (S49) --------------------------------- */
+.fitshort{display:none}
+@media (max-width:720px){
+  .fitfull{display:none}
+  .fitshort{display:inline}
+  .li.stretch,.orgnode .li{flex-wrap:wrap}
+  .li.stretch > div:first-child,.orgnode .li > div:first-child{flex:1 1 100%}
+  .rowbtns{margin-left:0;justify-content:flex-start}
+  .li.stretch .chev{display:none}
+}
+button.b.inactive{opacity:.55;cursor:not-allowed;filter:none}
+button.b.inactive:hover{filter:none}
+button.b.inactive:active{transform:none}

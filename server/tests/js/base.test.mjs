@@ -4,8 +4,8 @@ import test from "node:test";
 
 import { hashFor, parseHash } from "../../web/js/router.js";
 import {
-  COLUMNS, apiRequest, ariaSort, filtersActive, nextSort, pageInfo, parseState, similarityText, sourceTitle,
-  stateToQuery, whereTitle,
+  COLUMNS, apiRequest, ariaSort, canShowFit, columnTitle, filtersActive, fitAvailability, fitBarText, fitEmptyText, fitQuery, fitRoleTitle, nextSort, pageInfo, parseState,
+  similarityText, sourceTitle, stateToQuery, whereTitle,
 } from "../../web/js/screens/base-model.js";
 
 test("колонки таблицы — как в прототипе, у каждой своё имя сортировки для API", () => {
@@ -16,7 +16,7 @@ test("колонки таблицы — как в прототипе, у каж�
 
 test("пустой адрес: вся база, по убыванию балла, первая страница", () => {
   assert.deepEqual(parseState({}), {
-    dept: "", city: "", role: "", score_min: "", where: "", source: "", sort: "score", dir: "desc", page: 0, q: "", vacancy: "" });
+    dept: "", city: "", role: "", score_min: "", where: "", source: "", sort: "score", dir: "desc", page: 0, q: "", vacancy: "", fit: "" });
 });
 
 test("адрес читается в состояние: фильтры, сортировка, страница, поиск", () => {
@@ -128,4 +128,74 @@ test("близость поиска — проценты", () => {
   assert.equal(similarityText(0.1807), "близость 18 %");
   assert.equal(similarityText(0.995), "близость 100 %");
   assert.equal(similarityText(null), "");
+});
+
+// ------------------------------------------------------------------ подходящие под одну должность (S49)
+
+test("S49: адрес «подходящие под должность» — код портрета, сортировка по баллу по убыванию", () => {
+  assert.deepEqual(fitQuery("hw_lead"), { fit: "hw_lead", sort: "score", dir: "desc" });
+  assert.equal(hashFor("base", {}, fitQuery("hw_lead")), "#/base?fit=hw_lead&sort=score&dir=desc");
+  const state = parseState(parseHash(hashFor("base", {}, fitQuery("hw_lead"))).query);
+  assert.equal(state.fit, "hw_lead");
+  assert.equal(state.sort, "score");
+  assert.equal(state.dir, "desc");
+});
+
+test("S49: fit живёт в адресе вместе с остальным состоянием; мусор отбрасывается", () => {
+  const original = parseState({ fit: "sales_project", city: "Томск", where: "candidate", sort: "name", dir: "asc", page: "2" });
+  const link = hashFor("base", {}, stateToQuery(original));
+  assert.deepEqual(parseState(parseHash(link).query), original);
+  assert.deepEqual(stateToQuery(parseState({ fit: "hw_lead" })), { fit: "hw_lead" });   // сортировка по умолчанию и так по баллу
+  assert.equal(parseState({ fit: "../etc" }).fit, "");
+  assert.equal(parseState({ fit: "a b" }).fit, "");
+  assert.equal(parseState({ fit: "x".repeat(80) }).fit, "");
+  assert.equal(parseState({}).fit, "");
+});
+
+test("S49: запрос к /api/base с fit — остальные фильтры поверх, «Должность» не уходит", () => {
+  const request = apiRequest(parseState({ fit: "hw_lead", role: "sales_project", city: "Краснодар", score_min: "60", where: "candidate", dept: "rnd_hw", sort: "score", dir: "desc", page: "1" }));
+  assert.equal(request.path, "/api/base");
+  assert.equal(request.kind, "table");
+  assert.deepEqual(request.query, { fit: "hw_lead", dept: "rnd_hw", city: "Краснодар", score_min: "60", where: "candidate", sort: "score", dir: "desc", page: 1 });
+  assert.equal("role" in request.query, false);
+  assert.deepEqual(apiRequest(parseState({ fit: "hw_lead" })).query, { fit: "hw_lead", sort: "score", dir: "desc", page: 0 });
+  assert.equal("fit" in apiRequest(parseState({})).query, false);
+  assert.equal(apiRequest(parseState({ fit: "hw_lead", vacancy: "7" })).path, "/api/vacancy/7/matching");   // вакансия главнее
+  assert.equal(apiRequest(parseState({ fit: "hw_lead", q: "схемотехник" })).kind, "search");
+});
+
+test("S49: колонка балла называется «Балл по должности», пока выбрана должность", () => {
+  const score = COLUMNS.find((c) => c.key === "score");
+  assert.equal(columnTitle(score, parseState({})), "Балл");
+  assert.equal(columnTitle(score, parseState({ fit: "hw_lead" })), "Балл по должности");
+  assert.equal(columnTitle(COLUMNS[0], parseState({ fit: "hw_lead" })), "ФИО");
+});
+
+test("S49: плашка «Подходящие под «должность»»: название из профилей, иначе из первой строки, иначе код", () => {
+  const profiles = [{ code: "hw_lead", title: "Ведущий инженер-электронщик" }];
+  assert.equal(fitRoleTitle("hw_lead", profiles, []), "Ведущий инженер-электронщик");
+  assert.equal(fitRoleTitle("sales_project", profiles, [{ role_code: "sales_project", role_title: "Менеджер проектных продаж" }]), "Менеджер проектных продаж");
+  assert.equal(fitRoleTitle("sales_project", [], [{ role_code: "other", role_title: "Другая" }]), "sales_project");
+  assert.equal(fitRoleTitle("sales_project", null, null), "sales_project");
+  assert.equal(fitBarText("Менеджер проектных продаж"), "Подходящие под «Менеджер проектных продаж»: по баллу этой должности, лучшие сверху");
+});
+
+test("S49: пусто — подсказка, как набрать резюме (кнопка загрузки — только тем, у кого она есть)", () => {
+  assert.equal(fitEmptyText(true), "Подходящих под эту должность пока нет — загрузите резюме кнопкой «Загрузить резюме HH.ru»");
+  assert.equal(fitEmptyText(false), "Подходящих под эту должность пока нет");
+});
+
+test("S49: «Подходящие кандидаты» видна у каждой должности, рабочая — только с действующим портретом", () => {
+  assert.equal(canShowFit("approved"), true);
+  assert.equal(canShowFit("pending"), false);
+  assert.equal(canShowFit("draft"), false);
+  assert.equal(canShowFit("empty"), false);
+  assert.equal(canShowFit(undefined), false);
+  assert.equal(canShowFit(null), false);
+  assert.deepEqual(fitAvailability("approved"), { active: true, tip: "fit-button" });
+  // у пустого, ждущего утверждения и черновика баллов по должности ещё нет: кнопка видна, но неактивна
+  for (const state of ["empty", "pending", "draft"]) assert.deepEqual(fitAvailability(state), { active: false, tip: "fit-button-no-scores" }, state);
+  // портрет к должности не привязан
+  assert.deepEqual(fitAvailability(null), { active: false, tip: "fit-button-no-profile" });
+  assert.deepEqual(fitAvailability(undefined), { active: false, tip: "fit-button-no-profile" });
 });

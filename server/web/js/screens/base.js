@@ -8,8 +8,8 @@ import { loadResumesButton } from "../hh-load.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorCard, loadingLine } from "../ui.js";
 import {
-  COLUMNS, WHERE_VALUES, apiRequest, ariaSort, filtersActive, nextSort, pageInfo, parseState, similarityText, sourceTitle,
-  stateToQuery, whereTitle,
+  COLUMNS, WHERE_VALUES, apiRequest, ariaSort, columnTitle, filtersActive, fitBarText, fitEmptyText, fitRoleTitle, nextSort, pageInfo, parseState,
+  similarityText, sourceTitle, stateToQuery, whereTitle,
 } from "./base-model.js";
 
 const DEBOUNCE_MS = 400;
@@ -22,6 +22,7 @@ export function render(box, ctx) {
   let loadTimer = null;
   let typing = null;
   const seen = { cities: new Set(), sources: new Set(), depts: new Map(), roles: new Map() };
+  let lastItems = [];           // последняя выдача: название должности для плашки, если профили ещё не пришли
   let profiles = [];            // действующие профили: полный список подразделений и должностей для выпадающих списков
 
   const syncUrl = () => window.history.replaceState(null, "", hashFor("base", {}, stateToQuery(state)));
@@ -56,13 +57,15 @@ export function render(box, ctx) {
 
   const headerCells = COLUMNS.map((column) => {
     const arrow = h("span.dir", { "aria-hidden": "true" }, "↕");
+    const label = h("span", column.title);   // у балла при выбранной должности подпись другая
     const th = h("th", { scope: "col", "aria-sort": "none", onClick: () => sortBy(column.sort) },
-      h("button", { type: "button", "data-tip": "sort" }, column.title, " ", arrow));
-    return { column, th, arrow };
+      h("button", { type: "button", "data-tip": "sort" }, label, " ", arrow));
+    return { column, th, arrow, label };
   });
   mount(headerRow, headerCells.map((c) => c.th));
   const drawHeaders = () => {
-    for (const { column, th, arrow } of headerCells) {
+    for (const { column, th, arrow, label } of headerCells) {
+      label.textContent = columnTitle(column, state);
       const order = ariaSort(state, column.sort);
       th.setAttribute("aria-sort", order);
       th.classList.toggle("sorted", order !== "none");
@@ -120,10 +123,11 @@ export function render(box, ctx) {
     sourceSelect.value = state.source;
     if (document.activeElement !== cityInput) cityInput.value = state.city;
     if (document.activeElement !== scoreInput) scoreInput.value = state.score_min;
-    // для вакансии сервер знает только город и балл
+    // для вакансии сервер знает только город и балл; при выборе должности фильтр «Должность» (по лучшему баллу) с ней не сочетается
     for (const key of ["dept", "role", "where", "source"]) {
-      controls[key].disabled = Boolean(state.vacancy);
-      controls[key].title = state.vacancy ? "Для подходящих к вакансии фильтр недоступен" : "";
+      const blocked = Boolean(state.vacancy) || (Boolean(state.fit) && key === "role");
+      controls[key].disabled = blocked;
+      controls[key].title = state.vacancy ? "Для подходящих к вакансии фильтр недоступен" : blocked ? "Для подходящих под должность фильтр «Должность» не нужен" : "";
     }
   };
 
@@ -147,6 +151,14 @@ export function render(box, ctx) {
   function resetAll() {
     state = parseState({});
     search.value = "";
+    changed();
+  }
+  function resetFit() {   // «Показать всех»: убрать отбор по должности, остальные фильтры остаются
+    state = { ...state, fit: "", page: 0 };
+    changed();
+  }
+  function resetFilters() {   // при выбранной должности «Сбросить» убирает фильтры, а не саму должность
+    state = { ...parseState({}), fit: state.fit };
     changed();
   }
   function changed() {
@@ -187,6 +199,33 @@ export function render(box, ctx) {
     return tr;
   }
 
+  /** Плашка над таблицей: подходящие к вакансии (S22) или под должность (S49). */
+  function drawBar(data) {
+    if (state.vacancy) {
+      mount(vacancyBar, h("div.filterbar",
+        h("span", `Подходящие к вакансии «${data.vacancy ? data.vacancy.title : state.vacancy}»: баллы по профилю вакансии, выше порога наблюдения, по убыванию балла`),
+        h("button", { type: "button", onClick: () => resetAll() }, "Показать всю базу")));
+    } else if (state.fit) {
+      mount(vacancyBar, h("div.filterbar",
+        h("span", fitBarText(fitRoleTitle(state.fit, profiles, data ? data.items : lastItems))),
+        h("button", { type: "button", onClick: () => resetFit() }, "Показать всех")));
+    } else {
+      mount(vacancyBar, null);
+    }
+  }
+
+  /** Что писать вместо пустой таблицы. */
+  function emptyContent() {
+    if (state.fit && !filtersActive(state)) {   // по этой должности ещё никого: подсказка, как набрать резюме
+      const load = loadResumesButton({ api, signal, session: ctx.session, variant: "fill" });
+      return [fitEmptyText(Boolean(load)), load ? h("div", { style: "margin-top:8px" }, load) : null];
+    }
+    if (filtersActive(state) || state.vacancy) {
+      return ["Ничего не нашлось ", h("button.link", { type: "button", onClick: () => (state.fit ? resetFilters() : resetAll()) }, "Сбросить")];
+    }
+    return "Карточек пока нет: сбор идёт по утрам";
+  }
+
   function showTable(data) {
     remember(data.items);
     searchBox.hidden = true;
@@ -198,17 +237,11 @@ export function render(box, ctx) {
       return;
     }
     found.textContent = info.text;
-    if (!filtersActive(state) && !state.vacancy) ctx.setBadge("base", data.total);
+    lastItems = data.items;
+    if (!filtersActive(state) && !state.vacancy && !state.fit) ctx.setBadge("base", data.total);
 
-    mount(vacancyBar, state.vacancy ? h("div.filterbar",
-      h("span", `Подходящие к вакансии «${data.vacancy ? data.vacancy.title : state.vacancy}»: баллы по профилю вакансии, выше порога наблюдения, по убыванию балла`),
-      h("button", { type: "button", onClick: () => resetAll() }, "Показать всю базу")) : null);
-
-    mount(tbody, data.items.length ? data.items.map(rowFor)
-      : h("tr", h("td.hint", { colspan: COLUMNS.length },
-        filtersActive(state) || state.vacancy
-          ? ["Ничего не нашлось ", h("button.link", { type: "button", onClick: () => resetAll() }, "Сбросить")]
-          : "Карточек пока нет: сбор идёт по утрам")));
+    drawBar(data);
+    mount(tbody, data.items.length ? data.items.map(rowFor) : h("tr", h("td.hint", { colspan: COLUMNS.length }, emptyContent())));
 
     mount(pager, info.pages > 1 ? [
       h("button.b", { type: "button", disabled: !info.hasPrev, onClick: () => goPage(info.page - 1) }, "← Назад"),
@@ -286,6 +319,7 @@ export function render(box, ctx) {
   api.get("/api/profiles", { signal }).then((reply) => {
     profiles = (reply.items || []).filter((p) => p.state === "approved");
     drawFilters();
+    if (state.fit && !state.vacancy) drawBar(null);   // название должности для плашки
   }).catch(() => {});
   return undefined;
 }

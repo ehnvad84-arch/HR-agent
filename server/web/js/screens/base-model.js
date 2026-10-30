@@ -19,6 +19,32 @@ const SOURCE_TITLES = { hh: "hh.ru", trudvsem: "Работа России", habr
 export const FILTER_KEYS = ["dept", "city", "role", "score_min", "where", "source"];
 const SORT_KEYS = COLUMNS.map((c) => c.sort);
 
+/** Адрес «Подходящие кандидаты» из «Базы должностей»: код портрета, по баллу этой должности, лучшие сверху. */
+export const fitQuery = (code) => ({ fit: code, sort: "score", dir: "desc" });
+/** «Подходящие кандидаты» работает только у должности с действующим (утверждённым) портретом: баллы есть лишь по нему. */
+export const canShowFit = (state) => state === "approved";
+/**
+ * Кнопка видна у каждой должности. Рабочая — у утверждённого портрета; у пустого, ждущего утверждения и черновика неактивна
+ * (баллов ещё нет); у должности без портрета (state пуст) — тоже неактивна. tip — ключ подсказки в tips.js.
+ */
+export function fitAvailability(state) {
+  if (state === undefined || state === null) return { active: false, tip: "fit-button-no-profile" };
+  return canShowFit(state) ? { active: true, tip: "fit-button" } : { active: false, tip: "fit-button-no-scores" };
+}
+/** Подпись колонки: у балла при выбранной должности — «Балл по должности». */
+export const columnTitle = (column, state) => (column.key === "score" && state.fit ? "Балл по должности" : column.title);
+
+/** Название должности для плашки: из действующих профилей по коду, иначе из строки выдачи, иначе сам код. */
+export function fitRoleTitle(code, profiles, items) {
+  const profile = (profiles || []).find((p) => p.code === code);
+  if (profile && profile.title) return profile.title;
+  const row = (items || []).find((r) => r.role_code === code && r.role_title);
+  return row ? row.role_title : code;
+}
+export const fitBarText = (title) => `Подходящие под «${title}»: по баллу этой должности, лучшие сверху`;
+export const fitEmptyText = (canLoad) => (canLoad
+  ? "Подходящих под эту должность пока нет — загрузите резюме кнопкой «Загрузить резюме HH.ru»" : "Подходящих под эту должность пока нет");
+
 export const whereTitle = (where) => WHERE_TITLES[where] || String(where ?? "");
 export const sourceTitle = (code) => SOURCE_TITLES[code] || String(code ?? "");
 export const similarityText = (value) => (typeof value === "number" ? `близость ${Math.round(value * 100)} %` : "");
@@ -41,6 +67,7 @@ export function parseState(query = {}) {
     page: /^\d+$/.test(query.page ?? "") ? Number(query.page) : 0,
     q: text(query.q),
     vacancy: /^\d+$/.test(query.vacancy ?? "") ? query.vacancy : "",
+    fit: /^[\w.-]{1,64}$/.test(query.fit ?? "") ? query.fit : "",   // код портрета из «Базы должностей»: подходящие под одну должность (S49)
   };
 }
 
@@ -55,6 +82,7 @@ export function stateToQuery(state) {
   if (state.page > 0) query.page = state.page;
   if (state.q) query.q = state.q;
   if (state.vacancy) query.vacancy = state.vacancy;
+  if (state.fit) query.fit = state.fit;
   return query;
 }
 
@@ -72,8 +100,9 @@ export function apiRequest(state) {
     return { kind: "table", path: `/api/vacancy/${state.vacancy}/matching`,
       query: clean({ city: state.city, score_min: state.score_min, ...order }) };
   }
+  // fit — балл именно по этой должности: фильтр «Должность» (по лучшему баллу) с ним не сочетается и не уходит
   return { kind: "table", path: "/api/base", query: clean({
-    dept: state.dept, city: state.city, role: state.role, score_min: state.score_min, where: state.where, source: state.source, ...order }) };
+    fit: state.fit, dept: state.dept, city: state.city, role: state.fit ? "" : state.role, score_min: state.score_min, where: state.where, source: state.source, ...order }) };
 }
 
 /** Клик по заголовку: новая колонка — числа и даты вниз, текст вверх; повторный клик — в обратную сторону. */
