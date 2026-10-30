@@ -79,6 +79,9 @@ def test_w3_unsure_name_goes_template(conn, api, model):
     assert r.json()["by"] == "template" and model.requests == []
 
 
-def test_hiring_manager_cannot_write(api):
+def test_hiring_manager_writes_own_feedback(api):
+    """manager-cabinet S14: каждый учит агента под себя; без права — 403."""
     c, h, _ = api("hiring_manager")
-    assert send(c, h).status_code == 403
+    assert send(c, h).status_code == 200
+    n, nh, _ = api("no_access")
+    assert send(n, nh).status_code == 403

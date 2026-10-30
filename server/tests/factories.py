@@ -58,3 +58,40 @@ def weak_item(**changes) -> dict:
 
 def source(conn, code: str = "hh") -> dict:
     return db.one(conn, "SELECT * FROM source WHERE code = %s", (code,))
+
+
+ORG = {"period": "2026-10-30", "organization": "Тест", "departments": [{
+    "id": "u-root", "name": "Компания", "order": 1,
+    "positions": [{"id": "p-dir", "name": "Директор /Основное/", "rates": 1, "occupied": 1}],
+    "departments": [
+        {"id": "u-sales", "name": "Департамент продаж", "order": 2, "positions": [], "departments": [
+            {"id": "u-s1", "name": "Отдел продаж №1", "order": 1, "departments": [],
+             "positions": [{"id": "p-mpp1", "name": "Менеджер проектных продаж /Отдел продаж/", "rates": 3,
+                            "occupied": 1}]},
+            {"id": "u-s2", "name": "Отдел продаж №2", "order": 2, "departments": [],
+             "positions": [{"id": "p-mpp2", "name": "Менеджер проектных продаж /Отдел продаж/", "rates": 2,
+                            "occupied": 2}]}]},
+        {"id": "u-rnd", "name": "Отдел инженерных разработок", "order": 3, "departments": [],
+         "positions": [{"id": "p-eng", "name": "Ведущий инженер-электронщик /Отдел инженерных разработок/",
+                        "rates": 1, "occupied": 0}]},
+        {"id": "u-hr", "name": "Отдел управления персоналом", "order": 4, "departments": [],
+         "positions": [{"id": "p-hr", "name": "Менеджер по персоналу /Отдел персонала/", "rates": 2,
+                        "occupied": 1}]}]}]}
+
+
+def org(conn, now) -> dict:
+    """Вымышленная оргструктура: портреты продаж и инженера заведены заранее, чтобы связались по названию.
+    Возвращает {external_id подразделения: org_unit.id} и профили."""
+    from hr import org_1c
+    sales = profile(conn, "sales_project", "Менеджер проектных продаж", dept="sales")
+    eng = profile(conn)
+    org_1c.apply(conn, json.dumps(ORG, ensure_ascii=False).encode(), "org.json", None, now)
+    units = {r["external_id"]: r["id"] for r in db.rows(conn, "SELECT id, external_id FROM org_unit")}
+    return {"units": units, "sales": sales, "eng": eng,
+            "pos": {r["external_id"]: r["id"] for r in db.rows(conn, "SELECT id, external_id FROM staff_position")}}
+
+
+def user(conn, login: str, role: str, unit_id: int | None = None) -> int:
+    return db.val(conn, """INSERT INTO app_user (login, full_name, role, org_unit_id) VALUES (%s, %s, %s, %s)
+                           ON CONFLICT (login) DO UPDATE SET role = EXCLUDED.role, org_unit_id = EXCLUDED.org_unit_id
+                           RETURNING id""", (login, f"Проверочный {login}", role, unit_id))

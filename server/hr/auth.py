@@ -18,6 +18,7 @@ import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
 
+from . import scope as scope_mod
 from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, one, rows, run, setting
@@ -201,6 +202,39 @@ def require(permission: str, csrf: bool | None = None):
 
     dependency.permission = permission
     return dependency
+
+
+def require_scoped(permission: str, csrf: bool | None = None):
+    """Как require, но ещё и граница видимости по оргструктуре (manager-cabinet): (пользователь, Scope).
+    Маршруты с base.read обязаны брать её — это держит тест routes_unscoped."""
+    base = require(permission, csrf)
+
+    def dependency(user: Annotated[User, Depends(base)],
+                   conn_factory: Annotated[ConnFactory, Depends(get_conn_factory)]):
+        with conn_factory() as conn:
+            return user, scope_mod.for_user(conn, user)
+
+    dependency.permission = permission
+    dependency.scoped = True
+    return dependency
+
+
+def routes_unscoped(app: FastAPI, permission: str = "base.read") -> list[str]:
+    """Маршруты с правом permission без require_scoped: руководитель увидел бы через них чужое (M1)."""
+    def walk(dep):
+        yield dep
+        for d in dep.dependencies:
+            yield from walk(d)
+
+    bad = []
+    for r in app.routes:
+        if not (isinstance(r, APIRoute) and r.path.startswith("/api/")):
+            continue
+        deps = [d.call for d in walk(r.dependant) if d.call is not None]
+        if any(getattr(c, "permission", None) == permission for c in deps) \
+                and not any(getattr(c, "scoped", False) for c in deps):
+            bad += [f"{m} {r.path}" for m in sorted(r.methods)]
+    return bad
 
 
 def routes_without_permission(app: FastAPI) -> list[str]:

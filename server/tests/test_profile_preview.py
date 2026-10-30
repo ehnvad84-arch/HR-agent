@@ -26,7 +26,7 @@ def test_s26_preview_counts_enter_and_leave(conn, api, clock):
 
 def test_preview_needs_profile_edit(conn, api, clock):
     prof = profile(conn, approved=False)
-    c, _, _ = api("hiring_manager")
+    c, _, _ = api("no_access")   # руководителю право дано (manager-cabinet), чужой портрет — 404 в test_scope_points
     assert c.get(f"/api/profile/{prof['id']}/preview").status_code == 403
 
 
