@@ -1,23 +1,14 @@
-// Блок «Как работает портал» на «Схеме» (S19): свёрнутый, открыт при первом входе. Текст и таблица прав — guide.js.
+// Блок «Как работает портал» на «Схеме» (S19): всегда раскрыт (решение человека 2026-10-30). Текст и таблица прав — guide.js.
 // Что человеку доступно, решают его права из /api/me.permissions (session.can); подсвечивается его роль в таблице.
 import { h } from "./dom.js";
-import { CAN, CANNOT, RULES, SECTIONS, guideOpen, markGuideSeen, myRights, rightsTable } from "./guide.js";
+import { CAN, CANNOT, RULES, SECTIONS, myRights, rightsTable } from "./guide.js";
 import { ROLE_TITLES } from "./nav-model.js";
-
-const browserStorage = () => {
-  try {
-    return globalThis.localStorage || null;
-  } catch {
-    return null;
-  }
-};
 
 const list = (items) => h("ul.guidelist", items.map((text) => h("li", text)));
 
-export function guideBlock(session, storage = browserStorage()) {
+export function guideBlock(session) {
   const user = session.user;
-  const open = guideOpen(storage, user);
-  if (open) markGuideSeen(storage, user);   // дальше блок свёрнут: кто захочет, раскроет сам
+  const open = true;   // описание видно сразу и каждый раз; свернуть можно щелчком по заголовку
   const table = rightsTable();
   const rights = myRights((permission) => session.can(permission));
   const section = (id) => SECTIONS.find((s) => s.id === id);
