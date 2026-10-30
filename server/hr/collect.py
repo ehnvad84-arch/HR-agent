@@ -71,9 +71,12 @@ class _HHItems:
 
 
 def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
-               limiter: RateLimiter | None = None, full_cap: int | None = None, **_) -> JobStats:
+               limiter: RateLimiter | None = None, full_cap: int | None = None, profile_id: int | None = None,
+               area: str | None = None, **_) -> JobStats:
     """Обход hh по действующим профилям. full_cap — предел полных резюме вместо hh_full_resume_per_run
-    (остаток дневного лимита просмотров); предел страниц тогда — поиск по всем профилям плюс full_cap."""
+    (остаток дневного лимита просмотров); предел страниц тогда — поиск по всем профилям плюс full_cap.
+    profile_id — искать только по этой должности; area — регион hh вместо региона из портрета (S46).
+    Балл и порог считаются по всем действующим портретам, как при обычном обходе."""
     clock = clock or SYSTEM
     http = http or client(get_config().hh_user_agent)
     stats = JobStats()
@@ -88,9 +91,20 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
             len(profiles) * per_profile + full_cap
         budget = PageBudget(max_pages, stats)
         params = {p["id"]: hh.search_params(conn, p) for p in profiles}
+    targets = profiles
+    if profile_id is not None:
+        targets = [p for p in profiles if p["id"] == profile_id]
+        if not targets:
+            raise JobNotConfigured("портрет должности не утверждён или не действует")
+        if full_cap is not None:   # поиск только по этой должности — и предел страниц под неё
+            budget.limit = len(targets) * per_profile + full_left
+    if area:
+        for p in targets:
+            params[p["id"]]["area"] = str(area)
+            params[p["id"]].pop("relocation", None)
     api = hh.Api(conn_factory, http, clock, limiter or _limiter, budget)
     items = _HHItems(conn_factory, api, src, profiles, stats, full_left, clock)
-    for pr in profiles:
+    for pr in targets:
         qid = _queue(conn_factory, src["id"], pr["id"], params[pr["id"]])
         try:
             for page in range(per_profile):
@@ -172,7 +186,8 @@ def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, cl
 
 
 def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
-                     limiter: RateLimiter | None = None, count: int | None = None, **_) -> JobStats:
+                     limiter: RateLimiter | None = None, count: int | None = None, profile_id: int | None = None,
+                     area: str | None = None, **_) -> JobStats:
     """Задача collect_hh_daily (18:00 по Москве) и кнопка «Загрузить резюме»: обход hh с полными резюме
     на остаток дневного лимита просмотров (count — не больше остатка), затем фото новых людей."""
     clock = clock or SYSTEM
@@ -184,7 +199,8 @@ def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = N
         stats = JobStats(note="дневной лимит просмотров hh исчерпан — сбор завтра")
         stats.extra = {"views_left": left}
         return stats
-    stats = collect_hh(conn_factory, http=http, clock=clock, limiter=limiter, full_cap=cap)
+    stats = collect_hh(conn_factory, http=http, clock=clock, limiter=limiter, full_cap=cap, profile_id=profile_id,
+                       area=area)
     stats.extra = {**stats.extra, "views_left": left, "full_cap": cap}
     # фото — тем же проходом: новые карточки сразу с лицом
     stats.extra["photos"] = photos.fetch_photos(conn_factory, clock=clock, limiter=limiter).new

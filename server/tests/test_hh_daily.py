@@ -28,8 +28,13 @@ class Limited(FakeHH):
         super().__init__(items=[hh_item(id=f"s{i}", experience=exp(i), area={"id": "53", "name": f"Город {i}"})
                                 for i in range(3)] + [weak_item()])
         self.left = left
+        self.queries = []
+
+    queries: list
 
     def __call__(self, req):
+        if req.url.path == "/resumes":
+            self.queries.append(dict(req.url.params))
         if req.url.path.endswith("/limits/resume"):
             self.calls.append(req.url.path)
             return httpx.Response(200, json={"limits": {"resume_view": 500}, "spend": {"resume_view": 500 - self.left},
@@ -83,3 +88,38 @@ def test_s44_manual_collect_capped_by_limit(conn, api):
     assert r.status_code == 202 and r.json()["count"] == 1
     assert len(fake.full_fetches) == 1
     assert db.val(conn, "SELECT ok FROM ops.job_run WHERE job = 'collect_hh' ORDER BY id DESC LIMIT 1")
+
+
+def test_s46_collect_one_profile_in_chosen_area(conn, conn_factory, clock):
+    eng = profile(conn)
+    profile(conn, code="otk", title="Инженер ОТК", dept="qc")
+    fake = Limited(1)
+    collect.collect_hh_daily(conn_factory, http=fake.client(), clock=clock, limiter=RateLimiter(clock), count=1,
+                             profile_id=eng["id"], area="1438")
+    searches = [c for c in fake.calls if c == "/resumes"]
+    assert len(searches) >= 1
+    assert all(q["area"] == "1438" and "инженер-электронщик" in q["text"].lower() for q in fake.queries)
+
+
+def test_s46_api_collect_with_profile_and_area(conn, api):
+    eng = profile(conn)
+    fake = Limited(1)
+    c, h, _ = client_with(api, fake)
+    r = c.post("/api/hh/collect", json={"count": 1, "role_profile_id": eng["id"], "area_id": "53"}, headers=h)
+    assert r.status_code == 202 and r.json()["area_id"] == "53"
+    assert c.post("/api/hh/collect", json={"count": 1, "area_id": "53; drop"}, headers=h).status_code == 422
+    assert c.post("/api/hh/collect", json={"count": 1, "role_profile_id": 999999}, headers=h).status_code == 422
+
+
+def test_s46_areas_defaults_and_suggest(conn, api):
+    class Suggest(Limited):
+        def __call__(self, req):
+            if req.url.path == "/suggests/areas":
+                assert req.url.params["text"] == "Соч"
+                return httpx.Response(200, json={"items": [{"id": "237", "text": "Сочи"}]})
+            return super().__call__(req)
+
+    c, _, _ = client_with(api, Suggest(5))
+    base = c.get("/api/hh/areas").json()["items"]
+    assert [a["id"] for a in base] == ["113", "1438", "53"]
+    assert c.get("/api/hh/areas", params={"q": "Соч"}).json()["items"] == [{"id": "237", "name": "Сочи"}]
