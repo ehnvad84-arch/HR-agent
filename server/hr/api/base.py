@@ -19,11 +19,13 @@ BAD_SORT = HTTPException(422, {"error": "validation", "message": "Неизвес
 @router.get("/api/base")
 def base(user: Reader, conn_factory: Conn, dept: str | None = None, city: str | None = None,
          role: str | None = None, score_min: int | None = None, where: str | None = None,
-         source: str | None = None, sort: str = "score", dir: str = "desc", page: int = 0):
+         source: str | None = None, sort: str = "score", dir: str = "desc", page: int = 0, fit: str | None = None):
+    """fit — «Подходящие» из «Базы должностей» (S49): балл именно по этой должности, а не лучший из всех;
+    без «не наш» по ней и без выбывших — как подбор под вакансию (S22)."""
     try:
         with conn_factory() as conn:
             return views.base(conn, dept=dept, city=city, role=role, score_min=score_min, where=where,
-                              source=source, sort=sort, direction=dir, page=page)
+                              source=source, sort=sort, direction=dir, page=page, role_code=fit or None)
     except ValueError:
         raise BAD_SORT from None
 

@@ -85,3 +85,21 @@ def test_s20_semantic_search(conn, conn_factory, api, base):
     assert "label" in r.json()["items"][0]
     assert c.get("/api/search", params={"q": " "}).status_code == 422
 
+
+
+def test_s49_fit_scores_by_this_role(conn, api, base):
+    prof, a, b = base
+    profile(conn, "sales_project", "Менеджер проектных продаж", dept="sales")
+    db.run(conn, """INSERT INTO match (person_id, role_profile_id, profile_version, score)
+                    SELECT p, rp.id, rp.version, s FROM (VALUES (%s, 99), (%s, 10)) v(p, s)
+                    CROSS JOIN role_profile rp WHERE rp.code = 'sales_project'
+                    ON CONFLICT DO NOTHING""", (a, b))
+    c, h, _ = api()
+    # без fit у человека a лучший балл — по продажам; с fit — балл по инженеру, и он в выдаче
+    eng = c.get("/api/base", params={"fit": prof["code"]}).json()["items"]
+    assert {x["role_code"] for x in eng} == {prof["code"]} and {x["person_id"] for x in eng} == {a, b}
+    sales = c.get("/api/base", params={"fit": "sales_project"}).json()["items"]
+    assert [x["score"] for x in sales] == [99, 10]
+    c.post("/api/decision", json={"person_id": a, "kind": "reject", "role_profile_id": prof["id"], "comment": LONG},
+           headers=h)
+    assert [x["person_id"] for x in c.get("/api/base", params={"fit": prof["code"]}).json()["items"]] == [b]
