@@ -82,3 +82,14 @@ def test_out_of_scope_404_and_hr_cannot_send(conn, clock, api):
     pid = person(conn, o["sales"])
     assert rc.post("/api/handoff", json={"person_id": pid, "vacancy_id": vac, "comment": GOOD},
                    headers=rh).status_code == 403
+
+
+def test_s10_candidate_reason_visible(conn, clock, api):
+    o, vac, (mc, mh, _), (rc, rh, _) = setup(conn, clock, api)
+    pid = person(conn, o["sales"])
+    hid = mc.post("/api/handoff", json={"person_id": pid, "vacancy_id": vac, "comment": GOOD}, headers=mh).json()["id"]
+    cid = rc.post(f"/api/handoff/{hid}/take", headers=rh).json()["candidate_id"]
+    db.run(conn, "UPDATE candidate SET status = 'rejected_by_candidate', reject_reason = %s WHERE id = %s",
+           ("Выбрал другое предложение, телефон +7 900 123-45-67", cid))
+    h = mc.get("/api/handoffs").json()["items"][0]
+    assert h["closed"] and "другое предложение" in h["candidate_reason"] and "123-45-67" not in h["candidate_reason"]

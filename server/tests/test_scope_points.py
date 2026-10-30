@@ -61,3 +61,17 @@ def test_hr_sees_all_and_positions_tree(conn, clock, api):
 
 def test_every_base_read_route_is_scoped():
     assert auth.routes_unscoped(app) == []
+
+
+def test_m2_free_text_without_contacts_and_s18_unit_change(conn, clock, api):
+    o, p_eng, _, _, (c, _, uid) = setup(conn, clock, api)
+    db.run(conn, """UPDATE observation SET raw = %s WHERE person_id = %s""",
+           (db.j({"skills": "Пишите: ivan@mail.ru, +7 900 111-22-33",
+                  "experience": [{"company": "Завод", "position": "Инженер",
+                                  "description": "звонить 8 900 111 22 33"}]}), p_eng))
+    d = c.get(f"/api/person/{p_eng}/dossier").json()
+    text = str(d["observations"])
+    assert "ivan@mail.ru" not in text and "111-22-33" not in text and "111 22 33" not in text
+    assert "versions" not in d
+    user(conn, "rnd_head", "hiring_manager", o["units"]["u-s1"])   # S18: перевели в отдел продаж №1
+    assert c.get(f"/api/person/{p_eng}").status_code == 404

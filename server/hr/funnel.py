@@ -67,13 +67,21 @@ def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
         FROM ops.candidate_vacancy cv JOIN candidate c ON c.id = cv.candidate_id
         WHERE cv.vacancy_id = %s ORDER BY since""", (vacancy_id,))
     info = cards(conn, [p["person_id"] for p in people])
+    notes: dict[int, list] = {}
+    for n in rows(conn, """SELECT h.candidate_id, h.comment, h.changed_at, h.to_status::text AS status,
+                                  u.full_name AS author
+                           FROM status_history h LEFT JOIN app_user u ON u.id = h.changed_by
+                           WHERE h.candidate_id = ANY(%s) AND coalesce(btrim(h.comment), '') <> ''
+                           ORDER BY h.changed_at DESC""", ([p["candidate_id"] for p in people],)):
+        notes.setdefault(n.pop("candidate_id"), []).append(n)
     stages = []
     for code, title in STAGES:
         here = [p for p in people if p["status"] == code]
         for p in here:
             p["days"] = (now - p["since"]).days if p["since"] else 0
             card = info.get(p["person_id"]) or {}
-            p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")))
+            p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")),
+                     notes=notes.get(p["candidate_id"], [])[:5])
         avg = round(sum(p["days"] for p in here) / len(here)) if here else None
         stages.append({"status": code, "title": title, "people": here, "avg_days": avg})
     closed = [p for p in people if p["status"] in CLOSED]

@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, funnel, scope
+from .. import auth, funnel, learning, scope
 from ..clock import Clock
 from ..db import ConnFactory
 from ..deps import get_clock, get_conn_factory
@@ -47,6 +47,12 @@ def vacancy_funnel(vacancy_id: int,
         raise NOT_FOUND
     try:
         with conn_factory() as conn:
-            return funnel.funnel(conn, vacancy_id, clock.now())
+            out = funnel.funnel(conn, vacancy_id, clock.now())
     except funnel.NotFound:
         raise NOT_FOUND from None
+    if not us[1].all:   # руководителю — заметки без телефонов, почты и ссылок (M2)
+        for st in out["stages"]:
+            for p in st["people"]:
+                for n in p.get("notes", []):
+                    n["comment"] = learning.strip_contacts(n["comment"])
+    return out

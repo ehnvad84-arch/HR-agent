@@ -209,4 +209,16 @@ def shared(conn: psycopg.Connection) -> list[dict]:
         g["users"].add(t["user_id"])
     done = {r["k"] for r in rows(conn, "SELECT target->'tweak'->>'key' AS k FROM digest_proposal "
                                       "WHERE target ? 'tweak'")}
-    return [g for g in groups.values() if len(g["users"]) >= need and g["key"] not in done]
+    out = [g for g in groups.values() if len(g["users"]) >= need and g["key"] not in done]
+    for g in out:   # поправка «на все должности» — в портреты должностей, с которыми работают её авторы
+        codes: set[str] = set()
+        if g["role_code"]:
+            codes = {g["role_code"]}
+        else:
+            current = {p["code"] for p in pipeline.current_profiles(conn)}
+            for uid in g["users"]:
+                u = _user(conn, uid)
+                sc = scope.for_user(conn, u) if u else None
+                codes |= current if sc and sc.all else (set(sc.codes) & current if sc else set())
+        g["codes"] = sorted(codes)
+    return out

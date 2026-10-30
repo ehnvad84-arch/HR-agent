@@ -84,3 +84,15 @@ def test_api_upload_and_bad_file(conn, clock, api):
     r = c.post("/api/access/upload", headers=h, files={"file": ("employees.json", raw(EMPS), "application/json")})
     assert r.status_code == 200 and r.json()["new"] == 5
     assert c.get("/api/access/users").json()["sync"]["changes"] == 5
+
+
+def test_daily_sync_task(conn, conn_factory, clock, tmp_path, monkeypatch):
+    from hr import config, tasks
+    org(conn, clock.now())
+    monkeypatch.setenv("EXCHANGE_1C_DIR", str(tmp_path))
+    config.get_config.cache_clear()
+    assert "нет" in staff_1c.sync_task(conn_factory, clock=clock).note
+    (tmp_path / "employees_20261030.json").write_bytes(raw(EMPS))
+    st = staff_1c.sync_task(conn_factory, clock=clock)
+    assert st.new == 5 and "staff_sync" in tasks.TASKS
+    config.get_config.cache_clear()

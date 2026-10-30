@@ -66,3 +66,19 @@ def test_s16_shared_goes_to_digest_then_pending_version(conn, conn_factory, cloc
     assert "PCIe" in new["keywords"] and new["approved_at"] is None
     assert not tweaks.shared(conn)   # второй раз в сводку не идёт
 
+
+
+def test_s16_all_positions_tweak_reaches_profiles(conn, conn_factory, clock, api):
+    prof = profile(conn)
+    for i in range(3):
+        c, h, uid = api("recruiter", login=f"r{i}")
+        assert c.post("/api/tweaks", json={"kind": "plus", "value": {"text": "FPGA"}}, headers=h).status_code == 200
+    learning.build_digest(conn_factory, clock.now())
+    p = db.one(conn, "SELECT id, target FROM digest_proposal WHERE target ? 'tweak'")
+    assert p["target"]["profile_codes"] == [prof["code"]]
+    db.run(conn, "UPDATE digest_proposal SET decision = 'accepted', decided_by = %s, decided_at = now() WHERE id = %s",
+           (uid, p["id"]))
+    learning.apply_digest(conn_factory, now=clock.now())
+    new = db.one(conn, "SELECT keywords, approved_at FROM role_profile WHERE code = %s ORDER BY id DESC LIMIT 1",
+                 (prof["code"],))
+    assert "FPGA" in new["keywords"] and new["approved_at"] is None

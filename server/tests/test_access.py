@@ -80,3 +80,20 @@ def test_s4_no_access(conn, api):
     r = c.get("/api/me")
     assert r.status_code == 403 and r.json()["error"] == "no_access"
     assert c.get("/api/base").status_code == 403
+
+
+def test_code_login_no_access_and_sessions_revoked(conn, api, clock):
+    from hr import auth
+    c, h, _ = api("head_recruiter")
+    mid = user(conn, "boss3", "hiring_manager")
+    old_cookie, _ = auth.create_session(conn, mid, clock.now())
+    code = c.post(f"/api/access/user/{mid}/code", headers=h).json()["code"]
+    anon, _, _ = api("recruiter", login="x3")
+    anon.cookies.clear()
+    db.run(conn, "UPDATE app_user SET role = 'no_access' WHERE id = %s", (mid,))
+    assert anon.post("/api/login/code", json={"login": "boss3", "code": code, "password": "новыйпароль"},
+                     headers=ORIGIN).status_code == 401
+    db.run(conn, "UPDATE app_user SET role = 'hiring_manager' WHERE id = %s", (mid,))
+    assert anon.post("/api/login/code", json={"login": "boss3", "code": code, "password": "новыйпароль"},
+                     headers=ORIGIN).status_code == 200
+    assert auth.load_session(conn, old_cookie, clock.now()) is None

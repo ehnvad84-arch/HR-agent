@@ -145,7 +145,8 @@ def login_by_code(conn: psycopg.Connection, login: str, code: str, password: str
     """S3: id при верном живом коде — пароль сохранён хешем, код погашен. None — любой отказ (M3).
     После login_max_failures ошибок подряд по коду — auth.LoginLocked."""
     hashed = auth._hash_password(password)   # PasswordError до проверки кода: короткий пароль не тратит попытку
-    c = one(conn, """SELECT c.id, c.user_id, c.code_hash, c.expires_at, c.failed_count, c.locked_until, u.is_active
+    c = one(conn, """SELECT c.id, c.user_id, c.code_hash, c.expires_at, c.failed_count, c.locked_until,
+                            u.is_active AND u.role::text <> 'no_access' AS is_active
                      FROM app_user u JOIN ops.invite_code c ON c.user_id = u.id
                      WHERE lower(u.login) = lower(%s) AND c.used_at IS NULL AND c.revoked_at IS NULL
                      FOR UPDATE OF c""", (login.strip(),))
@@ -163,6 +164,8 @@ def login_by_code(conn: psycopg.Connection, login: str, code: str, password: str
             (failed, lock, c["id"]))
         return None
     run(conn, "UPDATE ops.invite_code SET used_at = %s WHERE id = %s", (now, c["id"]))
+    run(conn, "UPDATE ops.web_session SET revoked_at = %s WHERE user_id = %s AND revoked_at IS NULL",
+        (now, c["user_id"]))   # новый пароль по коду — прежние сессии больше не действуют
     run(conn, """INSERT INTO ops.user_password (user_id, hash) VALUES (%s, %s)
                  ON CONFLICT (user_id) DO UPDATE SET hash = EXCLUDED.hash, changed_at = now(),
                      failed_count = 0, locked_until = NULL""", (c["user_id"], hashed))

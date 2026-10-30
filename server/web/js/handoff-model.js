@@ -38,7 +38,7 @@ export function handoffBadge(handoff) {
   if (handoff.state === "rejected") return { text: "отклонён отделом персонала", tone: "r", reason: handoff.reject_reason || "" };
   if (handoff.state === "taken") {
     if (handoff.stage === "hired") return { text: "вышел на работу", tone: "g", reason: "" };
-    if (REFUSED.has(handoff.stage)) return { text: "отказ", tone: "r", reason: handoff.reject_reason || "" };
+    if (REFUSED.has(handoff.stage)) return { text: "отказ", tone: "r", reason: handoff.candidate_reason || handoff.reject_reason || "" };
     if (JUST_TAKEN.has(handoff.stage)) return { text: `в работе у ${who ? genitive(who) : "отдела персонала"}`, tone: "g", reason: "" };
     return { text: `этап: ${String(handoff.stage_title || handoff.stage).toLowerCase()}`, tone: "v", reason: "" };
   }

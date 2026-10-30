@@ -20,6 +20,8 @@ test("S10: «передан» → «в работе у …» → этап вор
     { text: "отказ", tone: "r", reason: "Не подошёл по опыту" });
   assert.deepEqual(handoffBadge(H({ state: "taken", stage: "rejected_by_candidate", reject_reason: "Ушёл к другому работодателю" })).reason, "Ушёл к другому работодателю");
   assert.deepEqual(handoffBadge(H({ state: "taken", stage: "no_show", stage_title: "Не пришёл" })), { text: "отказ", tone: "r", reason: "" });
+  // причина отказа кандидата (candidate.reject_reason) важнее причины передачи
+  assert.equal(handoffBadge(H({ state: "taken", stage: "rejected_by_candidate", candidate_reason: "Выбрал другое" })).reason, "Выбрал другое");
 });
 
 test("S11: отклонено отделом персонала — причина строкой под бейджем", () => {

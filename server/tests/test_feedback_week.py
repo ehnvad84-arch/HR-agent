@@ -52,3 +52,25 @@ def test_sends_to_telegram_or_notes_no_channel(conn, conn_factory, clock, monkey
 def test_chunks_split_long_text():
     parts = telegram.chunks("строка\n" * 1500)
     assert len(parts) > 1 and all(len(p) <= telegram.LIMIT for p in parts)
+
+
+def test_telegram_error_hides_token_and_mail_still_tried(conn, conn_factory, clock, monkeypatch):
+    from hr import mailer
+    a = db.val(conn, "INSERT INTO app_user (login, full_name, role) VALUES ('a', 'А', 'recruiter') RETURNING id")
+    add(conn, a, "remark", REC, clock)
+    monkeypatch.setenv("FEEDBACK_TG_TOKEN", "SECRET123:tok")
+    monkeypatch.setenv("FEEDBACK_TG_CHAT", "42")
+    config.get_config.cache_clear()
+    tried = []
+    monkeypatch.setattr(mailer, "send", lambda *a, **k: tried.append(1) or [])
+
+    def boom(req):
+        raise httpx.ConnectError("fail https://api.telegram.org/botSECRET123:tok/sendMessage")
+
+    st = learning.feedback_week(conn_factory, clock=clock, http=httpx.Client(transport=httpx.MockTransport(boom)))
+    assert tried and st.note == "отправлено: почта"
+    try:
+        telegram.send("x", http=httpx.Client(transport=httpx.MockTransport(boom)))
+    except Exception as e:  # noqa: BLE001
+        assert "SECRET123" not in str(e)
+    config.get_config.cache_clear()

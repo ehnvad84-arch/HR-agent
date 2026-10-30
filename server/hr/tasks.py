@@ -17,6 +17,7 @@ from . import (
     pipeline,
     search,
     social,
+    staff_1c,
     tweaks,
 )
 from .clock import SYSTEM, Clock
@@ -74,6 +75,7 @@ TASKS: dict[str, Task] = {
     "user_rescore": Task(tweaks.user_rescore),
     "load_watchdog": Task(load_check.load_watchdog),
     "feedback_week": Task(learning.feedback_week),
+    "staff_sync": Task(staff_1c.sync_task),
 }
 
 

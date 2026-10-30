@@ -118,12 +118,19 @@ def manager_today(conn: psycopg.Connection, sc, now: datetime) -> dict:
 
 
 def for_manager(d: dict, sc) -> dict:
-    """Досье руководителю (M2): только баллы его должностей, без ссылок на резюме площадки, следов в сети и
-    решений отдела персонала — через них выходят на человека в обход отдела персонала."""
+    """Досье руководителю (M2): только баллы его должностей, без ссылок на резюме площадки, следов в сети,
+    решений отдела персонала и версий резюме; в свободном тексте («О себе», описания мест работы) телефоны,
+    почта и ссылки скрыты — через них выходят на человека в обход отдела персонала."""
+    from .learning import strip_contacts
     d["matches"] = [m for m in d["matches"] if sc.code_ok(m["role_code"])]
     for o in d["observations"]:
         o.pop("url", None)
-    for k in ("social", "decisions"):
+        if o.get("about"):
+            o["about"] = strip_contacts(o["about"])
+        for e in o.get("experience") or []:
+            if e.get("description"):
+                e["description"] = strip_contacts(e["description"])
+    for k in ("social", "decisions", "versions"):
         d.pop(k, None)
     return d
 

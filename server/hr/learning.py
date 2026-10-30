@@ -51,6 +51,11 @@ def _known_names(conn) -> set[str]:
     return words
 
 
+def strip_contacts(text: str) -> str:
+    """Только контакты: телефоны, почта, ссылки (досье руководителю, тексты наружу)."""
+    return _URL.sub("[ссылка]", _EMAIL.sub("[почта]", _PHONE.sub("[телефон]", text)))
+
+
 def mask(conn, text: str) -> tuple[str, bool]:
     """(текст без контактов и имён, уверены ли, что имён не осталось)."""
     out = _URL.sub("[ссылка]", _EMAIL.sub("[почта]", _PHONE.sub("[телефон]", text)))
@@ -127,7 +132,8 @@ def safe_target(conn, target: object) -> dict:
         lo, hi = SETTING_BOUNDS[target["setting"]]
         v = target["value"]
         return {"setting": target["setting"], "value": v} if isinstance(v, int) and lo <= v <= hi else {}
-    if set(target) == {"tweak", "profile_code"} and isinstance(target["tweak"], dict):   # S16
+    if set(target) in ({"tweak", "profile_code"}, {"tweak", "profile_code", "profile_codes"}) \
+            and isinstance(target["tweak"], dict):   # S16
         from . import tweaks
         t = target["tweak"]
         try:
@@ -138,7 +144,10 @@ def safe_target(conn, target: object) -> dict:
         if code is not None and not val(conn, "SELECT 1 FROM role_profile WHERE code = %s AND approved_at IS NOT NULL",
                                         (code,)):
             return {}
-        return {"tweak": {"kind": t["kind"], "value": v, "key": tweaks.key(t["kind"], v)}, "profile_code": code}
+        codes = [c for c in (target.get("profile_codes") or []) if isinstance(c, str)
+                 and val(conn, "SELECT 1 FROM role_profile WHERE code = %s AND approved_at IS NOT NULL", (c,))]
+        return {"tweak": {"kind": t["kind"], "value": v, "key": tweaks.key(t["kind"], v)}, "profile_code": code,
+                "profile_codes": codes}
     if set(target) == {"profile_code", "feature", "value"}:
         v = target["value"]
         exists = val(conn, "SELECT 1 FROM role_profile WHERE code = %s AND approved_at IS NOT NULL",
@@ -183,7 +192,7 @@ def build_digest(conn_factory: ConnFactory, now: datetime, *, http: httpx.Client
                      f"Одна и та же личная поправка у {len(g['users'])} сотрудников.",
                      "Принять — появится версия портрета на утверждение?",
                      j({"tweak": {"kind": g["kind"], "value": g["value"], "key": g["key"]},
-                        "profile_code": g["role_code"]})))
+                        "profile_code": g["role_code"], "profile_codes": g["codes"]})))
                 stats.new += 1
         if not msgs:
             stats.note = "новых сообщений нет"
@@ -277,7 +286,8 @@ def apply_digest(conn_factory: ConnFactory, *, now: datetime | None = None, cloc
                              VALUES (%s, 'threshold', %s, %s, %s, %s, %s)""",
                     (p["id"], j({"setting": t["setting"], "value": before}), j(t), p["decided_by"], now, note))
             elif "tweak" in t:   # S16: общая поправка — версия портрета «ждёт утверждения», не сразу в выдачу
-                tw, codes = t["tweak"], ([t["profile_code"]] if t["profile_code"] else [])
+                tw = t["tweak"]
+                codes = [t["profile_code"]] if t["profile_code"] else t.get("profile_codes", [])
                 for code in codes:
                     cur = one(conn, """SELECT * FROM role_profile WHERE code = %s AND approved_at IS NOT NULL
                                        ORDER BY approved_at DESC, id DESC LIMIT 1""", (code,))
@@ -295,7 +305,8 @@ def apply_digest(conn_factory: ConnFactory, *, now: datetime | None = None, cloc
                 run(conn, """INSERT INTO agent_change (proposal_id, kind, before, after, applied_by, applied_at, note)
                              VALUES (%s, 'profile', NULL, %s, %s, %s, %s)""",
                     (p["id"], j(t), p["decided_by"], now,
-                     note + ("" if codes else " — поправка на все должности: внесите в нужные портреты вручную")))
+                     note + (f" — версии портретов на утверждение: {len(codes)}" if codes
+                             else " — должностей у авторов нет, портреты не менялись")))
             elif "profile_code" in t:
                 cur = one(conn, """SELECT id, weights FROM role_profile WHERE code = %s AND approved_at IS NOT NULL
                                    ORDER BY approved_at DESC, id DESC LIMIT 1""", (t["profile_code"],))
@@ -338,7 +349,7 @@ def week_text(conn, now: datetime, days: int = 7) -> tuple[str, int]:
     props = rows(conn, """SELECT title FROM digest_proposal WHERE decision IS NULL ORDER BY id DESC LIMIT 10""")
     if props:
         lines.append("\nПредложения агента ждут решения:")
-        lines += [f"• {p['title']}" for p in props]
+        lines += [f"• {_FIO_LIKE.sub('[имя]', mask(conn, p['title'])[0])}" for p in props]
     return "\n".join(lines), len(msgs)
 
 
@@ -352,8 +363,11 @@ def feedback_week(conn_factory: ConnFactory, *, clock=None, http: httpx.Client |
     stats.seen = n
     sent = []
     if telegram.configured():
-        telegram.send(text, http=http)
-        sent.append("Телеграм")
+        try:
+            telegram.send(text, http=http)
+            sent.append("Телеграм")
+        except JobError as e:   # Телеграм не ответил — письмо всё равно уходит
+            log.info("сводка замечаний в Телеграм не ушла: %s", e)
     try:
         mailer.send("Замечания сотрудников за неделю", text + f"\n\n{mailer._link()}")
         sent.append("почта")

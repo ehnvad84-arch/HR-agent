@@ -4,7 +4,7 @@
 # Службы — systemd пользователя (без root): ruware-pg, ruware-portal, таймеры ruware-hh-daily и ruware-trudvsem.
 # Ключи читаются из server/.env и ~/.config/ruware-hr/session_key при старте службы, в файлы служб не копируются.
 # Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer ruware-trudvsem.timer \
-#               ruware-load-watchdog.timer ruware-feedback-week.timer
+#               ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer
 set -euo pipefail
 
 APP="$HOME/projects/HR-agent/server"
@@ -131,6 +131,29 @@ Description=Рувер: сводка замечаний по пятницам в
 
 [Timer]
 OnCalendar=Fri *-*-* 18:30:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+cat > "$UNITS/ruware-staff-sync.service" <<EOF
+[Unit]
+Description=Рувер: выгрузка сотрудников 1С — роли и увольнения (S1)
+After=ruware-pg.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP
+ExecStart=/bin/bash -c '$ENV_LOAD; exec .venv/bin/python -m hr.cli run staff_sync'
+EOF
+
+cat > "$UNITS/ruware-staff-sync.timer" <<EOF
+[Unit]
+Description=Рувер: выгрузка сотрудников 1С каждый день в 06:10 по Москве
+
+[Timer]
+OnCalendar=*-*-* 06:10:00 Europe/Moscow
 Persistent=true
 
 [Install]

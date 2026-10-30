@@ -8,7 +8,7 @@ from __future__ import annotations
 import httpx
 
 from .config import get_config
-from .jobs import JobNotConfigured
+from .jobs import JobError, JobNotConfigured
 
 LIMIT = 4000
 
@@ -42,9 +42,13 @@ def send(text: str, http: httpx.Client | None = None) -> int:
     try:
         parts = chunks(text)
         for p in parts:
-            r = http.post(f"{c.telegram_api}/bot{c.feedback_tg_token}/sendMessage",
-                          json={"chat_id": c.feedback_tg_chat, "text": p, "disable_web_page_preview": True})
-            r.raise_for_status()
+            try:
+                r = http.post(f"{c.telegram_api}/bot{c.feedback_tg_token}/sendMessage",
+                              json={"chat_id": c.feedback_tg_chat, "text": p, "disable_web_page_preview": True})
+            except httpx.HTTPError as e:   # в тексте исключения адрес с токеном — наружу только класс
+                raise JobError(f"Телеграм не ответил: {type(e).__name__}") from None
+            if r.status_code >= 400:
+                raise JobError(f"Телеграм ответил ошибкой {r.status_code}")
         return len(parts)
     finally:
         if own:

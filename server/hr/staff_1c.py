@@ -188,3 +188,30 @@ def reject(conn: psycopg.Connection, data: bytes, file_name: str, error: str, no
                  ON CONFLICT (sha256) DO UPDATE SET state = 'rejected', error = EXCLUDED.error,
                      received_at = EXCLUDED.received_at
                  WHERE ops.user_sync.state <> 'applied'""", (file_name, sha, now, now, error[:500]))
+
+
+def sync_task(conn_factory, *, clock=None, **_):
+    """Задача staff_sync (каждый день 06:10 МСК, S1, M5): свежий employees_*.json обменного каталога."""
+    from .clock import SYSTEM
+    from .config import get_config
+    from .jobs import JobStats
+    stats = JobStats()
+    now = (clock or SYSTEM).now()
+    try:
+        f = latest_file(get_config().exchange_1c_dir)
+    except NotFound:
+        stats.note = "выгрузки сотрудников в обменном каталоге нет"
+        return stats
+    data = f.read_bytes()
+    try:
+        with conn_factory() as conn:
+            r = apply(conn, data, f.name, None, now)
+    except Invalid as e:
+        with conn_factory() as conn:
+            reject(conn, data, f.name, str(e), now)
+        stats.errors, stats.note = 1, f"выгрузка не применена: {e}"
+        return stats
+    stats.seen = 1
+    stats.new, stats.changed = r.get("new", 0), r.get("changed", 0) + r.get("fired", 0)
+    stats.note = "та же выгрузка" if r["state"] == "same" else f"уволено {r['fired']}"
+    return stats

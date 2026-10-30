@@ -81,6 +81,7 @@ _LIST = """
     SELECT h.id, h.person_id, h.vacancy_id, v.title AS vacancy_title, h.comment, h.state, h.created_at,
            h.decided_at, h.reject_reason, h.candidate_id, f.full_name AS from_user, fu.title AS from_unit,
            r.full_name AS recruiter, d.full_name AS decided_by, c.status::text AS stage,
+           c.reject_reason AS candidate_reason,
            (SELECT max(m.score) FROM match m JOIN role_profile x ON x.id = m.role_profile_id
              JOIN role_profile vp ON vp.code = x.code WHERE m.person_id = h.person_id AND vp.id = v.role_profile_id)
              AS score
@@ -104,8 +105,9 @@ def mine(conn: psycopg.Connection, user_id: int) -> list[dict]:
     """S10: судьба переданных руководителем. В причине отказа телефоны, почта и ссылки скрыты (M2)."""
     items = _decorate(conn, rows(conn, _LIST.format(where="h.from_user = %s"), (user_id,)))
     for h in items:
-        if h["reject_reason"]:
-            h["reject_reason"] = learning.mask(conn, h["reject_reason"])[0]
+        for k in ("reject_reason", "candidate_reason"):
+            if h.get(k):
+                h[k] = learning.mask(conn, h[k])[0]
     return items
 
 
