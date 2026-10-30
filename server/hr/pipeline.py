@@ -199,6 +199,8 @@ def rescore_person(conn: psycopg.Connection, person_id: int, profiles: list[dict
                     model = 'template', scored_at = now()""",
                 (person_id, pr["id"], pr["version"], s.score, j(s.features), text))
         out.append({"profile": pr, "score": s.score, "prev": prev["score"] if prev else None, "s": s})
+    from . import tweaks  # tweaks считает «мой балл» через этот модуль — импорт здесь, без цикла
+    tweaks.rescore_person_all(conn, person_id)
     return out
 
 

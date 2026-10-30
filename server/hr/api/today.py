@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from .. import auth, handoff, scope, views
+from .. import auth, handoff, scope, tweaks, views
 from ..clock import Clock
 from ..db import ConnFactory
 from ..deps import get_clock, get_conn_factory
@@ -23,9 +23,11 @@ def today(us: Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scop
             out = views.today(conn, clock.now())
             if "handoff.review" in user.permissions:   # S11: «Передали руководители» — первым блоком
                 out["handoffs"] = handoff.inbox(conn, user.id, "handoff.all" in user.permissions)
+            tweaks.attach_my(conn, user.id, out["signals"])
             return out
         out = views.manager_today(conn, sc, clock.now())
         out["handoffs"] = handoff.mine(conn, user.id)
+        tweaks.attach_my(conn, user.id, out["signals"])
         return out
 
 

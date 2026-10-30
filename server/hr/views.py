@@ -196,11 +196,13 @@ CURRENT = """SELECT DISTINCT ON (x.code) x.id FROM role_profile x
              ORDER BY x.code, x.approved_at DESC, x.id DESC"""
 
 SORTS = {"name": "name", "city": "city", "role": "role_title", "dept": "dept", "score": "score", "where": "where_",
-         "source": "sources", "socn": "socn", "upd": "updated"}
+         "source": "sources", "socn": "socn", "upd": "updated",
+         "my": "my_score"}
 
 _BASE = """
 WITH best AS (
-    SELECT DISTINCT ON (m.person_id) m.person_id, m.score, rp.code AS role_code, rp.title AS role_title,
+    SELECT DISTINCT ON (m.person_id) m.person_id, m.score, rp.id AS role_profile_id, rp.code AS role_code,
+           rp.title AS role_title,
            d.code AS dept_code, d.title AS dept
     FROM match m JOIN role_profile rp ON rp.id = m.role_profile_id JOIN department d ON d.id = rp.department_id
     WHERE (%(code)s::text IS NULL OR rp.code = %(code)s) AND rp.id IN (CURRENT)
@@ -216,7 +218,9 @@ WITH best AS (
            (SELECT count(*) FROM social_profile sp WHERE sp.person_id = p.id AND sp.confidence <> 'rejected') AS socn,
            EXISTS (SELECT 1 FROM ops.person_photo ph JOIN observation o ON o.id = ph.observation_id
                    WHERE o.person_id = p.id AND ph.state = 'ok') AS photo,
-           b.score, b.role_code, b.role_title, b.dept_code, b.dept
+           b.score, b.role_profile_id, b.role_code, b.role_title, b.dept_code, b.dept,
+           (SELECT um.score FROM ops.user_match um WHERE um.user_id = %(me)s AND um.person_id = p.id
+              AND um.role_profile_id = b.role_profile_id) AS my_score
     FROM person p LEFT JOIN candidate c ON c.id = p.candidate_id
     {join} best b ON b.person_id = p.id
     WHERE (%(code)s::text IS NULL OR (p.watch <> 'dropped' AND NOT EXISTS (
@@ -235,7 +239,7 @@ LIMIT %(limit)s OFFSET %(offset)s"""
 
 
 def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min=None, where=None, source=None,
-         sort="score", direction="desc", page=0, role_code=None, codes=None) -> dict:
+         sort="score", direction="desc", page=0, role_code=None, codes=None, me=None) -> dict:
     """S19, S22: таблица людей. Сортировка — только по колонкам из SORTS (имя колонки в SQL не из запроса).
     role_code — подходящие к вакансии: только оценки по этому профилю, без «не наш» по нему и без dropped."""
     if sort not in SORTS or direction not in ("asc", "desc"):
@@ -246,7 +250,7 @@ def base(conn: psycopg.Connection, *, dept=None, city=None, role=None, score_min
                                                              else "LEFT JOIN",
                                                              order=SORTS[sort], dir=direction)
     items = rows(conn, sql, {"code": role_code, "codes": list(codes) if codes is not None else None,
-                             "dept": dept, "city": city, "role": role, "score_min": score_min,
+                             "me": me, "dept": dept, "city": city, "role": role, "score_min": score_min,
                              "where": where, "source": source, "limit": size, "offset": max(page, 0) * size})
     total = items[0]["total"] if items else 0
     for r in items:

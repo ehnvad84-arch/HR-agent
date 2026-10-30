@@ -103,6 +103,10 @@ class Profile:
         self.nice_to_have += _reqs(c.get("nice_to_have"))
         self.stop_factors += _reqs(c.get("stop_factors"))
         self.keywords += [k for k in c.get("keywords", []) if k not in self.keywords]
+        minus = {m.lower() for m in c.get("keywords_minus", [])}   # личное «не в счёт» (manager-cabinet S15)
+        if minus:
+            self.keywords = [k for k in self.keywords if k.lower() not in minus]
+            self.nice_to_have = [r for r in self.nice_to_have if str(r.get("text", "")).lower() not in minus]
         self.weights.update(c.get("weights", {}))
         self.salary_min = c.get("salary_min") or self.salary_min
         self.salary_max = c.get("salary_max") or self.salary_max

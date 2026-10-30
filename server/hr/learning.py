@@ -73,6 +73,8 @@ def post(conn_factory: ConnFactory, user_id: int, body: str, tag: str, now: date
                            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
                   (user_id, tag, body, person_id, role_profile_id, now))
         masked, sure = mask(conn, body)
+        from . import tweaks  # предложения личных поправок по тексту замечания — только proposed (S15, A1)
+        tweaks.suggest(conn, user_id, fid, body, now)
         use_model = get_config().llm_enabled and sure and not assist._over_hourly_cap(conn)
         pause = float(setting(conn, "llm_pause_minutes", 60))
     reply, by = TEMPLATE_REPLY.get(tag, DEFAULT_REPLY), "template"
@@ -96,13 +98,15 @@ def post(conn_factory: ConnFactory, user_id: int, body: str, tag: str, now: date
     return {"id": fid, "reply": reply, "by": by}
 
 
-def feed(conn, limit: int = 100) -> list[dict]:
+def feed(conn, author_id: int | None = None, limit: int = 100) -> list[dict]:
+    """S14: каждый видит только свой чат; author_id None — все (недельная сводка, S21)."""
     return rows(conn, """
         SELECT f.id, f.tag::text AS tag, f.body, f.created_at, f.digest_id, u.full_name AS author,
                r.body AS reply, r.by AS reply_by
         FROM feedback_message f JOIN app_user u ON u.id = f.author_id
         LEFT JOIN ops.feedback_reply r ON r.feedback_id = f.id
-        ORDER BY f.created_at DESC, f.id DESC LIMIT %s""", (limit,))
+        WHERE %s::int IS NULL OR f.author_id = %s
+        ORDER BY f.created_at DESC, f.id DESC LIMIT %s""", (author_id, author_id, limit))
 
 
 
@@ -123,6 +127,18 @@ def safe_target(conn, target: object) -> dict:
         lo, hi = SETTING_BOUNDS[target["setting"]]
         v = target["value"]
         return {"setting": target["setting"], "value": v} if isinstance(v, int) and lo <= v <= hi else {}
+    if set(target) == {"tweak", "profile_code"} and isinstance(target["tweak"], dict):   # S16
+        from . import tweaks
+        t = target["tweak"]
+        try:
+            v = tweaks.clean(t.get("kind"), t.get("value"))
+        except tweaks.Invalid:
+            return {}
+        code = target["profile_code"]
+        if code is not None and not val(conn, "SELECT 1 FROM role_profile WHERE code = %s AND approved_at IS NOT NULL",
+                                        (code,)):
+            return {}
+        return {"tweak": {"kind": t["kind"], "value": v, "key": tweaks.key(t["kind"], v)}, "profile_code": code}
     if set(target) == {"profile_code", "feature", "value"}:
         v = target["value"]
         exists = val(conn, "SELECT 1 FROM role_profile WHERE code = %s AND approved_at IS NOT NULL",
@@ -153,6 +169,22 @@ def build_digest(conn_factory: ConnFactory, now: datetime, *, http: httpx.Client
     with conn_factory() as conn:
         msgs = rows(conn, """SELECT id, tag::text AS tag, body, created_at FROM feedback_message
                              WHERE digest_id IS NULL ORDER BY created_at""")
+        from . import tweaks
+        common = tweaks.shared(conn)
+        if common:   # S16: одинаковые личные поправки у нескольких — предложение сделать их общими
+            did0 = val(conn, """INSERT INTO feedback_digest (period_from, period_to, messages) VALUES (%s, %s, 0)
+                                ON CONFLICT (period_from, period_to) DO UPDATE SET messages = feedback_digest.messages
+                                RETURNING id""", (now.date(), now.date()))
+            for g in common:
+                what = g["value"].get("text") or f"{FEATURE_LABELS[g['value']['feature']]} = {g['value']['weight']}"
+                run(conn, """INSERT INTO digest_proposal (digest_id, title, rationale, question, target)
+                             VALUES (%s, %s, %s, %s, %s)""",
+                    (did0, f"Сделать общей поправку «{what}» ({g['kind']})"[:300],
+                     f"Одна и та же личная поправка у {len(g['users'])} сотрудников.",
+                     "Принять — появится версия портрета на утверждение?",
+                     j({"tweak": {"kind": g["kind"], "value": g["value"], "key": g["key"]},
+                        "profile_code": g["role_code"]})))
+                stats.new += 1
         if not msgs:
             stats.note = "новых сообщений нет"
             return stats
@@ -244,6 +276,26 @@ def apply_digest(conn_factory: ConnFactory, *, now: datetime | None = None, cloc
                 run(conn, """INSERT INTO agent_change (proposal_id, kind, before, after, applied_by, applied_at, note)
                              VALUES (%s, 'threshold', %s, %s, %s, %s, %s)""",
                     (p["id"], j({"setting": t["setting"], "value": before}), j(t), p["decided_by"], now, note))
+            elif "tweak" in t:   # S16: общая поправка — версия портрета «ждёт утверждения», не сразу в выдачу
+                tw, codes = t["tweak"], ([t["profile_code"]] if t["profile_code"] else [])
+                for code in codes:
+                    cur = one(conn, """SELECT * FROM role_profile WHERE code = %s AND approved_at IS NOT NULL
+                                       ORDER BY approved_at DESC, id DESC LIMIT 1""", (code,))
+                    ch: dict = {}
+                    v = tw["value"]
+                    if tw["kind"] == "plus":
+                        ch["keywords"] = list(dict.fromkeys([*cur["keywords"], v["text"]]))
+                    elif tw["kind"] == "minus":
+                        ch["keywords"] = [k for k in cur["keywords"] if k.lower() != v["text"].lower()]
+                    elif tw["kind"] == "stop":
+                        ch["stop_factors"] = [*cur["stop_factors"], {"text": v["text"]}]
+                    else:
+                        ch["weights"] = {**(cur["weights"] or {}), v["feature"]: v["weight"]}
+                    profiles.edit(conn, cur["id"], ch, p["decided_by"], now)
+                run(conn, """INSERT INTO agent_change (proposal_id, kind, before, after, applied_by, applied_at, note)
+                             VALUES (%s, 'profile', NULL, %s, %s, %s, %s)""",
+                    (p["id"], j(t), p["decided_by"], now,
+                     note + ("" if codes else " — поправка на все должности: внесите в нужные портреты вручную")))
             elif "profile_code" in t:
                 cur = one(conn, """SELECT id, weights FROM role_profile WHERE code = %s AND approved_at IS NOT NULL
                                    ORDER BY approved_at DESC, id DESC LIMIT 1""", (t["profile_code"],))

@@ -30,13 +30,13 @@ def base(user: Reader, conn_factory: Conn, dept: str | None = None, city: str | 
         with conn_factory() as conn:
             return views.base(conn, dept=dept, city=city, role=role, score_min=score_min, where=where,
                               source=source, sort=sort, direction=dir, page=page, role_code=fit or None,
-                              codes=None if sc.all else sc.codes)
+                              codes=None if sc.all else sc.codes, me=user[0].id)
     except ValueError:
         raise BAD_SORT from None
 
 
 def _matching(vacancy_id: int, conn_factory, sort: str, dir: str, page: int, city: str | None,
-              score_min: int | None, sc: scope.Scope) -> dict:
+              score_min: int | None, sc: scope.Scope, me: int | None = None) -> dict:
     if not sc.vacancy_ok(vacancy_id):
         raise HTTPException(404, NOT_FOUND)
     try:
@@ -47,7 +47,7 @@ def _matching(vacancy_id: int, conn_factory, sort: str, dir: str, page: int, cit
                 raise HTTPException(404, NOT_FOUND)
             floor = score_min if score_min is not None else int(setting(conn, "watch_threshold", 60))
             out = views.base(conn, role_code=v["code"], sort=sort, direction=dir, page=page, city=city,
-                             score_min=floor)
+                             score_min=floor, me=me)
     except ValueError:
         raise BAD_SORT from None
     return {"vacancy": {"id": v["id"], "title": v["title"]}, **out}
@@ -57,13 +57,13 @@ def _matching(vacancy_id: int, conn_factory, sort: str, dir: str, page: int, cit
 def matching(vacancy_id: int, user: Reader, conn_factory: Conn, sort: str = "score", dir: str = "desc",
              page: int = 0, city: str | None = None, score_min: int | None = None):
     """S22: «Показать подходящих» — фильтры вакансии, по убыванию балла."""
-    return _matching(vacancy_id, conn_factory, sort, dir, page, city, score_min, user[1])
+    return _matching(vacancy_id, conn_factory, sort, dir, page, city, score_min, user[1], user[0].id)
 
 
 @router.get("/api/vacancy/{vacancy_id}/candidates")
 def candidates(vacancy_id: int, user: Reader, conn_factory: Conn, page: int = 0):
     """Подходящие из накопленной базы — те же, что «Показать подходящих», порог — watch_threshold."""
-    return _matching(vacancy_id, conn_factory, "score", "desc", page, None, None, user[1])
+    return _matching(vacancy_id, conn_factory, "score", "desc", page, None, None, user[1], user[0].id)
 
 
 @router.get("/api/search")

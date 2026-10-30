@@ -28,7 +28,7 @@ class FeedbackIn(BaseModel):
 def feed(us: Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped("base.read"))],
          conn_factory: Conn):
     with conn_factory() as conn:
-        return {"items": learning.feed(conn)}
+        return {"items": learning.feed(conn, us[0].id)}
 
 
 @router.post("/api/feedback")
