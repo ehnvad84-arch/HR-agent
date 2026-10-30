@@ -4,6 +4,8 @@ import { actBtn, actionCard, perform } from "../cards.js";
 import { h, mount } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
 import { blockedSheet, contactSheet, quietDecline } from "../contact-ui.js";
+import { expectCollect } from "../hh-load-model.js";
+import { loadResumesButton } from "../hh-load.js";
 import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
 import { TOASTS, resultText, takenText } from "../decisions-model.js";
 import { openDecisionSheet, takePerson } from "../decisions.js";
@@ -198,13 +200,21 @@ function zone(num, tone, cls, title, cards, emptyText) {
 
 // ------------------------------------------------------------------ экран
 
+/** «Загрузить резюме HH.ru» над блоками — только с правом settings.edit; после запуска ход виден на «Схеме». */
+function loadBar(env) {
+  const button = loadResumesButton({ api: env.api, signal: env.signal, session: env.session, variant: "fill",
+    onStarted: () => { expectCollect(); env.go("arch"); } });
+  return button ? h("div.loadbar", button, h("span.hint", "Скачать полные резюме с hh вручную, в пределах дневного лимита просмотров")) : null;
+}
+
 export function view(data, env) {
   if (data.empty) {
-    return h("div.card.empty", h("div.t1", "Сегодня всё разобрано"),
-      h("div.btns", h("a.link", { href: hashFor("base") }, "Открыть «Базу»")));
+    return [loadBar(env), h("div.card.empty", h("div.t1", "Сегодня всё разобрано"),
+      h("div.btns", h("a.link", { href: hashFor("base") }, "Открыть «Базу»")))];
   }
   const cardEnv = { ...env, followUpQueued: data.followUpQueued };
   return [
+    loadBar(env),
     zone("1", "g", "z1", "Обратите внимание — новые и изменившиеся люди", data.signals.map((r) => signalCard(r, cardEnv)),
       "Новых сигналов нет"),
     zone("2", "o", "z2", "Ждут подтверждения — агент подготовил, решаете вы", data.actions.map((r) => approvalCard(r, cardEnv)), "Ничего не ждёт"),

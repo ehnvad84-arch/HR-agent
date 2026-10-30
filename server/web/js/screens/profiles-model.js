@@ -67,6 +67,38 @@ export function defaultWeights(deptCode) {
 }
 export const weightSum = (weights) => Object.values(weights || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
 
+// ------------------------------------------------------------------ портрет: где чей вес
+
+/** Признаки, у которых в портрете есть своё поле: вес стоит рядом с ним. Ключ — признак, значение — поле. */
+export const FEATURE_FIELDS = { keywords: "keywords", donor_company: "donors", geo: "geo", salary: "salary" };
+/** Признаки без своего поля: агент считает их по резюме сам, правится только вес («Ещё признаки»). */
+export const EXTRA_FEATURES = FEATURES.map(([key]) => key).filter((key) => !(key in FEATURE_FIELDS));
+const EXTRA_HINTS = {
+  exp_years: "Сколько лет человек работает по этому профилю. Планка берётся из условия «опыт от N лет» в обязательных требованиях.",
+  title_match: "Насколько должности из резюме похожи на название этой должности.",
+  tenure: "Как долго человек держится на местах работы: частые смены снижают оценку.",
+  open_code: "Подтверждённый профиль с открытым кодом. Важен для инженерных и программных должностей.",
+};
+export const featureLabel = (key) => (FEATURES.find(([code]) => code === key) || [key, String(key)])[1];
+/** [[код, подпись, пояснение]] для блока «Ещё признаки». */
+export const extraFeatures = () => EXTRA_FEATURES.map((key) => [key, featureLabel(key), EXTRA_HINTS[key]]);
+
+/** Доля признака в сумме весов, целых процентов: для мини-полоски у веса. Сумма 0 — доли нет. */
+export function weightShare(weights, key) {
+  const total = weightSum(weights);
+  const own = Number((weights || {})[key]) || 0;
+  return total > 0 ? Math.round((own / total) * 100) : 0;
+}
+
+export const WEIGHT_STEP = 5;
+/** Шаг степпера «− 20 +»: на 5 вверх или вниз в пределах 0…100; пусто и мусор считаются нулём. */
+export function stepWeight(text, direction) {
+  const n = /^\d+$/.test(String(text ?? "").trim()) ? Number(String(text).trim()) : 0;
+  return String(Math.min(100, Math.max(0, n + (direction > 0 ? WEIGHT_STEP : -WEIGHT_STEP))));
+}
+
+export const weightSumText = (total) => `Сумма весов: ${total} — сервер приводит к 100`;
+
 // ------------------------------------------------------------------ форма
 
 export function formFromProfile(profile) {

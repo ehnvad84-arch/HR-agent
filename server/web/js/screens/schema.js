@@ -4,7 +4,6 @@
 import { h, mount } from "../dom.js";
 import { timeLabel } from "../format.js";
 import { EXPECT_MS, takeExpectation } from "../hh-load-model.js";
-import { loadResumesButton } from "../hh-load.js";
 import { chip } from "../people.js";
 import { mountAsync, toast } from "../ui.js";
 import { countTiles, hasRunning, jobRows, runChanged } from "./schema-model.js";
@@ -40,10 +39,8 @@ export function render(box, ctx) {
     const tbody = h("tbody");
     const updated = h("span.hint");
 
-    let lastJobs = data.jobs;
     const draw = (fresh) => {
       const now = new Date();
-      lastJobs = fresh.jobs;
       mount(tilesBox, countTiles(fresh.counts).map((tile) => h("div.livecount", { "data-tip": `schema-${tile.key}` },
         h("div.n", tile.value), h("div.l", tile.label))));
       mount(svgBox, schemeSvg(fresh.counts));
@@ -74,19 +71,15 @@ export function render(box, ctx) {
     };
     signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
 
-    wait(takeExpectation(), data.jobs);   // сюда перешли с «Базы» после «Загрузить резюме»
+    wait(takeExpectation(), data.jobs);   // сюда перешли с «Сегодня» или «Базы» после «Загрузить резюме HH.ru»
     draw(data);
-
-    // «Загрузить резюме» — только с правом settings.edit; после запуска ход виден в строке «Сбор с hh»
-    const loadButton = loadResumesButton({ api, signal, session: ctx.session, variant: "fill",
-      onStarted: () => { wait({ job: "collect_hh" }, lastJobs); refresh({ quiet: true }); } });
 
     return [
       tilesBox,
       h("div.card", { style: "margin-top:14px" }, h("div.t1", { style: "margin-bottom:12px" }, "Путь данных: от площадки до рекрутера"), svgBox),
       h("div.sechead", { style: "justify-content:space-between" }, h("span", "Последние прогоны"),
         h("span", { style: "display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-weight:400" }, updated,
-          loadButton, h("button.b", { type: "button", onClick: () => refresh() }, "Обновить"))),
+          h("button.b", { type: "button", onClick: () => refresh() }, "Обновить"))),
       h("div.tablewrap", { style: "max-height:none" },
         h("table.runs", h("caption.sr-only", "Последний запуск каждой фоновой задачи"),
           h("thead", h("tr", ["Задача", "Когда", "Сколько длилась", "Итог", "Что сделано"].map((title) => h("th", { scope: "col" }, title)))),

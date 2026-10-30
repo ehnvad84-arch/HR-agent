@@ -1,6 +1,6 @@
 // Кнопка «Загрузить резюме» и окно «сколько» (S44): вручную скачать полные резюме с hh в пределах дневного лимита просмотров.
 // Только с правом settings.edit (руководитель подбора): загрузка тратит лимит hh. Сервер сам проверяет 1…остаток и отвечает 422.
-// Используется на «Схеме» (там же виден ход прогона collect_hh) и в «Базе». Всё из API выводится только текстом (h(), textContent).
+// Используется на «Сегодня» и в «Базе»; после запуска — переход на «Схему», где виден ход прогона collect_hh. Всё из API выводится только текстом (h(), textContent).
 import { h, mount } from "./dom.js";
 import {
   EXPLAIN, STARTED_TOAST, canStart, countError, defaultCount, exhaustedText, limitsText, normalizeLimits, parseCount,
@@ -13,7 +13,7 @@ import { errorLine, field, sheet, toast } from "./ui.js";
  *   onStarted(reply) — вызывается после запуска (reply: {started, count, views_left}).
  */
 export function openLoadSheet({ api, signal, onStarted }) {
-  const win = sheet({ title: "Загрузить резюме", width: "500px" });
+  const win = sheet({ title: "Загрузить резюме HH.ru", width: "500px" });
   const body = h("div");
   win.body.append(body);
   win.show();
@@ -90,8 +90,8 @@ export function openLoadSheet({ api, signal, onStarted }) {
   return win.closed;
 }
 
-/** Кнопка «Загрузить резюме» или null, если у роли нет права settings.edit (у рекрутера её нет). */
+/** Кнопка «Загрузить резюме HH.ru» или null, если у роли нет права settings.edit (у рекрутера её нет). */
 export function loadResumesButton({ api, signal, session, onStarted, variant = "" }) {
   if (!session.can("settings.edit")) return null;
-  return h("button.b", { type: "button", class: variant, onClick: () => openLoadSheet({ api, signal, onStarted }) }, "Загрузить резюме");
+  return h("button.b", { type: "button", class: variant, onClick: () => openLoadSheet({ api, signal, onStarted }) }, "Загрузить резюме HH.ru");
 }

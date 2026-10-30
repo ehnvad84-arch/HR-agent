@@ -7,9 +7,10 @@ import { absoluteDay, plural } from "../format.js";
 import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
+import { weightControl } from "../weight-input.js";
 import {
-  FEATURES, GEO_OPTIONS, changesFor, docError, formFromProfile, groupByDept, previewText, roleTitle, rowSub, stateInfo,
-  validateForm, weightSum,
+  FEATURES, GEO_OPTIONS, changesFor, docError, extraFeatures, formFromProfile, groupByDept, previewText, roleTitle, rowSub, stateInfo,
+  validateForm, weightShare, weightSum, weightSumText,
 } from "./profiles-model.js";
 
 const DEBOUNCE_MS = 350;
@@ -209,28 +210,35 @@ function editorScreen(box, ctx, id) {
     const min = field({ label: "Вилка от, ₽", kind: "number", name: "salary_min", value: form0.salary_min });
     const max = field({ label: "Вилка до, ₽", kind: "number", name: "salary_max", value: form0.salary_max });
     for (const f of [min, max]) f.input.min = "0";
-    const weightInputs = Object.fromEntries(FEATURES.map(([key, label]) => {
-      const f = field({ label, kind: "number", name: `w_${key}`, value: String(form0.weights[key] ?? 0), tip: "weight" });
-      f.input.min = "0";
-      f.input.max = "100";
-      f.input.step = "1";
-      return [key, f];
-    }));
+    // вес стоит рядом со своим признаком; сумма и доли пересчитываются при любой правке
+    const weightValues = () => Object.fromEntries(FEATURES.map(([key]) => [key, weightInputs[key].input.value]));
     const sum = h("p.weightsum", { role: "status" });
-    const drawSum = () => {
-      const total = weightSum(Object.fromEntries(FEATURES.map(([key]) => [key, weightInputs[key].input.value])));
-      sum.textContent = `Сумма весов: ${total}. Сумма не обязана быть 100: сервер приводит веса к 100.`;
+    const redraw = () => {
+      const values = weightValues();
+      sum.textContent = weightSumText(weightSum(values));
+      for (const [key] of FEATURES) weightInputs[key].share(weightShare(values, key));
     };
-    for (const f of Object.values(weightInputs)) f.input.addEventListener("input", drawSum);
-    drawSum();
-    const inputs = [title, must, nice, stop, min, max, ...Object.values(weightInputs)].map((f) => f.input);
+    const weightInputs = Object.fromEntries(FEATURES.map(([key, label]) =>
+      [key, weightControl({ key, label, value: String(form0.weights[key] ?? 0), disabled: !canEdit, onInput: redraw })]));
+    redraw();
+    // «условия» — невысокие поля, которые сами растут по мере ввода
+    const grow = (el) => { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; };
+    const textareas = [must, nice, stop].map((f) => f.input);
+    for (const el of textareas) {
+      el.rows = 1;
+      el.classList.add("autogrow");
+      el.addEventListener("input", () => grow(el));
+    }
+    requestAnimationFrame(() => textareas.forEach(grow));   // высота известна только после вставки в страницу
+    window.addEventListener("resize", () => textareas.forEach(grow), { signal });
+    const inputs = [title, must, nice, stop, min, max].map((f) => f.input);
     if (!canEdit) [...inputs, geo].forEach((el) => { el.disabled = true; });
 
     const readForm = () => ({
       title: title.input.value, geo: geo.value, salary_min: min.input.value, salary_max: max.input.value,
       keywords: keywords.values, donor_companies: donors.values,
       must_have: must.input.value, nice_to_have: nice.input.value, stop_factors: stop.input.value,
-      weights: Object.fromEntries(FEATURES.map(([key]) => [key, weightInputs[key].input.value])),
+      weights: weightValues(),
     });
 
     // ---------------- действия
@@ -294,6 +302,8 @@ function editorScreen(box, ctx, id) {
     } }, "Утвердить");
 
     // ---------------- части экрана
+    const section = (heading, text, ...children) => h("section.card.pgroup", h("h2.t1", heading), h("p.pdesc", text), children);
+    const row = (left, weight) => h("div.prow", h("div.pfield", left), weight.root);
     const mine = notice && notice.id === String(profile.id) ? notice : null;
     notice = null;
     const banners = [
@@ -325,15 +335,21 @@ function editorScreen(box, ctx, id) {
       banners.length ? h("div.stack", { style: "margin-top:12px" }, banners) : null,
       profile.state !== "approved" ? h("div.btns", canEdit ? previewButton : null, canApprove ? approve : null) : null,
       status.el, previewBox),
-      h("div.card", { style: "margin-top:14px" }, h("div.t1", { style: "margin-bottom:10px" }, "Портрет должности"),
-        h("div.form", title.root, must.root, h("div.two", nice.root, stop.root), keywords.root, donors.root,
-          h("div.two", h("div.field", h("label", { for: geoId }, "География"), geo), h("div.two", min.root, max.root)),
-          h("div", h("div.t1", { style: "font-size:15px;margin-bottom:8px" }, "Веса признаков"),
-            h("div.weights", FEATURES.map(([key]) => weightInputs[key].root)), sum,
-            form0.usingDefaultWeights ? h("p.hint", { style: "margin:4px 0 0" }, "Веса в профиле не заданы: показаны стандартные для подразделения. Если их не менять, они не отправляются.") : null)),
-        canEdit ? h("div.btns", save) : h("p.hint", "У вас нет права править профили: поля только для чтения."),
-        saveStatus.el,
-        h("p.hint", { style: "margin:10px 0 0" }, "Выдача считается по прежней версии до утверждения.")),
+      // портрет собран по смыслу: «Кто нужен» → «Как ищем» (у каждого поля свой вес) → «Ещё признаки»; кнопка сохранения закреплена внизу
+      h("div.pedit",
+        section("Кто нужен", "Название и условия отбора: что обязательно, что желательно и что исключает человека.",
+          h("div.form", title.root, must.root, h("div.two", nice.root, stop.root))),
+        section("Как ищем", "По чему агент находит и оценивает людей. Рядом с каждым полем стоит вес: насколько этот признак влияет на балл.",
+          h("div.wsum", sum, form0.usingDefaultWeights
+            ? h("p.hint", { style: "margin:2px 0 0" }, "Веса в профиле не заданы: показаны стандартные для подразделения. Если их не менять, они не отправляются.") : null),
+          row(keywords.root, weightInputs.keywords),
+          row(donors.root, weightInputs.donor_company),
+          row(h("div.field", h("label", { for: geoId }, "География"), geo), weightInputs.geo),
+          row(h("div.two", min.root, max.root), weightInputs.salary)),
+        section("Ещё признаки", "Эти признаки агент считает по резюме сам, отдельного поля у них нет: правится только вес.",
+          extraFeatures().map(([key, label, hint]) => row(h("div", h("div", { style: "font-weight:600" }, label), h("div.hint", { style: "margin-top:2px" }, hint)), weightInputs[key]))),
+        h("div.savebar", canEdit ? save : h("p.hint", { style: "margin:0" }, "У вас нет права править профили: поля только для чтения."),
+          h("span.hint", "Выдача считается по прежней версии до утверждения."), saveStatus.el)),
       h("div.card", { style: "margin-top:14px" }, h("div.t1", { style: "margin-bottom:10px" }, "Должностная инструкция"), diLine,
         h("p.hint", { style: "margin:8px 0 0" },
           "Загрузили новую редакцию — создаётся черновая версия профиля, молча профиль не меняется: её нужно отредактировать и отправить на утверждение.")),

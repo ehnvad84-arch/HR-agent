@@ -338,9 +338,6 @@ details summary{cursor:pointer;font-size:14px}
 .field .chipbox input:focus-visible{outline:none}
 .chip.removable{display:inline-flex;align-items:center;gap:2px;background:var(--card);box-shadow:0 0 0 1px var(--sep)}
 .chip.removable button{border:0;background:none;color:inherit;cursor:pointer;padding:0 2px 0 6px;font:inherit;font-size:15px;line-height:1}
-.weights{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-@media (max-width:720px){.weights{grid-template-columns:1fr}}
-.weightsum{margin:8px 0 0;font-size:14px}
 .diff .num{white-space:nowrap}
 
 /* --------------------------------- вакансии --------------------------------- */
@@ -488,3 +485,32 @@ table.runs td.name{min-width:190px}
 /* галочка согласия в окне платного контакта */
 .consent{display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;font-size:14.5px;cursor:pointer}
 .consent input{width:20px;height:20px;margin:1px 0 0;flex:none;accent-color:var(--green);cursor:pointer}
+
+/* --------------------------------- портрет должности: секции, веса у своих признаков --------------------------------- */
+.pgroup{margin-top:14px}
+.pgroup > .t1{margin:0}
+.pdesc{margin:2px 0 16px;font-size:14px;color:var(--muted)}
+.wsum{margin:0 0 14px;padding:10px 14px;background:var(--card2);border-radius:12px}
+.weightsum{margin:0;font-size:14.5px;font-weight:600}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:start;padding:14px 0;border-top:.5px solid var(--sep)}
+.wsum + .prow{border-top:0;padding-top:4px}
+.prow:last-child{padding-bottom:0}
+.pfield{min-width:0}
+@media (max-width:720px){.prow{grid-template-columns:1fr;gap:10px}}
+.wgt{display:grid;gap:5px;justify-items:start;width:164px}
+.wcap{font-size:12.5px;color:var(--muted)}
+.wstep{display:flex;align-items:center;gap:2px;background:var(--card2);border:1px solid var(--field-line);border-radius:12px;padding:2px}
+.wbtn{width:32px;height:34px;border:0;border-radius:10px;background:var(--card);color:var(--ink);font:inherit;font-size:19px;
+  line-height:1;cursor:pointer;box-shadow:0 0 0 .5px var(--sep)}
+.wbtn:disabled{opacity:.4;cursor:default}
+.wnum{width:50px;text-align:center;font:inherit;font-size:16px;font-weight:700;border:0;background:transparent;color:var(--ink);padding:6px 2px}
+.wmeta{display:flex;align-items:center;gap:8px;width:100%}
+.wbar{flex:1;min-width:0;height:6px;border-radius:3px;background:var(--card2);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--green);border-radius:3px;transition:width .15s}
+.wshare{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.field textarea.autogrow{min-height:44px;resize:none;overflow:hidden}
+.savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;padding:12px 18px;
+  background:var(--card);border-radius:var(--r);box-shadow:var(--shadow),0 -1px 0 var(--sep)}
+.savebar .formerror{flex-basis:100%}
+.loadbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px}
+.pgroup .two{align-items:start}
