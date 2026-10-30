@@ -74,6 +74,7 @@ code{font:.92em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:
 .h1{font-size:26px;font-weight:700;letter-spacing:-.03em;margin:0}
 .navtop .right{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
 .navtop .who{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navtop .unit{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 10px;border-radius:999px;background:var(--card2);color:var(--ink2);font-size:13px}
 .ava{width:30px;height:30px;border-radius:50%;background:var(--green-tint);color:var(--green-ink);
   display:grid;place-items:center;font-size:12px;font-weight:700}
 .linkbtn{font:inherit;font-size:14px;font-weight:600;border:0;background:transparent;color:var(--blue-ink);
@@ -83,6 +84,7 @@ code{font:.92em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:
   .navtop{flex-wrap:wrap;row-gap:6px}
   .navtop .right{flex-wrap:wrap;justify-content:flex-end;row-gap:6px}
   .navtop .who{max-width:180px}
+  .navtop .unit{max-width:240px}
 }
 .seg{display:flex;gap:2px;margin:10px 0 10px;padding:2px;background:var(--card2);border-radius:11px;
   overflow-x:auto;scrollbar-width:none}
@@ -590,3 +592,39 @@ button.b.inactive:active{transform:none}
 .li > div:first-child{min-width:0}
 .breakdown{margin:0;padding:6px 18px 12px 34px;list-style:none;display:grid;gap:3px;font-size:13.5px;color:var(--ink2);background:var(--card2)}
 .breakdown li::before{content:"· ";color:var(--muted)}
+
+/* --------------------------------- «Доступ» и вход по коду (manager-cabinet, S1–S4) --------------------------------- */
+table.access thead th{cursor:default}
+table.access td{vertical-align:middle}
+table.access tr.never td{color:var(--muted)}
+table.access td.name{min-width:200px}
+table.access tbody tr:focus-visible{outline:2px solid var(--blue-ink);outline-offset:-2px}
+.codebig{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:30px;font-weight:700;letter-spacing:.12em;padding:18px;border-radius:14px;
+  background:var(--card2);text-align:center;user-select:all;word-break:break-all}
+.errtint:not(:empty){background:var(--red-tint);padding:9px 12px;border-radius:12px}
+@media (max-width:640px){
+  table.access th:first-child,table.access td.name{position:sticky;left:0;background:var(--card);z-index:1}
+}
+
+/* --------------------------------- «Как работает портал» (S19) --------------------------------- */
+.guidecard{padding:0}
+.guide > summary{cursor:pointer;padding:14px 18px;display:flex;align-items:baseline;flex-wrap:wrap;list-style-position:inside}
+.guide > summary:focus-visible{outline-offset:-2px}
+.guidebody{padding:0 18px 18px;max-width:960px}
+.guidebody h3{margin:20px 0 8px;font-size:15.5px;letter-spacing:-.01em}
+.guidebody p{margin:0 0 8px;color:var(--ink2);font-size:14.5px}
+.guidelist{margin:6px 0 0;padding-left:20px;color:var(--ink2);font-size:14.5px}
+.guidelist li{margin:4px 0}
+.guidemine{background:var(--card2);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14.5px}
+table.guidetable{font-size:13.5px;min-width:720px}
+table.guidetable th,table.guidetable td{vertical-align:top}
+table.guidetable thead th{position:static;cursor:default}
+table.guidetable tbody th{font-weight:500;color:var(--ink);min-width:220px}
+table.guidetable td.yes{color:var(--green-ink)}
+table.guidetable td.no{color:var(--muted)}
+table.guidetable th.me,table.guidetable td.me{background:var(--green-tint)}
+.guideme{font-weight:600;color:var(--green-ink)}
+table.access td .chip{display:inline-block;line-height:1.35}
+.guidemine .guidelist{columns:2;column-gap:28px}
+.guidemine .guidelist li{break-inside:avoid}
+@media (max-width:640px){.guidemine .guidelist{columns:1}}

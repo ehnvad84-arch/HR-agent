@@ -77,6 +77,7 @@ function filenameFrom(disposition) {
 export function createClient({ fetchImpl, session = defaultSession, reauth = null, timeoutMs = 60000 } = {}) {
   const doFetch = fetchImpl || ((...args) => globalThis.fetch(...args));
   let reauthHook = reauth;
+  let noAccessHook = null;
   let loginInFlight = null;
   let refreshInFlight = null;
 
@@ -157,6 +158,7 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
         return await once(method, path, options);
       } catch (error) {
         if (!(error instanceof ApiError)) throw error;
+        if (error.status === 403 && error.code === "no_access" && noAccessHook) noAccessHook(error);   // доступ отозвали: страница «Доступ не выдан»
         if (error.status === 401 && reauthHook && !options.noAuth && !askedLogin) {
           askedLogin = true;
           await askLogin();
@@ -192,6 +194,8 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
     upload: (path, form, options) => request("POST", path, { ...options, form }),
     /** Окно входа для 401: функция возвращает промис, который завершается после успешного входа. */
     setReauth(fn) { reauthHook = fn; },
+    /** 403 «no_access» (роль без прав, уволен): показать страницу «Доступ не выдан». Ошибка всё равно уходит вызывающему. */
+    setNoAccess(fn) { noAccessHook = fn; },
 
     /** Кто я: новый токен CSRF и права. 401 здесь не открывает окно входа — вызывающий покажет страницу входа. */
     async me(options) {
@@ -202,6 +206,12 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
     /** Неверный пароль приходит ошибкой 401 с текстом сервера и остаётся в форме. */
     async login(login, password, options) {
       const data = await request("POST", "/api/login", { ...options, body: { login, password }, noAuth: true, noCsrfRetry: true });
+      session.set(data);
+      return data;
+    },
+    /** Первый вход по одноразовому коду из отдела персонала: {login, code, password} → как /api/login. 401 «bad_code» — одним текстом. */
+    async loginWithCode(login, code, password, options) {
+      const data = await request("POST", "/api/login/code", { ...options, body: { login, code, password }, noAuth: true, noCsrfRetry: true });
       session.set(data);
       return data;
     },

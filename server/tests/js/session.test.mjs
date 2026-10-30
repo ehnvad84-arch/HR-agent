@@ -46,3 +46,17 @@ test("повторный set того же пользователя обновл
   assert.equal(s.can("b"), true);
   assert.equal(s.csrf, "z");
 });
+
+test("manager-cabinet: роль и граница видимости из /api/me; после выхода их нет", () => {
+  const s = createSession();
+  assert.equal(s.role, null);
+  assert.equal(s.scope, null);
+  s.set({ user: { id: 3, login: "mech", full_name: "Сидоров С. С.", role: "hiring_manager" }, permissions: ["base.read"], scope: { all: false, units: [4, 5], reason: null }, csrf: "c" });
+  assert.equal(s.role, "hiring_manager");
+  assert.deepEqual(s.scope, { all: false, units: [4, 5], reason: null });
+  s.set({ user: { id: 3, role: "hiring_manager" }, permissions: [], csrf: "c" });   // старый сервер без поля
+  assert.equal(s.scope, null);
+  s.clear();
+  assert.equal(s.role, null);
+  assert.equal(s.scope, null);
+});

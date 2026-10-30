@@ -3,9 +3,9 @@ import { h, initials, mount } from "./dom.js";
 import { TAB_ORDER } from "./router.js";
 
 /** Вкладки как role="tablist": одна вкладка в порядке Tab, остальные — стрелками, Home/End — крайние. */
-export function buildTabs(box, titles, { onSelect }) {
+export function buildTabs(box, titles, { onSelect, order = TAB_ORDER }) {
   const buttons = new Map();
-  for (const name of TAB_ORDER) {
+  for (const name of order) {
     const badge = h("span.badge", { id: `bdg_${name}` });
     const button = h("button", {
       type: "button", role: "tab", id: `tab_${name}`, tabindex: -1, "aria-selected": false, "aria-controls": "view",
@@ -17,14 +17,14 @@ export function buildTabs(box, titles, { onSelect }) {
 
   box.addEventListener("keydown", (event) => {
     const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
-    const index = TAB_ORDER.indexOf(document.activeElement && document.activeElement.dataset.tab);
+    const index = order.indexOf(document.activeElement && document.activeElement.dataset.tab);
     if (index < 0 || (!step && event.key !== "Home" && event.key !== "End")) return;
     event.preventDefault();
     let next = index;
     if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = TAB_ORDER.length - 1;
-    else next = (index + step + TAB_ORDER.length) % TAB_ORDER.length;
-    const name = TAB_ORDER[next];
+    else if (event.key === "End") next = order.length - 1;
+    else next = (index + step + order.length) % order.length;
+    const name = order[next];
     buttons.get(name).button.focus();
     onSelect(name);
   });

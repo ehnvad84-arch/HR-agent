@@ -3,6 +3,8 @@
 // Всё из API выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
 import { timeLabel } from "../format.js";
+import { guideBlock } from "../guide-view.js";
+import { hasFullBase } from "../nav-model.js";
 import { chip } from "../people.js";
 import { mountAsync, toast } from "../ui.js";
 import { countTiles, hasRunning, jobRows } from "./schema-model.js";
@@ -22,7 +24,15 @@ function runRow(run) {
 }
 
 export function render(box, ctx) {
-  const { api, signal } = ctx;
+  const { api, signal, session } = ctx;
+  // сверху — справка «Как работает портал» (S19); ход задач и цифры базы — только у отдела персонала (право base.all), руководителю — одна справка
+  const guide = guideBlock(session);
+  if (!hasFullBase(session.user, (permission) => session.can(permission))) {
+    mount(box, h("div.card.guidecard", guide));
+    return undefined;
+  }
+  const rest = h("div", { style: "margin-top:14px" });
+  mount(box, h("div.card.guidecard", guide), rest);
   let timer = null;
   let running = new Set();   // задачи, которые шли при прошлом обновлении: когда закончатся — скажем об этом
 
@@ -80,5 +90,5 @@ export function render(box, ctx) {
     ];
   };
 
-  return mountAsync(box, load, view, { signal });
+  return mountAsync(rest, load, view, { signal });
 }

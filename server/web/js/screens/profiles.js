@@ -8,6 +8,7 @@ import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, loadingLine, mountAsync, sheet, toast } from "../ui.js";
 import { loadResumesButton } from "../hh-load.js";
+import { openImportSheet } from "../import-sheet.js";
 import { fitAvailability, fitQuery } from "./base-model.js";
 import { weightControl } from "../weight-input.js";
 import {
@@ -39,54 +40,11 @@ function fitButton(ctx, code, title, state, variant = "tint rowbtn") {
 
 // ------------------------------------------------------------------ окна
 
-/**
- * «Обновить из 1С» (S47): взять последнюю выгрузку из обменного каталога или выбрать файл вручную (.json до 5 МБ).
- * Ошибки сервера (404 «нет выгрузки», 422 «не применена») — текстом в окне. После успеха onDone(reply) перерисовывает список.
- */
+/** «Обновить из 1С» (S47): окно выгрузки оргструктуры — общее с «Доступом» (import-sheet.js). После успеха onDone(reply) перерисовывает список. */
 function orgSheet({ api, signal, sync, onDone }) {
-  const win = sheet({ title: "Обновить из 1С", width: "520px",
-    hint: "Оргструктура берётся из отчёта 1С «Организационная структура». Сотрудники из файла не читаются и не хранятся: сохраняется только число ставок." });
-  const status = errorLine();
-  const fileInput = h("input", { type: "file", accept: ".json,application/json", hidden: true, "aria-label": "Файл выгрузки 1С" });
-  let busy = false;
-  const buttons = [];
-  const run = async (request) => {
-    if (busy) return;
-    status.clear();
-    busy = true;
-    buttons.forEach((b) => { b.disabled = true; });
-    try {
-      const reply = await request();
-      win.close("ok");
-      toast(orgResultText(reply));
-      onDone(reply);
-    } catch (error) {
-      if (error && error.name === "AbortError") { win.close("cancel"); return; }
-      status.show(error);
-      busy = false;
-      buttons.forEach((b) => { b.disabled = false; });
-    }
-  };
-  const take = h("button.b.fill", { type: "button", onClick: () => run(() => api.post("/api/org/refresh", {}, { signal, timeoutMs: 60000 })) },
-    "Взять последнюю выгрузку 1С");
-  const pick = h("button.link", { type: "button", onClick: () => fileInput.click() }, "Выбрать файл выгрузки…");
-  buttons.push(take, pick);
-  fileInput.addEventListener("change", () => {
-    const chosen = fileInput.files && fileInput.files[0];
-    const problem = orgFileError(chosen);
-    if (problem) {
-      status.show(problem);
-      fileInput.value = "";
-      return;
-    }
-    const data = new FormData();
-    data.append("file", chosen);
-    run(() => api.upload("/api/org/upload", data, { signal, timeoutMs: 60000 }));
-  });
-  win.body.append(h("p.t2", { style: "margin:0 0 12px" }, syncText(sync)), h("div.btns", { style: "margin-top:0" }, take),
-    h("p", { style: "margin:12px 0 0" }, pick), fileInput, status.el,
-    h("div.sheetfoot.end", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена")));
-  win.show(take);
+  openImportSheet({ api, signal, title: "Обновить из 1С", syncText: syncText(sync), refreshPath: "/api/org/refresh", uploadPath: "/api/org/upload",
+    hint: "Оргструктура берётся из отчёта 1С «Организационная структура». Сотрудники из файла не читаются и не хранятся: сохраняется только число ставок.",
+    resultText: orgResultText, fileError: orgFileError, onDone });
 }
 
 /** «Кто утверждает» (S39): роли с правом profile.approve и люди с этими ролями; только чтение. */

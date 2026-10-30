@@ -14,6 +14,7 @@ const ROUTES = [
   { name: "profiles", pattern: ["profiles", ":id?"] },
   { name: "learn", pattern: ["learn"] },
   { name: "logs", pattern: ["logs"] },
+  { name: "access", pattern: ["access"] },
   { name: "funnel", pattern: ["vacancy", ":id", "funnel"] },
   { name: "funnel", pattern: ["funnel"] },
   { name: "arch", pattern: ["arch"] },

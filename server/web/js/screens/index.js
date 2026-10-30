@@ -8,6 +8,7 @@
 // Исключение или отказ промиса из render() показываются карточкой ошибки с «Повторить».
 //
 // Новый экран: создать screens/<имя>.js с функцией render и добавить запись в SCREENS (и маршрут в router.js).
+import { render as renderAccess } from "./access.js";
 import { render as renderBase } from "./base.js";
 import { render as renderFunnel } from "./funnel.js";
 import { render as renderLearn } from "./learn.js";
@@ -26,6 +27,7 @@ export const SCREENS = {
   profiles: { title: "База должностей", perm: "base.read", render: renderProfiles },
   learn: { title: "Обучение агента", perm: "base.read", render: renderLearn },
   logs: { title: "Журнал и отчёт", perm: "report.read", render: renderLogs },
+  access: { title: "Доступ", perm: "access.manage", render: renderAccess },
   funnel: { title: "Воронка", perm: "base.read", render: renderFunnel },
   arch: { title: "Схема", perm: "base.read", render: renderSchema },
 };

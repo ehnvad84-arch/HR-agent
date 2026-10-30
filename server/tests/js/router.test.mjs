@@ -54,7 +54,7 @@ test("hashFor и parseHash обратимы", () => {
 });
 
 test("у каждой вкладки есть экран с названием, правом и render()", () => {
-  assert.deepEqual(Object.keys(SCREENS), TAB_ORDER);
+  assert.deepEqual(Object.keys(SCREENS).sort(), [...TAB_ORDER, "access"].sort());   // «Доступ» — вкладка только у права access.manage
   for (const [name, screen] of Object.entries(SCREENS)) {
     assert.ok(screen.title, name);
     assert.ok(screen.perm, name);

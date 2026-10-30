@@ -189,3 +189,35 @@ test("экран ушёл, пока читалось тело ответа: эт
   setTimeout(() => ctl.abort(), 20);
   await assert.rejects(p, (e) => e.name === "AbortError");
 });
+
+test("manager-cabinet: вход по коду — POST /api/login/code без окна входа, сессия обновляется", async () => {
+  const { client, calls, session } = setup({ replies: [json(200, { user: { id: 9, login: "mech", full_name: "Сидоров С. С.", role: "hiring_manager" }, permissions: ["base.read"], scope: { all: false, units: [4], reason: null }, csrf: "tok2" })] });
+  const data = await client.loginWithCode("mech", "ABCD2345EF", "новый-пароль-1");
+  assert.equal(calls[0].url, "/api/login/code");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { login: "mech", code: "ABCD2345EF", password: "новый-пароль-1" });
+  assert.equal(data.user.role, "hiring_manager");
+  assert.equal(session.role, "hiring_manager");
+  assert.deepEqual(session.scope, { all: false, units: [4], reason: null });
+  assert.equal(session.csrf, "tok2");
+});
+
+test("manager-cabinet: неверный код — 401 bad_code остаётся ошибкой, окно входа не открывается", async () => {
+  let asked = 0;
+  const { client } = setup({ replies: [json(401, { error: "bad_code", message: "Код не подошёл" })], reauth: async () => { asked += 1; } });
+  await assert.rejects(client.loginWithCode("mech", "X", "12345678"), (e) => e instanceof ApiError && e.status === 401 && e.code === "bad_code");
+  assert.equal(asked, 0);
+});
+
+test("manager-cabinet: 403 «no_access» сообщает странице, ошибка уходит вызывающему", async () => {
+  const seen = [];
+  const { client } = setup({ replies: [json(403, { error: "no_access", message: "Доступ не выдан" })] });
+  client.setNoAccess((error) => seen.push(error.code));
+  await assert.rejects(client.get("/api/today"), (e) => e.status === 403 && e.code === "no_access");
+  assert.deepEqual(seen, ["no_access"]);
+  const other = setup({ replies: [json(403, { error: "forbidden", message: "нельзя" })] });
+  let hit = 0;
+  other.client.setNoAccess(() => { hit += 1; });
+  await assert.rejects(other.client.get("/api/x"));
+  assert.equal(hit, 0);   // обычный 403 — не «без доступа»
+});
