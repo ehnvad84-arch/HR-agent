@@ -64,6 +64,6 @@ def test_guard_catches_unscoped_route():
 
 def test_me_has_scope(conn, api):
     c, _, _ = api("recruiter")
-    assert c.get("/api/me").json()["scope"] == {"all": True, "units": [], "reason": None}
+    assert c.get("/api/me").json()["scope"] == {"all": True, "units": [], "reason": None, "unit_title": None}
     m, _, _ = api("hiring_manager")
     assert m.get("/api/me").json()["scope"]["reason"] == "no_unit"

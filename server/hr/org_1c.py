@@ -286,7 +286,8 @@ def reject(conn: psycopg.Connection, data: bytes, file_name: str, error: str, no
 def latest_file(directory: str) -> Path:
     """Самый свежий .json в обменном каталоге 1С."""
     d = Path(directory)
-    files = sorted((f for f in d.glob("*.json") if f.is_file()), key=lambda f: f.stat().st_mtime) if d.is_dir() else []
+    files = sorted((f for f in d.glob("*.json") if f.is_file() and not f.name.startswith("employees")),
+                   key=lambda f: f.stat().st_mtime) if d.is_dir() else []   # employees_* — выгрузка сотрудников
     if not files:
         raise NotFound("в обменном каталоге нет выгрузки 1С")
     return files[-1]

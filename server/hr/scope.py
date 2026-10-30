@@ -21,9 +21,10 @@ class Scope:
     vacancies: frozenset[int] = field(default_factory=frozenset)
     user_id: int | None = None
     reason: str | None = None                                      # no_unit — подразделение не указано (S17)
+    unit_title: str | None = None                                  # для шапки кабинета
 
     def public(self) -> dict:
-        return {"all": self.all, "units": sorted(self.units), "reason": self.reason}
+        return {"all": self.all, "units": sorted(self.units), "reason": self.reason, "unit_title": self.unit_title}
 
     def code_ok(self, code: str | None) -> bool:
         return self.all or (code is not None and code in self.codes)
@@ -59,7 +60,9 @@ def for_user(conn: psycopg.Connection, user) -> Scope:
         WHERE sp.org_unit_id = ANY(%(u)s) OR v.hiring_manager_id = %(me)s
            OR v.hiring_manager_id IN (SELECT id FROM app_user WHERE org_unit_id = ANY(%(u)s))""",
         {"u": list(units), "me": user.id}))
-    return Scope(units=units, codes=codes, vacancies=vacancies, user_id=user.id)
+    title = "Вся компания" if user.role == "director" else val(conn, "SELECT title FROM org_unit WHERE id = %s",
+                                                               (roots[0],))
+    return Scope(units=units, codes=codes, vacancies=vacancies, user_id=user.id, unit_title=title)
 
 
 def person_ok(conn: psycopg.Connection, scope: Scope, person_id: int) -> bool:

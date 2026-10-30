@@ -18,8 +18,10 @@ def test_s2_manual_user_and_role(conn, api):
     assert c.post(f"/api/access/user/{uid}", json={"role": "director"}, headers=h).status_code == 200
     assert db.val(conn, "SELECT role::text FROM app_user WHERE id = %s", (uid,)) == "director"
     assert db.val(conn, "SELECT count(*) FROM agent_change WHERE kind = 'access'") == 2
-    r2, rh, _ = api("recruiter")
-    assert r2.get("/api/access/users").status_code == 403
+    r2, rh, _ = api("recruiter")   # специалист видит только руководителей — им он выдаёт коды
+    assert {u["role"] for u in r2.get("/api/access/users").json()["items"]} == {"director"}
+    m, _, _ = api("hiring_manager")
+    assert m.get("/api/access/users").status_code == 403
 
 
 def test_s3_code_login_flow(conn, api, clock):
