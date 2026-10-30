@@ -7,7 +7,8 @@ export const ROLE_TITLES = { recruiter: "специалист отдела пе�
 export const NO_ACCESS_TEXT = "Доступ не выдан, обратитесь в отдел персонала";
 export const NO_UNIT_TEXT = "Подразделение не указано — обратитесь в отдел персонала";
 
-const STAFF_TABS = ["today", "person", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"];
+// «Досье» без вкладки: открывается из любого резюме (решение человека 2026-10-30)
+const STAFF_TABS = ["today", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"];
 const CABINET_TABS = ["today", "vacancies", "profiles", "base", "learn", "arch"];   // «Схема» — только справка (S19)
 const CABINET_TITLES = { vacancies: "Мои вакансии", profiles: "Мои должности" };
 const CABINET_ROLES = new Set(["hiring_manager", "director"]);
@@ -30,10 +31,12 @@ export function navFor(user, can) {
 /** Кабинет руководителя: руководитель подразделения и директор (без решений по людям, контактов и загрузки резюме). */
 export const isCabinet = (user) => Boolean(user && CABINET_ROLES.has(user.role));
 
-/** Какая вкладка подсвечена для адреса: у руководителя досье и воронка — без вкладки, подсвечивается список, откуда пришли. */
+/** Какая вкладка подсвечена для адреса: досье без вкладки — подсвечивается «База»; у руководителя и воронка —
+ *  без вкладки, подсвечиваются «Мои вакансии». */
 export function activeTab(routeName, nav) {
   if (nav.tabs.includes(routeName)) return routeName;
-  if (nav.kind === "cabinet") return { person: "base", funnel: "vacancies" }[routeName] || null;
+  if (routeName === "person") return nav.tabs.includes("base") ? "base" : null;
+  if (nav.kind === "cabinet") return { funnel: "vacancies" }[routeName] || null;
   return null;
 }
 

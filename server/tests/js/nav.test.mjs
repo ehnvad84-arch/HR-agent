@@ -18,13 +18,13 @@ test("роли по-русски — как в экране «Доступ»", (
 test("специалист: вкладки как раньше, «Доступа» нет", () => {
   const nav = navFor(user("recruiter"), can("base.read", "base.all"));
   assert.equal(nav.kind, "staff");
-  assert.deepEqual(nav.tabs, ["today", "person", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"]);
+  assert.deepEqual(nav.tabs, ["today", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"]);
   assert.deepEqual(nav.titles, {});
 });
 
 test("руководитель отдела персонала: то же и «Доступ» после «Журнала» — по праву access.manage", () => {
   const nav = navFor(user("head_recruiter"), can("base.read", "base.all", "access.manage"));
-  assert.deepEqual(nav.tabs, ["today", "person", "base", "vacancies", "profiles", "learn", "logs", "access", "funnel", "arch"]);
+  assert.deepEqual(nav.tabs, ["today", "base", "vacancies", "profiles", "learn", "logs", "access", "funnel", "arch"]);
   // право решает, а не название роли
   assert.equal(navFor(user("head_recruiter"), can("base.read")).tabs.includes("access"), false);
   assert.equal(navFor(user("recruiter"), can("base.read", "access.manage")).tabs.includes("access"), true);
@@ -60,7 +60,7 @@ test("досье и воронка у руководителя — без вкл
   assert.equal(activeTab("funnel", cabinet), "vacancies");
   assert.equal(activeTab("logs", cabinet), null);
   const staff = navFor(user("recruiter"), can("base.read"));
-  assert.equal(activeTab("person", staff), "person");
+  assert.equal(activeTab("person", staff), "base");
   assert.equal(activeTab("funnel", staff), "funnel");
   assert.equal(activeTab("access", staff), null);   // вкладки нет
 });

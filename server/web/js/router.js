@@ -2,7 +2,7 @@
 //   #/today   #/person/<id>   #/base?vacancy=3   #/vacancy/<id>/funnel
 // Новый адрес — строка в ROUTES (и вкладка в screens/index.js).
 
-export const TAB_ORDER = ["today", "person", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"];
+export const TAB_ORDER = ["today", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"];
 export const DEFAULT_HASH = "#/today";
 
 // ":имя" — обязательная часть, ":имя?" — необязательная (только в конце)

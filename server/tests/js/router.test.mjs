@@ -6,7 +6,7 @@ import { TAB_ORDER, hashFor, parseHash } from "../../web/js/router.js";
 import { SCREENS } from "../../web/js/screens/index.js";
 
 test("вкладки идут в порядке прототипа", () => {
-  assert.deepEqual(TAB_ORDER, ["today", "person", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"]);
+  assert.deepEqual(TAB_ORDER, ["today", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"]);   // «Досье» — без вкладки
 });
 
 test("простые вкладки", () => {
@@ -54,7 +54,7 @@ test("hashFor и parseHash обратимы", () => {
 });
 
 test("у каждой вкладки есть экран с названием, правом и render()", () => {
-  assert.deepEqual(Object.keys(SCREENS).sort(), [...TAB_ORDER, "access"].sort());   // «Доступ» — вкладка только у права access.manage
+  assert.deepEqual(Object.keys(SCREENS).sort(), [...TAB_ORDER, "access", "person"].sort());   // «Доступ» — по праву; досье — экран без вкладки
   for (const [name, screen] of Object.entries(SCREENS)) {
     assert.ok(screen.title, name);
     assert.ok(screen.perm, name);
