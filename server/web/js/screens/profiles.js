@@ -7,6 +7,8 @@ import { absoluteDay, plural } from "../format.js";
 import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
+import { expectCollect } from "../hh-load-model.js";
+import { loadResumesButton } from "../hh-load.js";
 import { weightControl } from "../weight-input.js";
 import {
   FEATURES, GEO_OPTIONS, changesFor, docError, extraFeatures, formFromProfile, groupByDept, previewText, roleTitle, rowSub, stateInfo,
@@ -93,7 +95,7 @@ function docSheet({ api, signal, profile, onDone }) {
 // ------------------------------------------------------------------ список
 
 function listScreen(box, ctx) {
-  const { api, signal } = ctx;
+  const { api, signal, session } = ctx;
   let q = "";
   let dept = "";
   let total = null;
@@ -136,10 +138,13 @@ function listScreen(box, ctx) {
       h("h2.sechead", group.dept),
       h("div.list", group.items.map((p) => {
         const info = stateInfo(p.state);
-        return h("a.li", { href: hashFor("profiles", { id: p.id }) },
-          h("div", h("div", { style: "font-weight:600" }, p.title), h("div.sub", rowSub(p))),
+        // «Загрузить резюме HH.ru» — у утверждённых должностей и только с правом settings.edit; строка целиком по-прежнему открывает должность
+        const load = p.state === "approved" ? loadResumesButton({ api, signal, session, variant: "tint rowbtn", role: { id: p.id, title: p.title, geo: p.geo },
+          onStarted: () => { expectCollect(); ctx.go("arch"); } }) : null;
+        return h("div.li.stretch",
+          h("div", h("div", { style: "font-weight:600" }, h("a.main", { href: hashFor("profiles", { id: p.id }) }, p.title)), h("div.sub", rowSub(p))),
           p.pending_id ? chip("есть версия, ждёт утверждения", "o") : null,
-          h("span.pill", { class: info.pill }, info.text), h("span.chev", "›"));
+          h("span.pill", { class: info.pill }, info.text), load, h("span.chev", "›"));
       })))));
   };
 
@@ -301,6 +306,11 @@ function editorScreen(box, ctx, id) {
       }
     } }, "Утвердить");
 
+    // «Загрузить резюме HH.ru» по этой должности: берётся действующий (утверждённый) портрет — свой или соседней версии
+    const loadId = profile.state === "approved" ? profile.id : (approvedRow ? approvedRow.id : null);
+    const loadButton = loadId ? loadResumesButton({ api, signal, session, variant: "tint", role: { id: loadId, title: profile.title, geo: profile.geo },
+      onStarted: () => { expectCollect(); ctx.go("arch"); } }) : null;
+
     // ---------------- части экрана
     const section = (heading, text, ...children) => h("section.card.pgroup", h("h2.t1", heading), h("p.pdesc", text), children);
     const row = (left, weight) => h("div.prow", h("div.pfield", left), weight.root);
@@ -333,7 +343,8 @@ function editorScreen(box, ctx, id) {
       ), h("div.t2", { style: "margin-top:10px" },
         "Правка портрета. Сохранение создаёт новую версию с вашим именем и уходит руководителю подбора на утверждение; до утверждения выдача считается по прежней версии."),
       banners.length ? h("div.stack", { style: "margin-top:12px" }, banners) : null,
-      profile.state !== "approved" ? h("div.btns", canEdit ? previewButton : null, canApprove ? approve : null) : null,
+      loadId || profile.state !== "approved" ? h("div.btns", profile.state !== "approved" && canEdit ? previewButton : null,
+        profile.state !== "approved" && canApprove ? approve : null, loadButton) : null,
       status.el, previewBox),
       // портрет собран по смыслу: «Кто нужен» → «Как ищем» (у каждого поля свой вес) → «Ещё признаки»; кнопка сохранения закреплена внизу
       h("div.pedit",

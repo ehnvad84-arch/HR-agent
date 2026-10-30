@@ -514,3 +514,24 @@ table.runs td.name{min-width:190px}
 .savebar .formerror{flex-basis:100%}
 .loadbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px}
 .pgroup .two{align-items:start}
+
+/* --------------------------------- «Загрузить резюме HH.ru» по должности (S46) --------------------------------- */
+.li.stretch{position:relative}
+.li.stretch a.main{color:inherit;text-decoration:none}
+.li.stretch a.main::after{content:"";position:absolute;inset:0}
+.li.stretch a.main:focus-visible{outline:none}
+.li.stretch a.main:focus-visible::after{outline:2px solid var(--blue-ink);outline-offset:-2px;border-radius:var(--r)}
+.li.stretch button{position:relative;z-index:1}
+button.b.rowbtn{padding:5px 12px;font-size:13px;white-space:nowrap}
+.region{display:grid;gap:8px}
+.regionline{margin:0;font-size:14.5px;font-weight:600;color:var(--ink)}
+.areachips{display:flex;gap:6px;flex-wrap:wrap}
+.areachip{font:inherit;font-size:13.5px;border:0;border-radius:999px;padding:6px 13px;background:var(--card2);color:var(--ink2);cursor:pointer}
+.areachip[aria-pressed="true"],.areachip.on{background:var(--green-tint);color:var(--green-ink);font-weight:600}
+.areachip.removable{display:inline-flex;align-items:center;gap:4px;padding-right:6px;cursor:default}
+.areachip.removable button{border:0;background:none;color:inherit;font:inherit;font-size:16px;line-height:1;padding:0 6px;cursor:pointer}
+.arealist{margin-top:6px;max-height:210px;overflow:auto;border:1px solid var(--field-line);border-radius:12px;background:var(--card)}
+.areaopt{padding:9px 12px;cursor:pointer;font-size:14.5px}
+.areaopt[aria-selected="true"],.areaopt:hover{background:var(--card2)}
+.li.stretch .rowbtn{margin-left:auto}
+.li.stretch .rowbtn + .chev{margin-left:0}

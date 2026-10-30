@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  DAILY_LIMIT, EXPECT_MS, EXPLAIN, STARTED_TOAST, canStart, countError, defaultCount, exhaustedText, expectCollect, limitsText, normalizeLimits,
-  parseCount, takeExpectation,
+  AREA_DEBOUNCE_MS, DAILY_LIMIT, EXPECT_MS, EXPLAIN, FALLBACK_AREAS, ROLE_EXPLAIN, STARTED_TOAST, areaForGeo, areaLine, canSearchAreas, canStart,
+  collectBody, countError, defaultCount, exhaustedText, expectCollect, limitsText, moveHighlight, normalizeAreas, normalizeLimits, parseCount,
+  roleSheetTitle, takeExpectation,
 } from "../../web/js/hh-load-model.js";
 
 test("остаток из ответа /api/hh/limits: число просмотров и пакет", () => {
@@ -75,4 +76,57 @@ test("после запуска «Схема» ждёт новый прогон 
   assert.equal(takeExpectation(5001), null);   // ожидание забирается один раз
   expectCollect(1000);
   assert.equal(takeExpectation(1000 + EXPECT_MS + 1), null);   // устарело
+});
+
+// ------------------------------------------------------------------ по должности и региону (S46)
+
+test("S46: регион по умолчанию — из портрета (geo)", () => {
+  assert.deepEqual(areaForGeo("krasnodar"), { id: "53", name: "Краснодар" });
+  assert.deepEqual(areaForGeo("remote_ru"), { id: "113", name: "Вся Россия" });
+  assert.deepEqual(areaForGeo("relocation_ru"), { id: "1438", name: "Краснодарский край" });
+  assert.deepEqual(areaForGeo("что-то новое"), { id: "53", name: "Краснодар" });
+  assert.deepEqual(areaForGeo(undefined), { id: "53", name: "Краснодар" });
+});
+
+test("S46: быстрый выбор региона — вся Россия, Краснодарский край, Краснодар", () => {
+  assert.deepEqual(FALLBACK_AREAS, [{ id: "113", name: "Вся Россия" }, { id: "1438", name: "Краснодарский край" }, { id: "53", name: "Краснодар" }]);
+  assert.deepEqual(normalizeAreas({ items: [{ id: "113", name: "Вся Россия" }, { id: 53, name: "Краснодар" }] }),
+    [{ id: "113", name: "Вся Россия" }, { id: "53", name: "Краснодар" }]);
+  assert.deepEqual(normalizeAreas({ items: [{ id: "x", name: "Сломано" }, { id: "1", name: "" }, { id: "2" }, null, { id: "3", name: "Сочи" }, { id: "3", name: "Сочи" }] }),
+    [{ id: "3", name: "Сочи" }]);
+  assert.deepEqual(normalizeAreas(null), []);
+  assert.deepEqual(normalizeAreas({}), []);
+  assert.equal(normalizeAreas({ items: Array.from({ length: 15 }, (_, i) => ({ id: String(i + 1), name: `Город ${i + 1}` })) }).length, 10);
+});
+
+test("S46: поиск региона — от 2 букв, через 300 мс после ввода", () => {
+  assert.equal(AREA_DEBOUNCE_MS, 300);
+  assert.equal(canSearchAreas("Со"), true);
+  assert.equal(canSearchAreas("  Со "), true);
+  assert.equal(canSearchAreas("С"), false);
+  assert.equal(canSearchAreas("  "), false);
+  assert.equal(canSearchAreas(null), false);
+});
+
+test("S46: клавиши в списке подсказок региона — вверх, вниз, без выхода за края", () => {
+  assert.equal(moveHighlight(-1, 1, 3), 0);
+  assert.equal(moveHighlight(0, 1, 3), 1);
+  assert.equal(moveHighlight(2, 1, 3), 2);
+  assert.equal(moveHighlight(1, -1, 3), 0);
+  assert.equal(moveHighlight(0, -1, 3), 0);
+  assert.equal(moveHighlight(-1, -1, 3), 0);
+  assert.equal(moveHighlight(0, 1, 0), -1);
+});
+
+test("S46: тексты окна по должности", () => {
+  assert.equal(roleSheetTitle("Ведущий инженер-электронщик"), "Загрузить резюме HH.ru: Ведущий инженер-электронщик");
+  assert.equal(ROLE_EXPLAIN, "Поиск только по этой должности в выбранном регионе. Балл считается по всем портретам.");
+  assert.equal(areaLine({ id: "53", name: "Краснодар" }), "Регион: Краснодар");
+});
+
+test("S46: запрос на сервер — число, должность и регион; без должности только число", () => {
+  assert.deepEqual(collectBody({ count: "150", profileId: 5, areaId: "53" }), { count: 150, role_profile_id: 5, area_id: "53" });
+  assert.deepEqual(collectBody({ count: " 40 ", profileId: 5, areaId: 1438 }), { count: 40, role_profile_id: 5, area_id: "1438" });
+  assert.deepEqual(collectBody({ count: "150" }), { count: 150 });
+  assert.deepEqual(collectBody({ count: "150", profileId: null, areaId: null }), { count: 150 });
 });

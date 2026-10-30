@@ -54,3 +54,50 @@ export function takeExpectation(now = Date.now()) {
   expecting = null;
   return found;
 }
+
+// ------------------------------------------------------------------ по должности и региону (S46)
+
+export const ROLE_EXPLAIN = "Поиск только по этой должности в выбранном регионе. Балл считается по всем портретам.";
+export const roleSheetTitle = (title) => `Загрузить резюме HH.ru: ${title}`;
+export const areaLine = (area) => `Регион: ${area.name}`;
+export const AREA_DEBOUNCE_MS = 300;
+
+/** Быстрый выбор региона (то же отдаёт GET /api/hh/areas без запроса); запасной список, если hh или сервер не ответили. */
+export const FALLBACK_AREAS = [{ id: "113", name: "Вся Россия" }, { id: "1438", name: "Краснодарский край" }, { id: "53", name: "Краснодар" }];
+const AREA_BY_GEO = { krasnodar: FALLBACK_AREAS[2], remote_ru: FALLBACK_AREAS[0], relocation_ru: FALLBACK_AREAS[1] };
+
+/** Регион по умолчанию — из портрета: Краснодар, вся Россия (удалённо), Краснодарский край (переезд). */
+export const areaForGeo = (geo) => ({ ...(AREA_BY_GEO[geo] || FALLBACK_AREAS[2]) });
+
+/** Ответ /api/hh/areas → [{id, name}] без мусора и повторов, не больше десяти. */
+export function normalizeAreas(reply) {
+  const seen = new Set();
+  const out = [];
+  for (const item of (reply && Array.isArray(reply.items) ? reply.items : [])) {
+    const id = item && item.id !== undefined && item.id !== null ? String(item.id) : "";
+    const name = item && typeof item.name === "string" ? item.name.trim() : "";
+    if (!/^\d+$/.test(id) || !name || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name });
+  }
+  return out.slice(0, 10);
+}
+
+/** Подсказки hh по названию — от двух букв. */
+export const canSearchAreas = (text) => String(text ?? "").trim().length >= 2;
+
+/** Стрелки в списке подсказок: индекс остаётся в пределах списка (-1 — ничего не выбрано). */
+export function moveHighlight(index, delta, length) {
+  if (length <= 0) return -1;
+  return Math.min(length - 1, Math.max(0, index + delta));
+}
+
+/** Тело POST /api/hh/collect: число, а для загрузки по должности ещё портрет и регион. */
+export function collectBody({ count, profileId = null, areaId = null }) {
+  const body = { count: parseCount(count) };
+  if (profileId !== null && profileId !== undefined) {
+    body.role_profile_id = profileId;
+    if (areaId !== null && areaId !== undefined) body.area_id = String(areaId);
+  }
+  return body;
+}

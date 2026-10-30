@@ -41,7 +41,7 @@ def state(p: dict) -> str:
 
 
 _LIST = """
-    SELECT rp.id, rp.code, rp.title, rp.version, rp.approved_at, rp.di_uploaded_at, rp.valid_from,
+    SELECT rp.id, rp.code, rp.title, rp.version, rp.approved_at, rp.di_uploaded_at, rp.valid_from, rp.geo,
            d.code AS dept_code, d.title AS dept,
            (SELECT max(x.id) FROM role_profile x WHERE x.code = rp.code AND x.approved_at IS NULL
               AND x.id > rp.id) AS pending_id

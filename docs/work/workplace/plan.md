@@ -100,7 +100,7 @@
 - [x] T36 — «Работа России»: `normalize.trudvsem_csv_row`, `collect.collect_trudvsem` (поток, регион, свежесть, порог), миграция `004_trudvsem.sql`, таймер `ruware-trudvsem` (вторник 01:00 MSK) · сценарий: S45 · проверка: auto · исполнитель: main
   Готово, когда: `test_trudvsem.py` зелёный; прогон на первых 5 МБ настоящего файла на `ruware_hr_dev` без ошибок.
 
-- [ ] T37 — загрузка по должности и региону: сервер — `collect_hh(profile_id, area)`, `POST /api/hh/collect {role_profile_id, area_id}`, `GET /api/hh/areas?q=` (сделано); экран — кнопка напротив должности в «Базе должностей», окно с регионом и числом · сценарий: S46 · проверка: manual · исполнитель: frontend-developer
+- [x] T37 — загрузка по должности и региону: сервер — `collect_hh(profile_id, area)`, `POST /api/hh/collect {role_profile_id, area_id}`, `GET /api/hh/areas?q=` (сделано); экран (сделано) — кнопка напротив должности в «Базе должностей», окно с регионом и числом · сценарий: S46 · проверка: manual · исполнитель: frontend-developer
   Готово, когда: окно предлагает вся Россия / Краснодарский край / Краснодар и поиск по названию, запрос уходит с `role_profile_id` и `area_id`, ход виден в «Схеме».
 
 ### Сквозная проверка
