@@ -34,15 +34,25 @@ class Invalid(ValueError):
     pass
 
 
+def is_empty(p: dict) -> bool:
+    """Пустая заготовка из 1С (S47): ни условий, ни весов, ни ключевых слов — утверждать нечего."""
+    if "empty" in p:
+        return bool(p["empty"])
+    return not (p.get("must_have") or p.get("nice_to_have") or p.get("weights") or p.get("keywords"))
+
+
 def state(p: dict) -> str:
     if p["approved_at"]:
         return "approved"
+    if is_empty(p):
+        return "empty"   # критерии не заполнены
     return "draft" if p.get("di_uploaded_at") else "pending"   # draft — собрана из новой ДИ, человек не правил
 
 
 _LIST = """
     SELECT rp.id, rp.code, rp.title, rp.version, rp.approved_at, rp.di_uploaded_at, rp.valid_from, rp.geo,
            d.code AS dept_code, d.title AS dept,
+           (rp.must_have = '[]' AND rp.nice_to_have = '[]' AND rp.weights = '{}' AND rp.keywords = '{}') AS empty,
            (SELECT max(x.id) FROM role_profile x WHERE x.code = rp.code AND x.approved_at IS NULL
               AND x.id > rp.id) AS pending_id
     FROM role_profile rp JOIN department d ON d.id = rp.department_id
@@ -139,6 +149,8 @@ def approve(conn: psycopg.Connection, profile_id: int, user_id: int, now: dateti
     p = get(conn, profile_id)
     if p["approved_at"]:
         raise Conflict("версия уже утверждена")
+    if p["state"] == "empty":
+        raise Invalid("сначала заполните критерии")
     run(conn, "UPDATE role_profile SET approved_by = %s, approved_at = %s, valid_from = %s WHERE id = %s",
         (user_id, now, now.date(), profile_id))
     run(conn, """INSERT INTO agent_change (kind, before, after, applied_by, applied_at, note)

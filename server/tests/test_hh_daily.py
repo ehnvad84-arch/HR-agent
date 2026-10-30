@@ -123,3 +123,29 @@ def test_s46_areas_defaults_and_suggest(conn, api):
     base = c.get("/api/hh/areas").json()["items"]
     assert [a["id"] for a in base] == ["113", "1438", "53"]
     assert c.get("/api/hh/areas", params={"q": "Соч"}).json()["items"] == [{"id": "237", "name": "Сочи"}]
+
+
+def test_s48_progress_visible_in_status(conn, conn_factory, clock, api):
+    from hr import jobs
+    profile(conn)
+    fake = Limited(2)
+    res = jobs.run("collect_hh", collect.collect_hh_daily, conn_factory, http=fake.client(), clock=clock,
+                   limiter=RateLimiter(clock))
+    assert res.ok
+    c, _, _ = client_with(api, fake)
+    body = c.get("/api/hh/collect/status").json()
+    assert body["running"] is False
+    pr = body["run"]["progress"]
+    assert pr["full_total"] == 2 and pr["full_done"] == 2 and pr["profiles"] == 1 and pr["stage"] == "photos"
+    assert body["run"]["ok"] is True and body["run"]["stats"]["seen"] == 4
+    r, _, _ = client_with(api, fake, "recruiter")
+    assert r.get("/api/hh/collect/status").status_code == 403
+
+
+def test_s48_status_running_and_empty(conn, conn_factory, api):
+    c, _, _ = client_with(api, Limited(1))
+    assert c.get("/api/hh/collect/status").json() == {"running": False, "run": None}
+    with conn_factory() as cx:
+        db.run(cx, """INSERT INTO ops.job_run (job, progress) VALUES ('collect_hh', '{"full_done": 3}')""")
+    body = c.get("/api/hh/collect/status").json()
+    assert body["running"] is True and body["run"]["progress"]["full_done"] == 3

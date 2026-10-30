@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import httpx
 
-from . import hh, photos, pipeline
+from . import hh, jobs, photos, pipeline
 from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
@@ -39,6 +39,7 @@ class _HHItems:
                  full_left: int, clock: Clock):
         self.cf, self.api, self.src, self.profiles, self.stats = conn_factory, api, src, profiles, stats
         self.full_left, self.clock = full_left, clock
+        self.full_done = 0
 
     def handle(self, item: dict) -> None:
         self.stats.seen += 1
@@ -61,6 +62,7 @@ class _HHItems:
                 self.stats.note = f"{e} — дальше по выдаче поиска, без полных резюме"
             else:
                 self.full_left -= 1
+                self.full_done += 1
                 raw = {**merged, **full}
         with self.cf() as conn:
             r = pipeline.process(conn, self.src, normalize("hh", raw), raw, self.clock.now())
@@ -68,6 +70,7 @@ class _HHItems:
         self.stats.changed += int(r.changed)
         self.stats.persons += int(r.person_created)
         self.stats.alerts += r.alerts
+        jobs.progress(full_done=self.full_done, seen=self.stats.seen, new=self.stats.new, changed=self.stats.changed)
 
 
 def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
@@ -104,7 +107,9 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
             params[p["id"]].pop("relocation", None)
     api = hh.Api(conn_factory, http, clock, limiter or _limiter, budget)
     items = _HHItems(conn_factory, api, src, profiles, stats, full_left, clock)
-    for pr in targets:
+    for i, pr in enumerate(targets, 1):
+        jobs.progress(force=True, stage="search", full_total=full_left, full_done=items.full_done,
+                      profile_index=i, profiles=len(targets), profile_title=pr["title"])
         qid = _queue(conn_factory, src["id"], pr["id"], params[pr["id"]])
         try:
             for page in range(per_profile):
@@ -195,6 +200,7 @@ def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = N
     limiter = limiter or _limiter
     left = hh.limits_today(conn_factory, http, clock.now(), limiter=limiter)["views_left"]
     cap = left if count is None else min(count, left)
+    jobs.progress(force=True, stage="start", full_total=max(cap, 0), full_done=0)
     if cap <= 0:
         stats = JobStats(note="дневной лимит просмотров hh исчерпан — сбор завтра")
         stats.extra = {"views_left": left}
@@ -203,6 +209,7 @@ def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = N
                        area=area)
     stats.extra = {**stats.extra, "views_left": left, "full_cap": cap}
     # фото — тем же проходом: новые карточки сразу с лицом
+    jobs.progress(force=True, stage="photos")
     stats.extra["photos"] = photos.fetch_photos(conn_factory, clock=clock, limiter=limiter).new
     return stats
 

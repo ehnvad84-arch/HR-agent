@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .. import auth, collect, hh, jobs, pipeline
 from ..clock import Clock
 from ..config import get_config
-from ..db import ConnFactory
+from ..db import ConnFactory, one
 from ..deps import get_clock, get_conn_factory, get_hh_http
 
 router = APIRouter()
@@ -78,3 +78,20 @@ def start(body: CollectIn, user: Manager, conn_factory: Conn, background: Backgr
                         http=http, clock=clock, count=body.count, profile_id=body.role_profile_id, area=body.area_id)
     return JSONResponse({"started": True, "count": body.count, "views_left": left,
                          "role_profile_id": body.role_profile_id, "area_id": body.area_id}, status_code=202)
+
+
+@router.get("/api/hh/collect/status")
+def status(user: Manager, conn_factory: Conn):
+    """Полоса хода загрузки (S48): последний прогон кнопки или расписания. Незавершённый старше 6 часов —
+    упал вместе с процессом, ходом его не считаем."""
+    with conn_factory() as conn:
+        run = one(conn, """SELECT id, started_at, finished_at, ok, error, stats, progress,
+                                  finished_at IS NULL AND started_at > now() - interval '6 hours' AS running
+                           FROM ops.job_run WHERE job IN ('collect_hh', 'collect_hh_daily')
+                           ORDER BY started_at DESC, id DESC LIMIT 1""")
+    if not run:
+        return {"running": False, "run": None}
+    running = run.pop("running")
+    stats = run["stats"] or {}
+    run["stats"] = {k: stats.get(k) for k in ("seen", "new", "changed", "skipped", "errors", "alerts", "note")}
+    return {"running": running, "run": run}

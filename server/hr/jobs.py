@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -72,6 +74,30 @@ class JobResult:
         return not self.ok and not isinstance(self.exc, JobError)
 
 
+# идущий прогон: фабрика соединений, id строки ops.job_run, время последней записи хода
+_current: ContextVar[list | None] = ContextVar("job_run", default=None)
+
+
+def progress(force: bool = False, **fields: Any) -> None:
+    """Ход задачи для полосы загрузки (S48): поля сливаются в ops.job_run.progress, не чаще раза в секунду.
+    Вне jobs.run ничего не делает. Только числа и служебный текст — без данных о людях."""
+    cur = _current.get()
+    if cur is None:
+        return
+    factory, run_id, last, _ = cur
+    now = time.monotonic()
+    if not force and now - last < 1.0:
+        cur[3].update(fields)   # отложенные поля уйдут со следующей записью
+        return
+    payload = {**cur[3], **fields}
+    cur[2], cur[3] = now, {}
+    try:
+        with factory() as conn:
+            db.run(conn, "UPDATE ops.job_run SET progress = progress || %s WHERE id = %s", (db.j(payload), run_id))
+    except psycopg.Error:
+        log.warning("ход задачи не записан")
+
+
 def _key(name: str) -> str:
     return f"job:{name}"
 
@@ -98,6 +124,7 @@ def run(name: str, func: Callable[..., JobStats], conn_factory: db.ConnFactory |
                 return _journal(factory, name, JobResult(False, JobStats(), "уже идёт", JobBusy(key)))
         with factory() as conn:
             run_id = db.val(conn, "INSERT INTO ops.job_run (job) VALUES (%s) RETURNING id", (name,))
+        token = _current.set([factory, run_id, 0.0, {}])
         try:
             stats = func(factory, **kw) or JobStats()
             err = f"{stats.errors} записей не принято" if stats.errors else None
@@ -107,6 +134,8 @@ def run(name: str, func: Callable[..., JobStats], conn_factory: db.ConnFactory |
         except Exception as e:  # noqa: BLE001 — непредвиденное: в журнал только класс, без данных
             log.exception("задача %s упала", name)
             result = JobResult(False, JobStats(), type(e).__name__, e)
+        finally:
+            _current.reset(token)
         return _journal(factory, name, result, run_id)
     finally:
         lock_conn.close()   # закрытие соединения снимает advisory-блокировки

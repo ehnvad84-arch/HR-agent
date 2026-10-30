@@ -49,6 +49,8 @@ class Config:
     trudvsem_base: str = field(default_factory=lambda: _env("TRUDVSEM_BASE",
                                                             "https://opendata.trudvsem.ru/api/v1/integration"))
     github_token: str = field(default_factory=lambda: _env("GITHUB_TOKEN"))
+    # обменный каталог 1С: отчёт «Организационная структура» (S47), только чтение
+    exchange_1c_dir: str = field(default_factory=lambda: _env("EXCHANGE_1C_DIR", "./data/exchange_1c"))
     import_dir: str = field(default_factory=lambda: _env("IMPORT_DIR", "./data/import"))
     # файлы ДИ до объектного хранилища (фича deploy): ключ — sha256, имя файла в путь не идёт
     storage_dir: str = field(default_factory=lambda: _env("STORAGE_DIR", "./data/storage"))
