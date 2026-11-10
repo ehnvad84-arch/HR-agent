@@ -10,7 +10,7 @@
 Тесты — `qa-test pytest` на базе `ruware_hr_test`; репетиция T11 — только маленькие базы `*_test` и каталоги в
 scratchpad, после удаляются (решение человека 10.11: диск пробного VPS бережём).
 
-- [ ] T1 — миграция `009_release.sql`: `ops.release`, `ops.release_notice`, `ops.change_default` · сценарий: S8 · проверка: auto · исполнитель: main
+- [x] T1 — миграция `009_release.sql`: `ops.release`, `ops.release_notice`, `ops.change_default` · сценарий: S8 · проверка: auto · исполнитель: main
   Готово, когда: тесты S8 — не трогали → новое значение + `agent_change`; поменял человек → `release_notice`; ключа нет → вставка; повторный `migrate` ничего не меняет
 - [ ] T2 — `VERSION`, `CHANGELOG.md` (v1.0.0 и v1.1.0 с «Ручными шагами»: таймер копии, deploy key), `hr/version.py`, `db.pending()` без изменения поведения `migrate()` · сценарий: S1, S10 · проверка: auto · исполнитель: main
   Готово, когда: `test_release.py::test_version_status` (code/db/pending/ahead, `code` без VERSION — по тегу или `unknown`) и `test_migrate.py` зелёные
