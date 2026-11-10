@@ -211,3 +211,20 @@ def test_version_code_without_version_file(tmp_path):
     assert version.code_version(tmp_path) == "v1.1.0"
     assert version.release_date(root=tmp_path) == "2026-11-10"
     assert version.release_date("v9.9.9", tmp_path) is None
+
+
+def test_api_version_without_login(monkeypatch):
+    """S1: /api/version без cookie — ровно номер и дата версии, ничего больше."""
+    from fastapi.testclient import TestClient
+
+    from hr import config
+    from hr.main import app
+    monkeypatch.setenv("SESSION_KEY", "k" * 40)
+    config.get_config.cache_clear()
+    try:
+        r = TestClient(app, base_url="https://localhost:8000").get("/api/version")
+    finally:
+        config.get_config.cache_clear()
+    assert r.status_code == 200
+    assert r.json() == {"version": version.code_version(), "date": version.release_date()}
+    assert r.json()["version"] == "v1.1.0" and r.json()["date"] == "2026-11-10"

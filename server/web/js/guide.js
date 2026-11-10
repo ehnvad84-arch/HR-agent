@@ -131,3 +131,12 @@ export function markGuideSeen(storage, user) {
     if (storage) storage.setItem(guideKey(user), "1");
   } catch { /* хранилище закрыто: справка просто останется свёрнутой */ }
 }
+
+// ------------------------------------------------------------------ версия (releases S1)
+
+/** Строка внизу справки из /api/version: «Версия v1.1.0 · 10.11.2026»; без даты — только номер, без номера — ничего. */
+export function versionLine(info) {
+  if (!info || typeof info.version !== "string" || !info.version || info.version === "unknown") return null;
+  const m = typeof info.date === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(info.date) : null;
+  return m ? `Версия ${info.version} · ${m[3]}.${m[2]}.${m[1]}` : `Версия ${info.version}`;
+}

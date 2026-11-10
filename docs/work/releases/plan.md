@@ -16,7 +16,7 @@ scratchpad, после удаляются (решение человека 10.11
   Готово, когда: `test_release.py::test_version_status` (code/db/pending/ahead, `code` без VERSION — по тегу или `unknown`) и `test_migrate.py` зелёные
 - [x] T3 — команды `hr.cli`: `version`, `migrate --pending`, `jobs-running` (порог `load_stuck_hours`), `release-record`, `env-missing`, `job-record` · сценарий: S1, S3, S9 · проверка: auto · исполнитель: main
   Готово, когда: тесты кодов выхода (3 — есть неприменённые, 4 — идёт задача, зависшая — предупреждение) и `env-missing` печатает только имена — зелёные
-- [ ] T4 — `GET /api/version` без входа (роутер в `hr/main.py`) и строка версии в «Как работает портал» · сценарий: S1 · проверка: auto · исполнитель: main
+- [x] T4 — `GET /api/version` без входа (роутер в `hr/main.py`) и строка версии в «Как работает портал» · сценарий: S1 · проверка: auto · исполнитель: main
   Готово, когда: тест — без cookie ответ ровно `{version, date}`; node-тест `guide.js` показывает строку версии
 - [ ] T5 — замок `migrations/RELEASED.sha256` (001–008), уникальность номеров, линтер DDL (`-- contract:`, тела `$$…$$` пропускаются), CHANGELOG ↔ VERSION · сценарий: S6, S7, S10 · проверка: auto · исполнитель: main
   Готово, когда: тесты падают на изменённой выпущенной миграции, дубле номера, `DROP` без пометки, VERSION без раздела CHANGELOG — и проходят на текущем дереве с `009`

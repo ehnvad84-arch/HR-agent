@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  CANNOT, CAN, GUIDE_ROLES, ROLE_PERMS, RULES, SECTIONS, guideKey, guideOpen, markGuideSeen, myRights, rightsTable,
+  CANNOT, CAN, GUIDE_ROLES, ROLE_PERMS, RULES, SECTIONS, guideKey, guideOpen, markGuideSeen, myRights, rightsTable, versionLine,
 } from "../../web/js/guide.js";
 import { ROLE_TITLES } from "../../web/js/nav-model.js";
 
@@ -122,4 +122,11 @@ test("S21: правила — недельная сводка замечаний
   assert.ok(/замечания.*видите вы, агент и руководитель — в недельной сводке/.test(personal), "замечания видит и руководитель — в недельной сводке");
   assert.ok(personal.includes("поправки"), "поправки остаются личными");
   assert.equal(RULES.join(" ").includes("видны вам и агенту"), false);
+});
+
+test("releases S1: внизу справки — номер и дата версии из /api/version", () => {
+  assert.equal(versionLine({ version: "v1.1.0", date: "2026-11-10" }), "Версия v1.1.0 · 10.11.2026");
+  assert.equal(versionLine({ version: "v1.1.0", date: null }), "Версия v1.1.0");
+  assert.equal(versionLine({ version: "unknown", date: null }), null);
+  assert.equal(versionLine(null), null);
 });
