@@ -255,17 +255,19 @@ def test_api_version_without_login(monkeypatch):
 # --- Замок выпущенных миграций (S7), линтер DDL (S6), CHANGELOG ↔ VERSION (S10) ---
 
 SECTIONS = ("Что нового", "Миграции", "Переменные .env", "Ручные шаги", "Откат")
+# ADD CONSTRAINT и ограничения таблицы без слова CONSTRAINT: ADD CHECK, ADD UNIQUE, ADD PRIMARY KEY …
+ADD_CONSTRAINT = r"\bADD\s+(CONSTRAINT|CHECK|UNIQUE|PRIMARY\s+KEY|FOREIGN\s+KEY|EXCLUDE)\b"
 # Сужение схемы и правка данных, на которых прошлая версия ломается на новой базе (S6)
 NARROWING = {
     r"\bDROP\b": "DROP",
     r"\bRENAME\b": "RENAME",
-    r"\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b": "ALTER COLUMN … TYPE",
+    r"\bALTER\s+(COLUMN\s+)?\S+\s+(SET\s+DATA\s+)?TYPE\b": "ALTER COLUMN … TYPE",
     r"\bSET\s+NOT\s+NULL\b": "SET NOT NULL",
-    r"\bADD\s+CONSTRAINT\b": "ADD CONSTRAINT",
+    ADD_CONSTRAINT: "ADD CONSTRAINT",
     r"\bCREATE\s+UNIQUE\s+INDEX\b": "CREATE UNIQUE INDEX",
     r"\bDELETE\s+FROM\b": "DELETE",
     r"\bTRUNCATE\b": "TRUNCATE",
-    r"\bUPDATE\s+(public\.)?settings\b": "UPDATE settings (только ops.change_default)",
+    r'\bUPDATE\s+(ONLY\s+)?("?public"?\.)?"?settings\b': "UPDATE settings (только ops.change_default)",
 }
 
 
@@ -299,7 +301,9 @@ def lock_problems(mig_dir):
 
 
 def _strip_sql(text):
-    """Без тел $$…$$ и $tag$…$tag$, строк '…' и комментариев --: линтер смотрит только DDL."""
+    """Без тел функций $$…$$ и $tag$…$tag$, строк '…' и комментариев --: линтер смотрит только DDL.
+    Тело DO $$…$$ остаётся: блок выполняется при миграции."""
+    text = re.sub(r"\bDO\s+(?:LANGUAGE\s+\w+\s+)?\$(\w*)\$(.*?)\$\1\$", r" \2 ", text, flags=re.S | re.I)
     text = re.sub(r"\$(\w*)\$.*?\$\1\$", " ", text, flags=re.S)
     text = re.sub(r"'(?:[^']|'')*'", "''", text)
     return re.sub(r"--[^\n]*", " ", text)
@@ -327,7 +331,8 @@ def ddl_problems(text):
     for stmt in sql.split(";"):
         if re.match(r"\s*ALTER\s+TABLE\b", stmt, flags=re.I):
             for cl in _top_clauses(stmt):
-                add = re.search(r"\bADD\s+(?!CONSTRAINT\b)(.*)", cl, flags=re.I | re.S)
+                add = None if re.search(ADD_CONSTRAINT, cl, flags=re.I) \
+                    else re.search(r"\bADD\s+(.*)", cl, flags=re.I | re.S)
                 if add and re.search(r"\bNOT\s+NULL\b", add[1], flags=re.I) \
                         and not re.search(r"\bDEFAULT\b", add[1], flags=re.I):
                     out.append("ADD COLUMN … NOT NULL без DEFAULT")
@@ -392,6 +397,15 @@ def test_s6_unreleased_migrations_only_add():
     ("ALTER TABLE x ADD COLUMN a int NOT NULL;", "ADD COLUMN … NOT NULL без DEFAULT"),
     ("ALTER TABLE x ADD COLUMN b int, ADD a text NOT NULL;", "ADD COLUMN … NOT NULL без DEFAULT"),
     ("ALTER TABLE x ADD CONSTRAINT c CHECK (a > 0);", "ADD CONSTRAINT"),
+    ("ALTER TABLE decision_log ADD CHECK (length(comment) >= 300);", "ADD CONSTRAINT"),
+    ("ALTER TABLE x ADD UNIQUE (a);", "ADD CONSTRAINT"),
+    ("ALTER TABLE x ADD PRIMARY KEY (a);", "ADD CONSTRAINT"),
+    ("ALTER TABLE x ADD FOREIGN KEY (a) REFERENCES y;", "ADD CONSTRAINT"),
+    ("ALTER TABLE x ALTER a TYPE bigint;", "ALTER COLUMN … TYPE"),
+    ("UPDATE ONLY settings SET value = '1';", "UPDATE settings (только ops.change_default)"),
+    ('update "settings" set value = \'1\';', "UPDATE settings (только ops.change_default)"),
+    ("DO $$ BEGIN DELETE FROM x; END $$;", "DELETE"),
+    ("DO LANGUAGE plpgsql $body$ BEGIN ALTER TABLE x DROP COLUMN y; END $body$;", "DROP"),
     ("CREATE UNIQUE INDEX i ON x (a);", "CREATE UNIQUE INDEX"),
     ("DELETE FROM x WHERE a = 1;", "DELETE"),
     ("TRUNCATE x;", "TRUNCATE"),
