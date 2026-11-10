@@ -261,7 +261,7 @@ ADD_CONSTRAINT = r"\bADD\s+(CONSTRAINT|CHECK|UNIQUE|PRIMARY\s+KEY|FOREIGN\s+KEY|
 NARROWING = {
     r"\bDROP\b": "DROP",
     r"\bRENAME\b": "RENAME",
-    r"\bALTER\s+(COLUMN\s+)?\S+\s+(SET\s+DATA\s+)?TYPE\b": "ALTER COLUMN … TYPE",
+    r"\bALTER\s+(COLUMN\s+)?(?!COLUMN\s)\S+\s+(SET\s+DATA\s+)?TYPE\b": "ALTER COLUMN … TYPE",
     r"\bSET\s+NOT\s+NULL\b": "SET NOT NULL",
     ADD_CONSTRAINT: "ADD CONSTRAINT",
     r"\bCREATE\s+UNIQUE\s+INDEX\b": "CREATE UNIQUE INDEX",
@@ -425,6 +425,7 @@ def test_s6_narrowing_without_contract_fails(sql, problem):
     "ALTER TABLE x ADD COLUMN IF NOT EXISTS a int NOT NULL DEFAULT 0, ADD COLUMN b text;",
     "CREATE INDEX IF NOT EXISTS i ON x (a);",
     "ALTER TYPE k ADD VALUE IF NOT EXISTS 'new';",
+    "ALTER TABLE x ALTER COLUMN type SET DEFAULT 'a';",
     "INSERT INTO settings (key, value) VALUES ('k', '1') ON CONFLICT (key) DO NOTHING;",
     "SELECT ops.change_default('010_x.sql', 'k', '1', '2');",
     "CREATE OR REPLACE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$\n"
