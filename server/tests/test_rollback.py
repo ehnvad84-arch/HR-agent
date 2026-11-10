@@ -156,3 +156,15 @@ def test_s5_target_does_not_start_current_returns(inst):
     calls = _calls(inst)
     assert "migrate" not in calls
     assert "release-record --kind auto_rollback --from v1.1.0 --to v1.1.1" in calls
+
+
+def test_s5_interrupted_rollback_finished_by_rerun(inst):
+    """Ревью В1: код уже на v1.1.0, ссылка venv на v1.1.1, портал остановлен — повторный запуск доводит откат."""
+    _installed(inst, "v1.1.1")
+    _git(inst.root, "checkout", "-q", "--detach", "v1.1.0")
+    (inst.root.parent / "www/api/version").unlink()
+    code, out = _rollback(inst, "v1.1.0")
+    assert code == 0, out
+    assert "уже установлена" not in out and "доведён" in out
+    assert os.readlink(inst.root / "server/.venv") == ".venvs/v1.1.0"
+    assert _events(inst) == ["stop", "start"]

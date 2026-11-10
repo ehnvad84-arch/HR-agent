@@ -7,6 +7,7 @@
 # Шаги: 1 тег и замок → 2 проверки → 3 зависимости → 4 фоновые задачи (до этого портал работает) → 5 остановка
 # и копия базы → 6 код, venv, миграции → 7 запуск и проверка → 8 провал 6–7: возврат прежней версии → 9 итог.
 # Настройки — server/update.conf (образец update.conf.example). .env подгружается только в вызовы hr.cli.
+# Прерванный запуск (обрыв SSH на шагах 6–7) доводится тем же: update.sh <тег> — ссылка venv, миграции, запуск.
 # Выход: 0 — установлена (или уже стояла); 1 — отказ или возврат на прежнюю версию; 2 — ошибка запуска или настройки.
 set -euo pipefail
 
@@ -70,6 +71,47 @@ hr_in() {
     "$py" -m hr.cli "$@" ) 9>&-
 }
 
+start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
+up() {  # отвечает ли портал: версия $1; у v1.0.0 нет /api/version — тогда главная страница
+  local want="$1" i body
+  for ((i = 0; i <= START_WAIT_S; i += 2)); do
+    if ver_gt v1.1.0 "$want"; then
+      [ "$(curl -s -o /dev/null -w '%{http_code}' "${CHECK_URL%/api/version}/" 9>&-)" = 200 ] && return 0
+    else
+      body="$(curl -sf "$CHECK_URL" 9>&- || true)"
+      [[ "$body" =~ \"version\":\ *\"([^\"]*)\" ]] && [ "${BASH_REMATCH[1]}" = "$want" ] && return 0
+    fi
+    [ "$i" -lt "$START_WAIT_S" ] && sleep 2
+  done
+  return 1
+}
+# Код уже на $TAG, но прерванный запуск (обрыв SSH, kill) не довёл шаги 6–7: ссылка venv, миграции, запуск
+finish_interrupted() {
+  local mig_out applied
+  stuck() {
+    echo "Установка $TAG не доведена: $1. Портал может быть остановлен —" \
+      "раздел «Если обновление прервалось» в ОБНОВЛЕНИЕ_портала.md" >&2
+    exit 1
+  }
+  trap '' HUP
+  echo "код уже на $TAG, но установка не закончена (прерванный запуск) — довожу шаги 6–7"
+  [ -x "server/.venvs/$TAG/bin/python" ] || stuck "нет venv server/.venvs/$TAG"
+  eval "$STOP_CMD" 9>&- || stuck "STOP_CMD завершился с ошибкой"
+  ln -sfn ".venvs/$TAG" server/.venv
+  mig_out="$(hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" migrate)" || { echo "$mig_out"; stuck "миграция не прошла"; }
+  echo "$mig_out"
+  applied="$(sed -n 's/^применено: //p' <<<"$mig_out")"
+  [ "$applied" = "ничего, база актуальна" ] && applied=""
+  eval "$START_CMD" 9>&- || stuck "START_CMD завершился с ошибкой"
+  up "$TAG" || stuck "портал не ответил версией $TAG за $START_WAIT_S с"
+  hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" release-record --kind update --to "$TAG" --commit "$COMMIT" \
+    --migrations "${applied// /}" --note "доведено повторным запуском update.sh после прерывания" >/dev/null \
+    || echo "предупреждение: обновление не попало в журнал версий" >&2
+  git worktree remove --force ".releases/$TAG" >/dev/null 2>&1 || true
+  echo "Обновление до $TAG доведено, миграции: ${applied:-новых нет}"
+  exit 0
+}
+
 # 2. Проверки — портал не останавливается
 say "2/9 проверки"
 # свои файлы установки git не показывает и у v1.0.0, где их нет в .gitignore
@@ -89,8 +131,16 @@ PREV_LINK="$(readlink server/.venv)"
 CUR="$(git describe --tags --exact-match HEAD 2>/dev/null)" && [[ "$CUR" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   || refuse "текущий код не стоит на версии vX.Y.Z (git describe --tags --exact-match) — разберите вручную"
 if [ "$CUR" = "$TAG" ]; then
-  echo "версия $TAG уже установлена"
-  exit 0
+  # до v1.1.0 update.sh не было — прерванным такой запуск быть не мог; START_WAIT_S=0 — один запрос, без ожидания
+  pending=0
+  ver_gt v1.1.0 "$TAG" || hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" migrate --pending >/dev/null 2>&1 \
+    || pending=$?
+  case "$pending" in 0|3) ;; *) refuse "версия $TAG стоит, но миграции не проверить (база недоступна?)" ;; esac
+  if ver_gt v1.1.0 "$TAG" || { [ "$PREV_LINK" = ".venvs/$TAG" ] && [ "$pending" = 0 ] && START_WAIT_S=0 up "$TAG"; }; then
+    echo "версия $TAG уже установлена"
+    exit 0
+  fi
+  finish_interrupted
 fi
 ver_gt "$TAG" "$CUR" || refuse "$TAG старше установленной $CUR; вернуться на прошлую версию — scripts/rollback.sh"
 echo "сейчас $CUR, ставим $TAG"
@@ -103,11 +153,7 @@ git worktree add -q --detach "$WT" "$TAG"
 TCODE="$ROOT/$WT/server"
 NEW_MIGS="$(git diff --name-only HEAD "$TAG" -- server/migrations | grep '\.sql$' || true)"
 COPY=""
-if [ -n "$NEW_MIGS" ]; then
-  echo "новые миграции:"; echo "$NEW_MIGS" | sed 's|^server/migrations/|  |'
-  RUWARE_ROOT="$ROOT" RUWARE_CODE="$TCODE" RUWARE_PY="$ROOT/server/.venv/bin/python" RUWARE_ENV="$ENV_FILE" \
-    bash "$TCODE/scripts/db_copy.sh" --check-space 9>&- || refuse "освободите место в $BACKUP_DIR под копию базы"
-fi
+[ -z "$NEW_MIGS" ] || { echo "новые миграции:"; echo "$NEW_MIGS" | sed 's|^server/migrations/|  |'; }
 
 # 3. Зависимости — до остановки, своим venv на версию
 say "3/9 зависимости"
@@ -131,6 +177,12 @@ else
   echo "$req_sum" >"$VENV/.ruware-requirements"
 fi
 TPY="$VENV/bin/python"
+# место под копию — python новой версии: у неё могут быть новые зависимости
+if [ -n "$NEW_MIGS" ]; then
+  RUWARE_ROOT="$ROOT" RUWARE_CODE="$TCODE" RUWARE_PY="$TPY" RUWARE_ENV="$ENV_FILE" \
+    bash "$TCODE/scripts/db_copy.sh" --check-space 9>&- \
+    || refuse "под копию базы нет места в $BACKUP_DIR или её размер не узнать — причина выше"
+fi
 
 # 4. Фоновые задачи (сбор hh) — ждём до JOB_WAIT_MIN
 say "4/9 фоновые задачи"
@@ -152,9 +204,8 @@ rc=0; jobs_wait || rc=$?
 
 # 5. Остановка и копия базы
 say "5/9 остановка портала и таймеров"
-start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
-abort_stopped() { echo "Обновление не начато: $1. Портал и таймеры запускаются снова." >&2; start_back; exit 1; }
-trap 'abort_stopped "прервано"' INT TERM
+abort_stopped() { trap '' HUP INT TERM; echo "Обновление не начато: $1. Портал и таймеры запускаются снова." >&2; start_back; exit 1; }
+trap 'abort_stopped "прервано"' INT TERM HUP
 trap 'abort_stopped "ошибка в строке $LINENO"' ERR
 eval "$STOP_CMD" 9>&- || abort_stopped "STOP_CMD завершился с ошибкой"
 rc=0; hr_in "$TCODE" "$TPY" jobs-running || rc=$?
@@ -166,21 +217,9 @@ if [ -n "$NEW_MIGS" ]; then
 fi
 
 # 8. Возврат прежней версии, если 6–7 не прошли (S4)
-up() {  # отвечает ли портал: версия $1; у v1.0.0 нет /api/version — тогда главная страница
-  local want="$1" i body
-  for ((i = 0; i <= START_WAIT_S; i += 2)); do
-    if ver_gt v1.1.0 "$want"; then
-      [ "$(curl -s -o /dev/null -w '%{http_code}' "${CHECK_URL%/api/version}/" 9>&-)" = 200 ] && return 0
-    else
-      body="$(curl -sf "$CHECK_URL" 9>&- || true)"
-      [[ "$body" =~ \"version\":\ *\"([^\"]*)\" ]] && [ "${BASH_REMATCH[1]}" = "$want" ] && return 0
-    fi
-    [ "$i" -lt "$START_WAIT_S" ] && sleep 2
-  done
-  return 1
-}
 switch_failed() {
-  trap - ERR INT TERM
+  trap - ERR
+  trap '' HUP INT TERM  # возврат доводится до конца и при повторном сигнале
   set +e
   echo "Шаг не прошёл: $1. Возвращаю $CUR." >&2
   eval "$STOP_CMD" 9>&-
@@ -205,7 +244,7 @@ switch_failed() {
 # 6. Код, venv, миграции
 say "6/9 код $TAG и миграции"
 trap 'switch_failed "ошибка в строке $LINENO"' ERR
-trap 'switch_failed "прервано"' INT TERM
+trap 'switch_failed "прервано"' INT TERM HUP
 git checkout -q --detach "$TAG" || switch_failed "не переключился код"
 ln -sfn ".venvs/$TAG" server/.venv
 mig_out="$(hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" migrate)" || { echo "$mig_out"; switch_failed "миграция не прошла"; }
@@ -219,6 +258,7 @@ say "7/9 запуск и проверка"
 eval "$START_CMD" 9>&- || switch_failed "START_CMD завершился с ошибкой"
 up "$TAG" || switch_failed "портал не ответил версией $TAG за $START_WAIT_S с"
 trap - ERR INT TERM
+trap '' HUP  # портал уже на $TAG: итог и журнал дописываются и после обрыва SSH
 
 # 9. Итог
 say "9/9 итог"

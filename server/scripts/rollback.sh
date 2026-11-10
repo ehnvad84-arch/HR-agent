@@ -6,6 +6,7 @@
 # последнее удачное обновление, или пропускаемая версия в CHANGELOG.md помечена «Откат: нет».
 # Шаги: 1 тег и замок → 2 проверки → 3 venv цели → 4 фоновые задачи (до этого портал работает) → 5 журнал версий
 # → 6 остановка, код, venv → 7 запуск и проверка; провал 6–7 — возврат текущей версии.
+# Прерванный запуск (обрыв SSH на шагах 6–7) доводится тем же: rollback.sh <тег>.
 # Настройки — server/update.conf, как у update.sh. Выход: 0 — откат прошёл (или версия уже стоит); 1 — отказ или
 # возврат текущей версии; 2 — ошибка запуска или настройки.
 set -euo pipefail
@@ -59,6 +60,34 @@ hr_root() {
     "$ROOT/server/.venv/bin/python" -m hr.cli "$@" ) 9>&-
 }
 
+start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
+up() {  # отвечает ли портал версией $1 (обе версии ≥ v1.1.0 — /api/version есть)
+  local want="$1" i body
+  for ((i = 0; i <= START_WAIT_S; i += 2)); do
+    body="$(curl -sf "$CHECK_URL" 9>&- || true)"
+    [[ "$body" =~ \"version\":\ *\"([^\"]*)\" ]] && [ "${BASH_REMATCH[1]}" = "$want" ] && return 0
+    [ "$i" -lt "$START_WAIT_S" ] && sleep 2
+  done
+  return 1
+}
+# Код уже на $TAG, но прерванный запуск (обрыв SSH, kill) не довёл шаги 6–7: ссылка venv и запуск
+finish_interrupted() {
+  stuck() {
+    echo "Откат на $TAG не доведён: $1. Портал может быть остановлен —" \
+      "раздел «Если обновление прервалось» в ОБНОВЛЕНИЕ_портала.md" >&2
+    exit 1
+  }
+  trap '' HUP
+  echo "код уже на $TAG, но откат не закончен (прерванный запуск) — довожу шаги 6–7"
+  [ -x "server/.venvs/$TAG/bin/python" ] || stuck "нет venv server/.venvs/$TAG"
+  eval "$STOP_CMD" 9>&- || stuck "STOP_CMD завершился с ошибкой"
+  ln -sfn ".venvs/$TAG" server/.venv
+  eval "$START_CMD" 9>&- || stuck "START_CMD завершился с ошибкой"
+  up "$TAG" || stuck "портал не ответил версией $TAG за $START_WAIT_S с"
+  echo "Откат на $TAG доведён, база не менялась"
+  exit 0
+}
+
 # 2. Проверки — портал не останавливается
 say "2/7 проверки"
 dirty="$(git status --porcelain)"
@@ -72,8 +101,12 @@ PREV_LINK="$(readlink server/.venv)"
 CUR="$(git describe --tags --exact-match HEAD 2>/dev/null)" && [[ "$CUR" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
   || refuse "текущий код не стоит на версии vX.Y.Z (git describe --tags --exact-match) — разберите вручную"
 if [ "$CUR" = "$TAG" ]; then
-  echo "версия $TAG уже установлена"
-  exit 0
+  # ниже v1.1.0 откат не делается — прерванным такой запуск быть не мог; START_WAIT_S=0 — один запрос
+  if ver_gt v1.1.0 "$TAG" || { [ "$PREV_LINK" = ".venvs/$TAG" ] && START_WAIT_S=0 up "$TAG"; }; then
+    echo "версия $TAG уже установлена"
+    exit 0
+  fi
+  finish_interrupted
 fi
 ver_gt "$CUR" "$TAG" || refuse "$TAG новее установленной $CUR; обновление — scripts/update.sh"
 ver_gt v1.1.0 "$TAG" && refuse "ниже v1.1.0 откат не делается: у $TAG нет журнала версий и проверки /api/version"
@@ -135,19 +168,10 @@ hr_root release-record --kind rollback --from "$CUR" --to "$TAG" --commit "$COMM
   --note "откат по решению людей, база не менялась" >/dev/null \
   || refuse "не удалось записать откат в журнал версий (база недоступна?)"
 
-start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
-up() {  # отвечает ли портал версией $1 (обе версии ≥ v1.1.0 — /api/version есть)
-  local want="$1" i body
-  for ((i = 0; i <= START_WAIT_S; i += 2)); do
-    body="$(curl -sf "$CHECK_URL" 9>&- || true)"
-    [[ "$body" =~ \"version\":\ *\"([^\"]*)\" ]] && [ "${BASH_REMATCH[1]}" = "$want" ] && return 0
-    [ "$i" -lt "$START_WAIT_S" ] && sleep 2
-  done
-  return 1
-}
 # провал 6–7: текущая версия возвращается, в журнал — возврат на неё, чтобы «по журналу версий» снова было $CUR
 switch_failed() {
-  trap - ERR INT TERM
+  trap - ERR
+  trap '' HUP INT TERM  # возврат доводится до конца и при повторном сигнале
   set +e
   echo "Шаг не прошёл: $1. Возвращаю $CUR." >&2
   eval "$STOP_CMD" 9>&-
@@ -171,7 +195,7 @@ switch_failed() {
 # 6. Остановка, код и venv цели — без migrate
 say "6/7 остановка и код $TAG"
 trap 'switch_failed "ошибка в строке $LINENO"' ERR
-trap 'switch_failed "прервано"' INT TERM
+trap 'switch_failed "прервано"' INT TERM HUP
 eval "$STOP_CMD" 9>&- || switch_failed "STOP_CMD завершился с ошибкой"
 git checkout -q --detach "$TAG" || switch_failed "не переключился код"
 ln -sfn ".venvs/$TAG" server/.venv
@@ -181,6 +205,7 @@ say "7/7 запуск и проверка"
 eval "$START_CMD" 9>&- || switch_failed "START_CMD завершился с ошибкой"
 up "$TAG" || switch_failed "портал не ответил версией $TAG за $START_WAIT_S с"
 trap - ERR INT TERM
+trap '' HUP  # портал уже на $TAG: итог дописывается и после обрыва SSH
 
 keep="$(basename "$PREV_LINK")"
 for d in server/.venvs/*/; do

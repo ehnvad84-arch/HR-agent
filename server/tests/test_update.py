@@ -6,7 +6,9 @@ import fcntl
 import hashlib
 import os
 import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -50,8 +52,11 @@ shift 2
 echo "$(basename "$(dirname "$PWD")") $*" >> {log}
 case "$1" in
   jobs-running) exit "${{JOBS_RC:-0}}" ;;
-  db-size) echo "${{DB_SIZE:-1000}}" ;;
-  migrate) [ -n "${{MIGRATE_FAIL:-}}" ] && {{ echo "миграция упала" >&2; exit 1; }}
+  db-size) case "$(realpath "$0")" in */.venvs/"${{NO_DEP_IN:-нет}}"/*) echo "ImportError" >&2; exit 1 ;; esac
+           echo "${{DB_SIZE:-1000}}" ;;
+  migrate) [ "${{2:-}}" = --pending ] && exit "${{PENDING_RC:-0}}"
+           [ -n "${{MIGRATE_SLEEP:-}}" ] && sleep "$MIGRATE_SLEEP"
+           [ -n "${{MIGRATE_FAIL:-}}" ] && {{ echo "миграция упала" >&2; exit 1; }}
            echo "применено: 009_release.sql"; echo "настройка alert_score_new оставлена как есть" ;;
   version) [ -f {log}.rec ] && echo "по журналу версий: v1.1.0" || echo "по журналу версий: записей нет" ;;
   env-missing) echo "не заданы в .env: BOT_TOKEN" ;;
@@ -134,10 +139,12 @@ PG_DUMP="${{PG_DUMP_CMD:-{dump}}}"
 PG_RESTORE="{restore}"
 """, 0o600)
 
-    def run(tag, *, script=SCRIPTS / "update.sh", **env):
-        full = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "TMPDIR": str(tmp_path),
+    def env_of(env):
+        return {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "TMPDIR": str(tmp_path),
                 "RUWARE_ENV": str(tmp_path / "нет.env"), **GIT_ENV, **env}
-        p = subprocess.run(["bash", str(script), tag], cwd=root, env=full, capture_output=True, text=True,
+
+    def run(tag, *, script=SCRIPTS / "update.sh", **env):
+        p = subprocess.run(["bash", str(script), tag], cwd=root, env=env_of(env), capture_output=True, text=True,
                            timeout=60)
         return p.returncode, p.stdout + p.stderr
 
@@ -146,6 +153,7 @@ PG_RESTORE="{restore}"
                               capture_output=True, text=True).stdout.strip()
 
     run.root, run.log, run.events, run.backup, run.head, run.venv = root, log, events, backup, head, venv
+    run.env_of, run.www = env_of, www
     return run
 
 
@@ -304,3 +312,65 @@ def test_s4_auto_rollback(inst, env, why):
     assert _events(inst)[-1] == "start"
     assert "release-record --kind auto_rollback --from v1.1.1 --to v1.1.0" in _calls(inst)
     assert not (inst.root / ".releases/v1.1.1").exists()
+
+
+def test_s3_new_dependency_space_checked_with_target_venv(inst):
+    """Ревью В2: hr.cli новой версии не импортируется в venv текущей — место проверяет venv цели, отказа нет."""
+    code, out = inst("v1.1.0", NO_DEP_IN="v1.0.0")
+    assert code == 0, out
+    assert inst.head() == "v1.1.0"
+
+
+def test_s3_sighup_during_migrate_returns_previous(inst):
+    """Ревью В1: обрыв SSH (SIGHUP группе процессов) на миграции — возврат прежней версии, портал запущен."""
+    assert inst("v1.1.0")[0] == 0
+    inst.events.unlink()
+    inst.log.unlink()
+    inst.venv("v1.1.1")
+    p = subprocess.Popen(["bash", str(inst.root / "server/scripts/update.sh"), "v1.1.1"], cwd=inst.root,
+                         env=inst.env_of({"MIGRATE_SLEEP": "30"}), stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    for _ in range(300):
+        if "inst migrate\n" in _calls(inst):
+            break
+        time.sleep(0.1)
+    os.killpg(p.pid, signal.SIGHUP)
+    out = p.communicate(timeout=30)[0]
+    assert p.returncode == 1, out
+    assert "прервано" in out and "работает v1.1.0" in out
+    assert inst.head() == "v1.1.0"
+    assert os.readlink(inst.root / "server/.venv") == ".venvs/v1.1.0"
+    assert _events(inst) == ["stop", "stop", "start"]
+
+
+@pytest.mark.parametrize("link", [".venvs/v1.0.0", ".venvs/v1.1.0"])
+def test_s2_interrupted_update_finished_by_rerun(inst, link):
+    """Ревью В1: код уже на v1.1.0, а venv, миграции или запуск не доведены — повторный запуск их доводит."""
+    _git(inst.root, "checkout", "-q", "--detach", "v1.1.0")
+    (inst.root / "server/.venv").unlink()
+    (inst.root / "server/.venv").symlink_to(link)
+    code, out = inst("v1.1.0", script=inst.root / "server/scripts/update.sh", PENDING_RC="3")
+    assert code == 0, out
+    assert "уже установлена" not in out and "доведено" in out
+    assert os.readlink(inst.root / "server/.venv") == ".venvs/v1.1.0"
+    assert _events(inst) == ["stop", "start"]
+    calls = _calls(inst)
+    assert "inst migrate\n" in calls
+    assert "release-record --kind update --to v1.1.0" in calls
+
+
+def test_s2_same_version_running_is_ok(inst):
+    """Установка закончена: миграций нет, портал отвечает версией — ничего не останавливается."""
+    assert inst("v1.1.0")[0] == 0
+    inst.events.unlink()
+    code, out = inst("v1.1.0", script=inst.root / "server/scripts/update.sh")
+    assert code == 0 and "уже установлена" in out
+    assert _events(inst) == []
+
+
+def test_s2_same_version_db_unavailable_no_stop(inst):
+    assert inst("v1.1.0")[0] == 0
+    inst.events.unlink()
+    code, out = inst("v1.1.0", script=inst.root / "server/scripts/update.sh", PENDING_RC="1")
+    assert code == 1 and "миграции не проверить" in out
+    assert _events(inst) == []
