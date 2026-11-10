@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, tuple_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
@@ -76,22 +76,47 @@ def setting(conn: psycopg.Connection, key: str, default: Any = None) -> Any:
     return r["value"] if r else default
 
 
+def migration_files() -> list[Path]:
+    return sorted(MIGRATIONS_DIR.glob("*.sql"))
+
+
+def _scalar(conn: psycopg.Connection, sql: str) -> list[Any]:
+    """Первый столбец всех строк — при любой фабрике строк соединения."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(sql)
+        return [r[0] for r in cur.fetchall()]
+
+
+def applied(conn: psycopg.Connection) -> set[str]:
+    """Имена применённых миграций; журнала ещё нет — пусто."""
+    if not _scalar(conn, "SELECT to_regclass('ops.schema_migration') IS NOT NULL")[0]:
+        return set()
+    return set(_scalar(conn, "SELECT name FROM ops.schema_migration"))
+
+
+def pending(conn: psycopg.Connection) -> list[str]:
+    """Что применит migrate(), по порядку: основная схема, если её нет, и неприменённые миграции."""
+    todo = [] if _scalar(conn, "SELECT to_regclass('public.person') IS NOT NULL")[0] else [SCHEMA_FILE.name]
+    done = applied(conn)
+    return todo + [f.name for f in migration_files() if f.name not in done]
+
+
 def migrate(dsn: str | None = None) -> list[str]:
     """Основная схема, если её нет, затем миграции из server/migrations по порядку. Повтор безопасен."""
-    applied: list[str] = []
+    done: list[str] = []
     with psycopg.connect(dsn or get_config().database_url, autocommit=True) as conn:
-        if not conn.execute("SELECT to_regclass('public.person') IS NOT NULL").fetchone()[0]:
+        todo = set(pending(conn))
+        if SCHEMA_FILE.name in todo:
             conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
-            applied.append(SCHEMA_FILE.name)
+            done.append(SCHEMA_FILE.name)
         conn.execute("CREATE SCHEMA IF NOT EXISTS ops")
         conn.execute("""CREATE TABLE IF NOT EXISTS ops.schema_migration (
                             name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())""")
-        done = {r[0] for r in conn.execute("SELECT name FROM ops.schema_migration").fetchall()}
-        for f in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if f.name in done:
+        for f in migration_files():
+            if f.name not in todo:
                 continue
             with conn.transaction():
                 conn.execute(f.read_text(encoding="utf-8"))
                 conn.execute("INSERT INTO ops.schema_migration (name) VALUES (%s)", (f.name,))
-            applied.append(f.name)
-    return applied
+            done.append(f.name)
+    return done

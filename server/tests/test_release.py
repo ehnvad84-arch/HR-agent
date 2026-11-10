@@ -1,7 +1,9 @@
 """Фича releases: журнал версий, смена умолчаний настроек, замок миграций."""
+import subprocess
+
 from factories import user
 
-from hr import db
+from hr import db, version
 
 
 def _change(conn, key, old, new):
@@ -72,3 +74,38 @@ def test_s8_repeat_with_new_value_does_nothing(conn):
 
 def test_s8_repeat_migrate_changes_nothing(conn):
     assert db.migrate() == []
+
+
+def test_version_status(conn, tmp_path):
+    """S1: версия кода, последняя удачная запись журнала, неприменённые и «лишние» миграции."""
+    code = (version.ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    st = version.status(conn)
+    assert st == {"code": code, "db": None, "applied": len(db.migration_files()), "pending": [], "ahead": []}
+    assert version.release_date(code) is not None
+
+    db.run(conn, """INSERT INTO ops.release (kind, to_version, ok, started_at) VALUES
+                    ('baseline', 'v1.0.0', true, now() - interval '2 hours'),
+                    ('update', 'v1.1.0', true, now() - interval '1 hour'),
+                    ('update', 'v1.2.0', false, now())""")
+    db.run(conn, "DELETE FROM ops.schema_migration WHERE name = '009_release.sql'")
+    db.run(conn, "INSERT INTO ops.schema_migration (name) VALUES ('010_from_newer.sql')")
+    st = version.status(conn)
+    assert st["db"] == "v1.1.0", "неудачное обновление не считается"
+    assert st["pending"] == ["009_release.sql"] and db.pending(conn) == ["009_release.sql"]
+    assert st["ahead"] == ["010_from_newer.sql"], "после отката база впереди кода — это норма (S5)"
+
+
+def test_version_code_without_version_file(tmp_path):
+    """Установка до v1.1.0: VERSION нет — тег текущего коммита, иначе unknown."""
+    assert version.code_version(tmp_path) == "unknown"
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "v1.0.0"], check=True)
+    assert version.code_version(tmp_path) == "unknown"
+    subprocess.run([*git, "tag", "v1.0.0"], check=True)
+    assert version.code_version(tmp_path) == "v1.0.0"
+    (tmp_path / "VERSION").write_text("v1.1.0\n", encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text("# x\n\n## v1.1.0 — 2026-11-10\n", encoding="utf-8")
+    assert version.code_version(tmp_path) == "v1.1.0"
+    assert version.release_date(root=tmp_path) == "2026-11-10"
+    assert version.release_date("v9.9.9", tmp_path) is None
