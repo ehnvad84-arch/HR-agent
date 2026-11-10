@@ -80,6 +80,12 @@ test("правила — с цифрами из спеки", () => {
   assert.ok(RULES.length >= 9);
 });
 
+test("правило о версии: где номер и что обновление ничего не теряет (releases S11)", () => {
+  const rule = RULES.find((r) => r.startsWith("Номер версии портала"));
+  assert.ok(rule);
+  for (const part of ["внизу этой справки", "до 8:00", "сохраняются"]) assert.ok(rule.includes(part), part);
+});
+
 test("умеет и не умеет: главные границы названы прямо", () => {
   const cannot = CANNOT.join(" ").toLowerCase();
   for (const part of ["сам не пишет людям", "не открывает контакты без человека", "в обход", "не пишет в 1С", "бота"]) assert.ok(cannot.includes(part.toLowerCase()), part);
