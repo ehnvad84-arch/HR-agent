@@ -59,8 +59,9 @@ def _env_names(path: Path) -> dict[str, bool]:
 
 
 def env_missing(example: Path | None = None, env: Path | None = None) -> list[str]:
-    """Имена из .env.example, которых нет в .env или они пустые (S9). Значения не возвращаются."""
-    example = example or SERVER / ".env.example"
+    """Имена из .env.example (корень репозитория), которых нет в server/.env или они пустые (S9).
+    Значения не возвращаются."""
+    example = example or SERVER.parent / ".env.example"
     env = env or SERVER / ".env"
     have = _env_names(env) if env.is_file() else {}
     return [name for name in _env_names(example) if not have.get(name)]

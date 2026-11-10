@@ -202,6 +202,12 @@ def test_cli_env_missing_prints_names_only(tmp_path, cli):
         ["DATABASE_URL", "SECRETS_KEY", "BOT_TOKEN", "LLM_MODEL", "HH_CLIENT_ID"]
 
 
+def test_env_missing_default_example_is_repo_root(tmp_path):
+    """S9, репетиция T10: без --example образец — .env.example в корне репозитория (в server/ его нет)."""
+    names = release.env_missing(env=tmp_path / "нет")
+    assert "DATABASE_URL" in names and "SECRETS_KEY" in names
+
+
 def test_cli_job_record(conn, cli):
     """S12: итог копии базы — в истории задач."""
     db.run(conn, "DELETE FROM ops.job_run")
