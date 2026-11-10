@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
-.venv/
+# .venv — ссылка на server/.venvs/<версия> (update.sh), без слэша: так ловится и ссылка
+.venv
+.venvs/
+.releases/
+update.conf
 data/
 .pytest_cache/
 .env
