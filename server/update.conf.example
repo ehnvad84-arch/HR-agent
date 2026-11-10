@@ -1,0 +1,57 @@
+# Настройки обновления портала: update.sh, rollback.sh, db_copy.sh (ОБНОВЛЕНИЕ_портала.md).
+# Скопируйте в server/update.conf, заполните и закройте: chmod 600 server/update.conf
+# Это исполняемые команды — файл считается кодом установки: владелец — пользователь служб, другим не писать.
+# Секретов здесь нет: ключи и адрес базы — только в server/.env.
+
+# --- Службы и таймеры ---------------------------------------------------------------------------------------
+# Остановка: сначала таймеры, потом портал. Запуск — наоборот. Команда выполняется через bash (eval).
+
+# Вариант 1: systemd пользователя (как в install_autostart.sh)
+TIMERS="ruware-hh-daily.timer ruware-trudvsem.timer ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer"
+STOP_CMD="systemctl --user stop $TIMERS && systemctl --user stop ruware-portal.service"
+START_CMD="systemctl --user start ruware-portal.service && systemctl --user start $TIMERS"
+
+# Вариант 2: портал — системная служба, таймеры — cron пользователя ruware (нужны права sudo на эти команды)
+# STOP_CMD="sudo systemctl stop ruware-portal.service && crontab -l > ~/.ruware-cron && crontab -r"
+# START_CMD="crontab ~/.ruware-cron && sudo systemctl start ruware-portal.service"
+
+# --- Проверка после запуска ---------------------------------------------------------------------------------
+CHECK_URL="http://127.0.0.1:8000/api/version"   # портал должен ответить номером новой версии
+START_WAIT_S=60                                   # сколько секунд ждать ответа
+
+# --- Фоновые задачи -----------------------------------------------------------------------------------------
+JOB_WAIT_MIN=30                                   # сколько минут ждать конца сбора hh и других задач
+
+# --- Копия базы (одна, свежая) ------------------------------------------------------------------------------
+# Каталог вне репозитория, не в общих и синхронизируемых папках: в копии все персональные данные.
+BACKUP_DIR="/var/backups/ruware"
+SPACE_FACTOR=1.2                                  # свободно должно быть ≥ размер базы × множитель
+
+# pg_dump 16 с базой; копия — в stdout, скрипт сам дописывает -Fc. Пароль — в ~/.pgpass (600), не здесь.
+# Вариант 1: PostgreSQL на сервере
+PG_DUMP="pg_dump -h 127.0.0.1 -p 5432 -U ruware ruware_hr"
+PG_RESTORE="pg_restore"
+# Вариант 2: PostgreSQL в Docker (контейнер ruware-db)
+# PG_DUMP="docker exec ruware-db pg_dump -U postgres ruware_hr"
+# PG_RESTORE="docker exec -i ruware-db pg_restore"
+
+# --- Недельный таймер копии (systemd пользователя) -----------------------------------------------------------
+# ~/.config/systemd/user/ruware-db-copy.service:
+#   [Unit]
+#   Description=Рувер: свежая копия базы
+#   [Service]
+#   Type=oneshot
+#   WorkingDirectory=/home/ruware/HR-agent
+#   ExecStart=/bin/bash server/scripts/db_copy.sh
+#
+# ~/.config/systemd/user/ruware-db-copy.timer:
+#   [Unit]
+#   Description=Рувер: копия базы по воскресеньям в 03:00
+#   [Timer]
+#   OnCalendar=Sun *-*-* 03:00:00 Europe/Moscow
+#   Persistent=true
+#   [Install]
+#   WantedBy=timers.target
+#
+# Включить: systemctl --user daemon-reload && systemctl --user enable --now ruware-db-copy.timer
+# Провал копии виден по `systemctl --user status ruware-db-copy` и в истории задач портала (db_copy).

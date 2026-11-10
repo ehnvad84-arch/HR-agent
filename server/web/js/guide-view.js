@@ -1,12 +1,23 @@
 // Блок «Как работает портал» на «Схеме» (S19): всегда раскрыт (решение человека 2026-10-30). Текст и таблица прав — guide.js.
 // Что человеку доступно, решают его права из /api/me.permissions (session.can); подсвечивается его роль в таблице.
 import { h } from "./dom.js";
-import { CAN, CANNOT, RULES, SECTIONS, myRights, rightsTable } from "./guide.js";
+import { CAN, CANNOT, RULES, SECTIONS, myRights, rightsTable, versionLine } from "./guide.js";
 import { ROLE_TITLES } from "./nav-model.js";
 
 const list = (items) => h("ul.guidelist", items.map((text) => h("li", text)));
 
-export function guideBlock(session) {
+// Внизу — строка версии из /api/version (releases S1); не ответил — строки просто нет.
+function versionRow(api, signal) {
+  const row = h("p.hint", { style: "margin:16px 0 0" });
+  if (api) {
+    api.get("/api/version", { signal, noAuth: true })
+      .then((info) => { row.textContent = versionLine(info) || ""; })
+      .catch(() => { /* версия — справочно: без неё справка та же */ });
+  }
+  return row;
+}
+
+export function guideBlock(session, { api = null, signal } = {}) {
   const user = session.user;
   const open = true;   // описание видно сразу и каждый раз; свернуть можно щелчком по заголовку
   const table = rightsTable();
@@ -31,5 +42,6 @@ export function guideBlock(session) {
       h("h3", section("roles").title), mine, rolesTable,
       h("h3", section("rules").title), list(RULES),
       h("h3", section("can").title),
-      h("div.split", h("div", h("div", { style: "font-weight:650" }, "Умеет"), list(CAN)), h("div", h("div", { style: "font-weight:650" }, "Не умеет"), list(CANNOT)))));
+      h("div.split", h("div", h("div", { style: "font-weight:650" }, "Умеет"), list(CAN)), h("div", h("div", { style: "font-weight:650" }, "Не умеет"), list(CANNOT))),
+      versionRow(api, signal)));
 }

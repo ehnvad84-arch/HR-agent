@@ -26,7 +26,7 @@ function runRow(run) {
 export function render(box, ctx) {
   const { api, signal, session } = ctx;
   // сверху — справка «Как работает портал» (S19); ход задач и цифры базы — только у отдела персонала (право base.all), руководителю — одна справка
-  const guide = guideBlock(session);
+  const guide = guideBlock(session, { api, signal });
   if (!hasFullBase(session.user, (permission) => session.can(permission))) {
     mount(box, h("div.card.guidecard", guide));
     return undefined;
