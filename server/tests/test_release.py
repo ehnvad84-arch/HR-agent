@@ -1,4 +1,7 @@
 """Фича releases: журнал версий, смена умолчаний настроек, замок миграций."""
+import hashlib
+import re
+import shutil
 import subprocess
 
 import pytest
@@ -228,3 +231,194 @@ def test_api_version_without_login(monkeypatch):
     assert r.status_code == 200
     assert r.json() == {"version": version.code_version(), "date": version.release_date()}
     assert r.json()["version"] == "v1.1.0" and r.json()["date"] == "2026-11-10"
+
+
+# --- Замок выпущенных миграций (S7), линтер DDL (S6), CHANGELOG ↔ VERSION (S10) ---
+
+SECTIONS = ("Что нового", "Миграции", "Переменные .env", "Ручные шаги", "Откат")
+# Сужение схемы и правка данных, на которых прошлая версия ломается на новой базе (S6)
+NARROWING = {
+    r"\bDROP\b": "DROP",
+    r"\bRENAME\b": "RENAME",
+    r"\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b": "ALTER COLUMN … TYPE",
+    r"\bSET\s+NOT\s+NULL\b": "SET NOT NULL",
+    r"\bADD\s+CONSTRAINT\b": "ADD CONSTRAINT",
+    r"\bCREATE\s+UNIQUE\s+INDEX\b": "CREATE UNIQUE INDEX",
+    r"\bDELETE\s+FROM\b": "DELETE",
+    r"\bTRUNCATE\b": "TRUNCATE",
+    r"\bUPDATE\s+(public\.)?settings\b": "UPDATE settings (только ops.change_default)",
+}
+
+
+def released(mig_dir):
+    """Имена выпущенных миграций из замка RELEASED.sha256 (`sha256  имя`)."""
+    lines = (mig_dir / "RELEASED.sha256").read_text(encoding="utf-8").splitlines()
+    return {ln.split(maxsplit=1)[1].strip(): ln.split()[0] for ln in lines if ln.strip()}
+
+
+def lock_problems(mig_dir):
+    """S7: каждая выпущенная миграция на месте и не изменена; номера NNN_ уникальны."""
+    if not (mig_dir / "RELEASED.sha256").exists():
+        return ["нет RELEASED.sha256"]
+    out = []
+    for name, digest in released(mig_dir).items():
+        f = mig_dir / name
+        if not f.exists():
+            out.append(f"{name}: выпущенная миграция удалена")
+        elif hashlib.sha256(f.read_bytes()).hexdigest() != digest:
+            out.append(f"{name}: выпущенная миграция изменена — исправление только новой миграцией")
+    seen = {}
+    for f in sorted(mig_dir.glob("*.sql")):
+        m = re.match(r"(\d{3})_", f.name)
+        if not m:
+            out.append(f"{f.name}: имя не по образцу NNN_<что>.sql")
+        elif m[1] in seen:
+            out.append(f"{f.name}: номер {m[1]} уже занят {seen[m[1]]}")
+        else:
+            seen[m[1]] = f.name
+    return out
+
+
+def _strip_sql(text):
+    """Без тел $$…$$ и $tag$…$tag$, строк '…' и комментариев --: линтер смотрит только DDL."""
+    text = re.sub(r"\$(\w*)\$.*?\$\1\$", " ", text, flags=re.S)
+    text = re.sub(r"'(?:[^']|'')*'", "''", text)
+    return re.sub(r"--[^\n]*", " ", text)
+
+
+def _top_clauses(stmt):
+    """Части ALTER TABLE через запятую вне скобок."""
+    out, depth, cur = [], 0, ""
+    for ch in stmt:
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return [*out, cur]
+
+
+def ddl_problems(text):
+    """S6: что миграция без строки `-- contract: <причина>` делать не может."""
+    if re.search(r"^\s*--\s*contract:\s*\S", text, flags=re.M | re.I):
+        return []
+    sql = _strip_sql(text)
+    out = [name for rx, name in NARROWING.items() if re.search(rx, sql, flags=re.I)]
+    for stmt in sql.split(";"):
+        if re.match(r"\s*ALTER\s+TABLE\b", stmt, flags=re.I):
+            for cl in _top_clauses(stmt):
+                add = re.search(r"\bADD\s+(?!CONSTRAINT\b)(.*)", cl, flags=re.I | re.S)
+                if add and re.search(r"\bNOT\s+NULL\b", add[1], flags=re.I) \
+                        and not re.search(r"\bDEFAULT\b", add[1], flags=re.I):
+                    out.append("ADD COLUMN … NOT NULL без DEFAULT")
+        if re.match(r"\s*INSERT\s+INTO\s+(public\.)?settings\b", stmt, flags=re.I) \
+                and not re.search(r"\bON\s+CONFLICT\b.*\bDO\s+NOTHING\b", stmt, flags=re.I | re.S):
+            out.append("INSERT INTO settings без ON CONFLICT DO NOTHING")
+    return out
+
+
+def changelog_problems(changelog, ver, new_migrations):
+    """S10: первый раздел CHANGELOG — версия из VERSION, пять подразделов, новые миграции названы."""
+    heads = list(re.finditer(r"^## (\S+) — (\d{4}-\d{2}-\d{2})\s*$", changelog, flags=re.M))
+    if not heads:
+        return ["в CHANGELOG.md нет раздела версии «## vX.Y.Z — ГГГГ-ММ-ДД»"]
+    if heads[0][1] != ver:
+        return [f"первый раздел CHANGELOG.md — {heads[0][1]}, а VERSION — {ver}"]
+    end = heads[1].start() if len(heads) > 1 else len(changelog)
+    body = changelog[heads[0].end():end]
+    subs = dict(re.findall(r"^### (.+?)[ \t]*\n(.*?)(?=^### |\Z)", body, flags=re.M | re.S))
+    out = [f"в разделе {ver} нет «### {s}»" for s in SECTIONS if s not in subs]
+    out += [f"миграция {m} не названа в «Миграции» раздела {ver}" for m in sorted(new_migrations)
+            if m not in subs.get("Миграции", "")]
+    return out
+
+
+def test_s7_released_migrations_locked():
+    """S7: в замке 001–008 из v1.0.0, все суммы сходятся, номера уникальны."""
+    assert lock_problems(db.MIGRATIONS_DIR) == []
+    assert {f"{n:03d}" for n in range(1, 9)} <= {name[:3] for name in released(db.MIGRATIONS_DIR)}
+
+
+def test_s7_changed_deleted_or_duplicate_migration_fails(tmp_path):
+    for f in [*db.migration_files(), db.MIGRATIONS_DIR / "RELEASED.sha256"]:
+        shutil.copy(f, tmp_path)
+    assert lock_problems(tmp_path) == []
+    with (tmp_path / "003_digest.sql").open("a", encoding="utf-8") as fh:
+        fh.write("\n-- правка\n")
+    (tmp_path / "005_org_progress.sql").unlink()
+    (tmp_path / "009_another.sql").write_text("SELECT 1;\n", encoding="utf-8")
+    (tmp_path / "bad.sql").write_text("SELECT 1;\n", encoding="utf-8")
+    probs = lock_problems(tmp_path)
+    assert "003_digest.sql: выпущенная миграция изменена — исправление только новой миграцией" in probs
+    assert "005_org_progress.sql: выпущенная миграция удалена" in probs
+    assert "009_release.sql: номер 009 уже занят 009_another.sql" in probs
+    assert "bad.sql: имя не по образцу NNN_<что>.sql" in probs
+    (tmp_path / "RELEASED.sha256").unlink()
+    assert lock_problems(tmp_path) == ["нет RELEASED.sha256"]
+
+
+def test_s6_unreleased_migrations_only_add():
+    """S6: миграции вне замка (сейчас 009) проходят линтер DDL."""
+    new = [f for f in db.migration_files() if f.name not in released(db.MIGRATIONS_DIR)]
+    assert [f.name for f in new] == ["009_release.sql"]
+    assert {f.name: ddl_problems(f.read_text(encoding="utf-8")) for f in new} == {f.name: [] for f in new}
+
+
+@pytest.mark.parametrize("sql, problem", [
+    ("DROP TABLE x;", "DROP"),
+    ("ALTER TABLE x DROP COLUMN y;", "DROP"),
+    ("ALTER TABLE x RENAME COLUMN a TO b;", "RENAME"),
+    ("ALTER TABLE x ALTER COLUMN a TYPE bigint;", "ALTER COLUMN … TYPE"),
+    ("ALTER TABLE x ALTER COLUMN a SET NOT NULL;", "SET NOT NULL"),
+    ("ALTER TABLE x ADD COLUMN a int NOT NULL;", "ADD COLUMN … NOT NULL без DEFAULT"),
+    ("ALTER TABLE x ADD COLUMN b int, ADD a text NOT NULL;", "ADD COLUMN … NOT NULL без DEFAULT"),
+    ("ALTER TABLE x ADD CONSTRAINT c CHECK (a > 0);", "ADD CONSTRAINT"),
+    ("CREATE UNIQUE INDEX i ON x (a);", "CREATE UNIQUE INDEX"),
+    ("DELETE FROM x WHERE a = 1;", "DELETE"),
+    ("TRUNCATE x;", "TRUNCATE"),
+    ("UPDATE settings SET value = '1' WHERE key = 'k';", "UPDATE settings (только ops.change_default)"),
+    ("INSERT INTO settings (key, value) VALUES ('k', '1');", "INSERT INTO settings без ON CONFLICT DO NOTHING"),
+    ("INSERT INTO settings (key, value) VALUES ('k', '1') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;",
+     "INSERT INTO settings без ON CONFLICT DO NOTHING"),
+])
+def test_s6_narrowing_without_contract_fails(sql, problem):
+    assert problem in ddl_problems(sql)
+    assert ddl_problems(f"-- contract: код v1.1 больше не читает это поле\n{sql}") == []
+
+
+@pytest.mark.parametrize("sql", [
+    "CREATE TABLE IF NOT EXISTS t (id bigserial PRIMARY KEY, a text NOT NULL,"
+    " b bigint REFERENCES x ON DELETE CASCADE, UNIQUE (a));",
+    "ALTER TABLE x ADD COLUMN IF NOT EXISTS a int NOT NULL DEFAULT 0, ADD COLUMN b text;",
+    "CREATE INDEX IF NOT EXISTS i ON x (a);",
+    "ALTER TYPE k ADD VALUE IF NOT EXISTS 'new';",
+    "INSERT INTO settings (key, value) VALUES ('k', '1') ON CONFLICT (key) DO NOTHING;",
+    "SELECT ops.change_default('010_x.sql', 'k', '1', '2');",
+    "CREATE OR REPLACE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$\n"
+    "BEGIN DELETE FROM x; UPDATE settings SET value = '1'; DROP TABLE y; END;\n$$;",
+    "COMMENT ON TABLE x IS 'DROP и RENAME здесь — просто слова'; -- DROP в комментарии",
+])
+def test_s6_additive_migration_passes(sql):
+    assert ddl_problems(sql) == []
+
+
+def test_s10_changelog_matches_version():
+    """S10: первый раздел CHANGELOG — версия из VERSION, пять подразделов, новые миграции названы."""
+    ver = (version.ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    new = {f.name for f in db.migration_files()} - set(released(db.MIGRATIONS_DIR))
+    assert changelog_problems((version.ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), ver, new) == []
+
+
+def test_s10_version_without_changelog_section_fails():
+    ok = ("## v1.2.0 — 2026-12-01\n\n### Что нового\n\n- x\n\n### Миграции\n\n- `010_x.sql`\n\n"
+          "### Переменные .env\n\nНовых нет.\n\n### Ручные шаги\n\nНет.\n\n### Откат\n\nда\n\n"
+          "## v1.1.0 — 2026-11-10\n\n### Что нового\n")
+    assert changelog_problems(ok, "v1.2.0", {"010_x.sql"}) == []
+    assert changelog_problems(ok, "v1.3.0", set()) == ["первый раздел CHANGELOG.md — v1.2.0, а VERSION — v1.3.0"]
+    assert changelog_problems("# Список\n", "v1.2.0", set()) == [
+        "в CHANGELOG.md нет раздела версии «## vX.Y.Z — ГГГГ-ММ-ДД»"]
+    assert changelog_problems(ok, "v1.2.0", {"010_x.sql", "011_y.sql"}) == [
+        "миграция 011_y.sql не названа в «Миграции» раздела v1.2.0"]
+    assert changelog_problems(ok.replace("### Откат\n\nда\n\n", ""), "v1.2.0", {"010_x.sql"}) == [
+        "в разделе v1.2.0 нет «### Откат»"]
