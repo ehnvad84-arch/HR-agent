@@ -5,6 +5,8 @@
 import fcntl
 import hashlib
 import os
+import pty
+import select
 import shutil
 import signal
 import subprocess
@@ -337,7 +339,8 @@ def test_s3_sighup_during_migrate_returns_previous(inst):
     os.killpg(p.pid, signal.SIGHUP)
     out = p.communicate(timeout=30)[0]
     assert p.returncode == 1, out
-    assert "прервано" in out and "работает v1.1.0" in out
+    log = (inst.backup / "update.log").read_text(encoding="utf-8")
+    assert "обрыв SSH" in log and "работает v1.1.0" in log, out
     assert inst.head() == "v1.1.0"
     assert os.readlink(inst.root / "server/.venv") == ".venvs/v1.1.0"
     assert _events(inst) == ["stop", "stop", "start"]
@@ -349,6 +352,8 @@ def test_s2_interrupted_update_finished_by_rerun(inst, link):
     _git(inst.root, "checkout", "-q", "--detach", "v1.1.0")
     (inst.root / "server/.venv").unlink()
     (inst.root / "server/.venv").symlink_to(link)
+    if link == ".venvs/v1.1.0":  # убит после ссылки: «откуда» — только из отметки, записанной до checkout
+        _write(inst.root / ".releases/updating", "v1.0.0 v1.1.0\n")
     code, out = inst("v1.1.0", script=inst.root / "server/scripts/update.sh", PENDING_RC="3")
     assert code == 0, out
     assert "уже установлена" not in out and "доведено" in out
@@ -356,7 +361,8 @@ def test_s2_interrupted_update_finished_by_rerun(inst, link):
     assert _events(inst) == ["stop", "start"]
     calls = _calls(inst)
     assert "inst migrate\n" in calls
-    assert "release-record --kind update --to v1.1.0" in calls
+    assert "release-record --kind update --from v1.0.0 --to v1.1.0" in calls, "ревью Н2: rollback.sh держит ступень"
+    assert not (inst.root / ".releases/updating").exists()
 
 
 def test_s2_same_version_running_is_ok(inst):
@@ -374,3 +380,25 @@ def test_s2_same_version_db_unavailable_no_stop(inst):
     code, out = inst("v1.1.0", script=inst.root / "server/scripts/update.sh", PENDING_RC="1")
     assert code == 1 and "миграции не проверить" in out
     assert _events(inst) == []
+
+
+def test_s12_terminal_hangup_during_copy_portal_started_again(inst, tmp_path):
+    """Ревью Н1: настоящий обрыв SSH на копии базы — терминала нет (запись в него — EIO), портал всё равно запущен."""
+    started = tmp_path / "dump.started"
+    slow = _write(tmp_path / "slow_dump", f'touch {started}; sleep 30\n', 0o755)
+    master, slave = pty.openpty()
+    p = subprocess.Popen(["bash", str(SCRIPTS / "update.sh"), "v1.1.0"], cwd=inst.root,
+                         env=inst.env_of({"PG_DUMP_CMD": str(slow)}), stdin=slave, stdout=slave, stderr=slave,
+                         start_new_session=True)
+    os.close(slave)
+    for _ in range(300):
+        if started.exists():
+            break
+        if select.select([master], [], [], 0.1)[0]:
+            os.read(master, 65536)
+    os.close(master)
+    os.killpg(p.pid, signal.SIGHUP)
+    assert p.wait(timeout=30) == 1
+    assert _events(inst) == ["stop", "start"]
+    assert inst.head() == "v1.0.0"
+    assert "обрыв SSH" in (inst.backup / "update.log").read_text(encoding="utf-8")

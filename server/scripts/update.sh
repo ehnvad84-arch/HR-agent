@@ -71,6 +71,11 @@ hr_in() {
     "$py" -m hr.cli "$@" ) 9>&-
 }
 
+# обрыв SSH: терминала больше нет, запись в него — ошибка EIO; вывод дальше — в журнал рядом с копией базы
+HUP_LOG="$BACKUP_DIR/update.log"
+on_hup() { exec >>"$HUP_LOG" 2>&1; echo "== $(date '+%F %T') обрыв SSH, вывод продолжается здесь"; }
+# версия «откуда» — до переключения кода: прерванный запуск доводится с ней (журнал версий, защита rollback.sh)
+MARK="$ROOT/.releases/updating"
 start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
 up() {  # отвечает ли портал: версия $1; у v1.0.0 нет /api/version — тогда главная страница
   local want="$1" i body
@@ -87,14 +92,20 @@ up() {  # отвечает ли портал: версия $1; у v1.0.0 нет 
 }
 # Код уже на $TAG, но прерванный запуск (обрыв SSH, kill) не довёл шаги 6–7: ссылка venv, миграции, запуск
 finish_interrupted() {
-  local mig_out applied
+  local mig_out applied from="" mark_from mark_to prev
   stuck() {
     echo "Установка $TAG не доведена: $1. Портал может быть остановлен —" \
       "раздел «Если обновление прервалось» в ОБНОВЛЕНИЕ_портала.md" >&2
     exit 1
   }
-  trap '' HUP
+  trap on_hup HUP
   echo "код уже на $TAG, но установка не закончена (прерванный запуск) — довожу шаги 6–7"
+  if [ -f "$MARK" ] && read -r mark_from mark_to <"$MARK" && [ "$mark_to" = "$TAG" ]; then
+    from="$mark_from"
+  else
+    prev="$(basename "$PREV_LINK")"
+    [ "$prev" != "$TAG" ] && [[ "$prev" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && from="$prev"
+  fi
   [ -x "server/.venvs/$TAG/bin/python" ] || stuck "нет venv server/.venvs/$TAG"
   eval "$STOP_CMD" 9>&- || stuck "STOP_CMD завершился с ошибкой"
   ln -sfn ".venvs/$TAG" server/.venv
@@ -104,11 +115,13 @@ finish_interrupted() {
   [ "$applied" = "ничего, база актуальна" ] && applied=""
   eval "$START_CMD" 9>&- || stuck "START_CMD завершился с ошибкой"
   up "$TAG" || stuck "портал не ответил версией $TAG за $START_WAIT_S с"
-  hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" release-record --kind update --to "$TAG" --commit "$COMMIT" \
-    --migrations "${applied// /}" --note "доведено повторным запуском update.sh после прерывания" >/dev/null \
+  hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" release-record --kind update ${from:+--from "$from"} \
+    --to "$TAG" --commit "$COMMIT" --migrations "${applied// /}" \
+    --note "доведено повторным запуском update.sh после прерывания$([ -n "$from" ] || echo "; версия «откуда» неизвестна")" >/dev/null \
     || echo "предупреждение: обновление не попало в журнал версий" >&2
+  rm -f "$MARK"
   git worktree remove --force ".releases/$TAG" >/dev/null 2>&1 || true
-  echo "Обновление до $TAG доведено, миграции: ${applied:-новых нет}"
+  echo "Обновление ${from:+$from → }$TAG доведено, миграции: ${applied:-новых нет}"
   exit 0
 }
 
@@ -204,8 +217,9 @@ rc=0; jobs_wait || rc=$?
 
 # 5. Остановка и копия базы
 say "5/9 остановка портала и таймеров"
-abort_stopped() { trap '' HUP INT TERM; echo "Обновление не начато: $1. Портал и таймеры запускаются снова." >&2; start_back; exit 1; }
-trap 'abort_stopped "прервано"' INT TERM HUP
+abort_stopped() { trap '' HUP INT TERM; set +e; echo "Обновление не начато: $1. Портал и таймеры запускаются снова." >&2; start_back; exit 1; }
+trap 'abort_stopped "прервано"' INT TERM
+trap 'on_hup; abort_stopped "обрыв SSH"' HUP
 trap 'abort_stopped "ошибка в строке $LINENO"' ERR
 eval "$STOP_CMD" 9>&- || abort_stopped "STOP_CMD завершился с ошибкой"
 rc=0; hr_in "$TCODE" "$TPY" jobs-running || rc=$?
@@ -225,6 +239,7 @@ switch_failed() {
   eval "$STOP_CMD" 9>&-
   git checkout -q --detach "$CUR"
   ln -sfn "$PREV_LINK" server/.venv
+  rm -f "$MARK"
   start_back
   local ok=1 note="обновление до $TAG не прошло: $1"
   up "$CUR" || { ok=0; note="$note; после возврата портал не ответил"; }
@@ -244,7 +259,9 @@ switch_failed() {
 # 6. Код, venv, миграции
 say "6/9 код $TAG и миграции"
 trap 'switch_failed "ошибка в строке $LINENO"' ERR
-trap 'switch_failed "прервано"' INT TERM HUP
+trap 'switch_failed "прервано"' INT TERM
+trap 'on_hup; switch_failed "обрыв SSH"' HUP
+echo "$CUR $TAG" >"$MARK"
 git checkout -q --detach "$TAG" || switch_failed "не переключился код"
 ln -sfn ".venvs/$TAG" server/.venv
 mig_out="$(hr_in "$ROOT/server" "$ROOT/server/.venv/bin/python" migrate)" || { echo "$mig_out"; switch_failed "миграция не прошла"; }
@@ -258,7 +275,7 @@ say "7/9 запуск и проверка"
 eval "$START_CMD" 9>&- || switch_failed "START_CMD завершился с ошибкой"
 up "$TAG" || switch_failed "портал не ответил версией $TAG за $START_WAIT_S с"
 trap - ERR INT TERM
-trap '' HUP  # портал уже на $TAG: итог и журнал дописываются и после обрыва SSH
+trap on_hup HUP  # портал уже на $TAG: итог и журнал дописываются и после обрыва SSH
 
 # 9. Итог
 say "9/9 итог"
@@ -269,6 +286,7 @@ if hr_root version 2>/dev/null | grep -q '^по журналу версий: з�
 fi
 hr_root release-record --kind update --from "$CUR" --to "$TAG" --commit "$COMMIT" --migrations "${APPLIED// /}" \
   >/dev/null || echo "предупреждение: обновление не попало в журнал версий" >&2
+rm -f "$MARK"
 missing="$(hr_root env-missing 2>/dev/null || echo "не удалось проверить .env")"
 git worktree remove --force "$WT" >/dev/null 2>&1 || true
 keep="$(basename "$PREV_LINK")"

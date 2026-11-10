@@ -60,6 +60,9 @@ hr_root() {
     "$ROOT/server/.venv/bin/python" -m hr.cli "$@" ) 9>&-
 }
 
+# обрыв SSH: терминала больше нет, запись в него — ошибка EIO; вывод дальше — в журнал рядом с копией базы
+HUP_LOG="$BACKUP_DIR/update.log"
+on_hup() { exec >>"$HUP_LOG" 2>&1; echo "== $(date '+%F %T') обрыв SSH, вывод продолжается здесь"; }
 start_back() { eval "$START_CMD" 9>&- || echo "ВНИМАНИЕ: START_CMD завершился с ошибкой — запустите службы вручную" >&2; }
 up() {  # отвечает ли портал версией $1 (обе версии ≥ v1.1.0 — /api/version есть)
   local want="$1" i body
@@ -77,7 +80,7 @@ finish_interrupted() {
       "раздел «Если обновление прервалось» в ОБНОВЛЕНИЕ_портала.md" >&2
     exit 1
   }
-  trap '' HUP
+  trap on_hup HUP
   echo "код уже на $TAG, но откат не закончен (прерванный запуск) — довожу шаги 6–7"
   [ -x "server/.venvs/$TAG/bin/python" ] || stuck "нет venv server/.venvs/$TAG"
   eval "$STOP_CMD" 9>&- || stuck "STOP_CMD завершился с ошибкой"
@@ -195,7 +198,8 @@ switch_failed() {
 # 6. Остановка, код и venv цели — без migrate
 say "6/7 остановка и код $TAG"
 trap 'switch_failed "ошибка в строке $LINENO"' ERR
-trap 'switch_failed "прервано"' INT TERM HUP
+trap 'switch_failed "прервано"' INT TERM
+trap 'on_hup; switch_failed "обрыв SSH"' HUP
 eval "$STOP_CMD" 9>&- || switch_failed "STOP_CMD завершился с ошибкой"
 git checkout -q --detach "$TAG" || switch_failed "не переключился код"
 ln -sfn ".venvs/$TAG" server/.venv
@@ -205,7 +209,7 @@ say "7/7 запуск и проверка"
 eval "$START_CMD" 9>&- || switch_failed "START_CMD завершился с ошибкой"
 up "$TAG" || switch_failed "портал не ответил версией $TAG за $START_WAIT_S с"
 trap - ERR INT TERM
-trap '' HUP  # портал уже на $TAG: итог дописывается и после обрыва SSH
+trap on_hup HUP  # портал уже на $TAG: итог дописывается и после обрыва SSH
 
 keep="$(basename "$PREV_LINK")"
 for d in server/.venvs/*/; do
