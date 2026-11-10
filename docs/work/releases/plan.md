@@ -20,7 +20,7 @@ scratchpad, после удаляются (решение человека 10.11
   Готово, когда: тест — без cookie ответ ровно `{version, date}`; node-тест `guide.js` показывает строку версии
 - [x] T5 — замок `migrations/RELEASED.sha256` (001–008), уникальность номеров, линтер DDL (`-- contract:`, тела `$$…$$` пропускаются), CHANGELOG ↔ VERSION · сценарий: S6, S7, S10 · проверка: auto · исполнитель: main
   Готово, когда: тесты падают на изменённой выпущенной миграции, дубле номера, `DROP` без пометки, VERSION без раздела CHANGELOG — и проходят на текущем дереве с `009`
-- [ ] T6 — `scripts/db_copy.sh [--check-space]` (`.new` → `pg_restore --list` → `mv`, `RUWARE_LOCK_HELD`), `install_autostart.sh` не трогаем · сценарий: S12 · проверка: manual · исполнитель: main
+- [x] T6 — `scripts/db_copy.sh [--check-space]` (`.new` → `pg_restore --list` → `mv`, `RUWARE_LOCK_HELD`), `install_autostart.sh` не трогаем · сценарий: S12 · проверка: manual · исполнитель: main
   Готово, когда: в репетиции T10 копия заменяется; при нехватке места и ошибке `pg_dump` прежняя копия цела, выход ≠ 0
 - [ ] T7 — `scripts/update.sh` (повторный exec из тега, код цели в `.releases/<тег>`, flock после exec, место до STOP, проверка симлинка `.venv`, очистка `.venvs/` до двух), `server/update.conf.example` (systemd user, Docker, образец недельного таймера копии), `.gitignore` (`.venv`, `.venvs/`, `.releases/`, `update.conf`) · сценарий: S2, S3, S4, S9 · проверка: manual · исполнитель: main
   Готово, когда: `bash -n` чисто; репетиция T10 проходит S2 (v1.0.0 → v1.1.0 командой первого запуска), все отказы S3 без остановки портала, возврат S4 на v1.0.0 с проверкой `/`; в `.venvs/` две версии

@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     jr.add_argument("--failed", action="store_true")
     jr.add_argument("--error")
     jr.add_argument("--stats", type=json.loads, default=None, help="JSON с цифрами итога")
+    sub.add_parser("db-size", help="размер базы в байтах (место под копию)")
     sub.add_parser("gen-key", help="сгенерировать SECRETS_KEY для .env")
     sub.add_parser("hh-auth", help="одноразовая ссылка авторизации hh (действует 10 минут)")
     sub.add_parser("hh-selftest", help="проверить доступ к базе резюме hh")
@@ -97,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "job-record":
         with db.tx() as conn:
             release.job_record(conn, args.job, not args.failed, args.error, args.stats)
+    elif args.cmd == "db-size":
+        with db.tx() as conn:
+            print(db.val(conn, "SELECT pg_database_size(current_database())"))
     elif args.cmd == "gen-key":
         print(crypto.new_key())
     elif args.cmd == "hh-auth":
