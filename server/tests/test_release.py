@@ -372,9 +372,8 @@ def test_s7_changed_deleted_or_duplicate_migration_fails(tmp_path):
 
 
 def test_s6_unreleased_migrations_only_add():
-    """S6: миграции вне замка (сейчас 009) проходят линтер DDL."""
+    """S6: миграции вне замка (до выпуска v1.1.0 — 009) проходят линтер DDL; release.sh дописывает их в замок."""
     new = [f for f in db.migration_files() if f.name not in released(db.MIGRATIONS_DIR)]
-    assert [f.name for f in new] == ["009_release.sql"]
     assert {f.name: ddl_problems(f.read_text(encoding="utf-8")) for f in new} == {f.name: [] for f in new}
 
 
@@ -435,3 +434,48 @@ def test_s10_version_without_changelog_section_fails():
         "миграция 011_y.sql не названа в «Миграции» раздела v1.2.0"]
     assert changelog_problems(ok.replace("### Откат\n\nда\n\n", ""), "v1.2.0", {"010_x.sql"}) == [
         "в разделе v1.2.0 нет «### Откат»"]
+
+
+SCRIPTS = db.MIGRATIONS_DIR.parent / "scripts"
+
+
+def _sh(script, *args):
+    return subprocess.run(["bash", str(SCRIPTS / script), *args], capture_output=True, text=True,
+                          cwd=version.ROOT, timeout=120, check=False)
+
+
+@pytest.mark.parametrize("script, args", [
+    ("release.sh", []), ("release.sh", ["1.2.0"]), ("release.sh", ["v1.2"]), ("release.sh", ["v1.2.0", "--now"]),
+    ("release.sh", ["v1.2.0", "--dry-run", "x"]), ("compat_check.sh", []), ("compat_check.sh", ["v1.0.0; ls"]),
+])
+def test_release_scripts_bad_args(script, args):
+    r = _sh(script, *args)
+    assert r.returncode == 2
+    assert "использование:" in r.stderr
+
+
+def test_s10_release_without_changelog_section_refused():
+    """S10: без раздела версии в CHANGELOG выпуск не собирается, дерево не меняется."""
+    before = subprocess.run(["git", "status", "--porcelain"], cwd=version.ROOT, capture_output=True, text=True,
+                            check=True).stdout
+    r = _sh("release.sh", "v9.9.9", "--dry-run")
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "первый раздел CHANGELOG.md — v1.1.0, а VERSION — v9.9.9" in r.stderr
+    assert "Выпуск v9.9.9 не собран: нет готового раздела в CHANGELOG.md (S10)" in r.stderr
+    assert "2/9" not in r.stdout
+    assert subprocess.run(["git", "status", "--porcelain"], cwd=version.ROOT, capture_output=True, text=True,
+                          check=True).stdout == before
+
+
+def test_s6_compat_check_unknown_tag():
+    r = _sh("compat_check.sh", "v9.9.9")
+    assert r.returncode == 1
+    assert "тега v9.9.9 нет" in r.stderr
+
+
+def test_s6_compat_skip_lines_have_reason():
+    """compat_skip.txt: `nodeid  причина`, nodeid от server/ и причина обязательна."""
+    lines = (SCRIPTS.parent / "tests" / "compat_skip.txt").read_text(encoding="utf-8").splitlines()
+    for ln in lines:
+        if ln.strip() and not ln.lstrip().startswith("#"):
+            assert re.match(r"tests/test_\w+\.py::\S+\s{2,}\S", ln), ln
