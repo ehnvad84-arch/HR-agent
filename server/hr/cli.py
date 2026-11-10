@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     rr.add_argument("--actor", default=None, help="кто обновлял; по умолчанию — пользователь системы")
     rr.add_argument("--failed", action="store_true", help="неудача (по умолчанию — удачно)")
     rr.add_argument("--note")
+    rl = sub.add_parser("release-last", help="«откуда куда» последней удачной записи журнала (выход 5 — записей нет)")
+    rl.add_argument("--kind", default="update", choices=release.KINDS)
     em = sub.add_parser("env-missing", help="переменные из .env.example, которых нет или пусто в .env (только имена)")
     em.add_argument("--env", type=Path)
     em.add_argument("--example", type=Path)
@@ -92,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
                                  git_commit=args.commit, migrations=migs, actor=args.actor or getpass.getuser(),
                                  ok=not args.failed, note=args.note)
         print(f"журнал версий: запись {rid}")
+    elif args.cmd == "release-last":
+        with db.tx() as conn:
+            r = release.last(conn, args.kind)
+        if not r:
+            return 5
+        print(f"{r['from_version'] or '-'} {r['to_version']}")
     elif args.cmd == "env-missing":
         names = release.env_missing(args.example, args.env)
         print("не заданы в .env: " + ", ".join(names) if names else "все переменные из .env.example заданы")

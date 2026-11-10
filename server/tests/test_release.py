@@ -162,6 +162,19 @@ def test_cli_release_record(conn, cli):
         cli("release-record", "--kind", "deploy", "--to", "v1.1.0")
 
 
+def test_cli_release_last(conn, cli):
+    """S5: rollback.sh узнаёт, с какой версии было последнее удачное обновление."""
+    assert cli("release-last") == (5, "", "")
+    cli("release-record", "--kind", "baseline", "--to", "v1.0.0")
+    cli("release-record", "--kind", "update", "--from", "v1.0.0", "--to", "v1.1.0")
+    cli("release-record", "--kind", "update", "--from", "v1.1.0", "--to", "v1.2.0")
+    cli("release-record", "--kind", "update", "--from", "v1.2.0", "--to", "v1.3.0", "--failed")
+    cli("release-record", "--kind", "rollback", "--from", "v1.2.0", "--to", "v1.1.0")
+    assert cli("release-last")[:2] == (0, "v1.1.0 v1.2.0\n")
+    assert cli("release-last", "--kind", "rollback")[:2] == (0, "v1.2.0 v1.1.0\n")
+    assert cli("release-last", "--kind", "baseline")[:2] == (0, "- v1.0.0\n")
+
+
 def test_release_notices_of_run(conn):
     """S8: migrate печатает заметки только своих миграций."""
     db.run(conn, "UPDATE settings SET value = '70' WHERE key = 'alert_score_new'")

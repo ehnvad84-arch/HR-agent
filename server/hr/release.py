@@ -34,6 +34,12 @@ def record(conn: psycopg.Connection, kind: str, to_version: str, *, from_version
                   (kind, from_version, to_version, git_commit, migrations or [], actor, ok, note))
 
 
+def last(conn: psycopg.Connection, kind: str = "update") -> dict | None:
+    """Последняя удачная запись вида kind: откуда и куда (S5 — дальше from_version обновления не откатываемся)."""
+    return db.one(conn, """SELECT from_version, to_version FROM ops.release WHERE ok AND kind = %s
+                           ORDER BY coalesce(finished_at, started_at) DESC, id DESC LIMIT 1""", (kind,))
+
+
 def notices(conn: psycopg.Connection, migrations: list[str]) -> list[str]:
     """Что сказали миграции этого прогона: «настройка X оставлена как есть» (S8)."""
     if not migrations or not db.val(conn, "SELECT to_regclass('ops.release_notice') IS NOT NULL"):

@@ -24,7 +24,7 @@ scratchpad, после удаляются (решение человека 10.11
   Готово, когда: в репетиции T10 копия заменяется; при нехватке места и ошибке `pg_dump` прежняя копия цела, выход ≠ 0
 - [x] T7 — `scripts/update.sh` (повторный exec из тега, код цели в `.releases/<тег>`, flock после exec, место до STOP, проверка симлинка `.venv`, очистка `.venvs/` до двух), `server/update.conf.example` (systemd user, Docker, образец недельного таймера копии), `.gitignore` (`.venv`, `.venvs/`, `.releases/`, `update.conf`) · сценарий: S2, S3, S4, S9 · проверка: manual · исполнитель: main
   Готово, когда: `bash -n` чисто; репетиция T10 проходит S2 (v1.0.0 → v1.1.0 командой первого запуска), все отказы S3 без остановки портала, возврат S4 на v1.0.0 с проверкой `/`; в `.venvs/` две версии
-- [ ] T8 — `scripts/rollback.sh` без `migrate`; отказ ниже v1.1.0, старше `from_version`, при «Откат: нет»; `release-record` до checkout · сценарий: S5 · проверка: manual · исполнитель: main
+- [x] T8 — `scripts/rollback.sh` без `migrate`; отказ ниже v1.1.0, старше `from_version`, при «Откат: нет»; `release-record` до checkout · сценарий: S5 · проверка: manual · исполнитель: main
   Готово, когда: в репетиции T10 откат v1.1.1 → v1.1.0 проходит и v1.1.0 отвечает на базе новой; три отказа срабатывают
 - [ ] T9 — `scripts/compat_check.sh <тег>`, `tests/compat_skip.txt`, `scripts/release.sh vX.Y.Z [--dry-run]` (pytest через `qa-test`) · сценарий: S6, S10 · проверка: auto · исполнитель: main
   Готово, когда: `compat_check.sh v1.0.0` (локальный тег на `2bf9c68`, не пушим) зелёный на миграциях HEAD, база `*_compat_test` и worktree удалены; `release.sh v1.1.0 --dry-run` проходит без коммита; без раздела CHANGELOG — отказ
