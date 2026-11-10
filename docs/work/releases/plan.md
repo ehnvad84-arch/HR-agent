@@ -14,7 +14,7 @@ scratchpad, после удаляются (решение человека 10.11
   Готово, когда: тесты S8 — не трогали → новое значение + `agent_change`; поменял человек → `release_notice`; ключа нет → вставка; повторный `migrate` ничего не меняет
 - [x] T2 — `VERSION`, `CHANGELOG.md` (v1.0.0 и v1.1.0 с «Ручными шагами»: таймер копии, deploy key), `hr/version.py`, `db.pending()` без изменения поведения `migrate()` · сценарий: S1, S10 · проверка: auto · исполнитель: main
   Готово, когда: `test_release.py::test_version_status` (code/db/pending/ahead, `code` без VERSION — по тегу или `unknown`) и `test_migrate.py` зелёные
-- [ ] T3 — команды `hr.cli`: `version`, `migrate --pending`, `jobs-running` (порог `load_stuck_hours`), `release-record`, `env-missing`, `job-record` · сценарий: S1, S3, S9 · проверка: auto · исполнитель: main
+- [x] T3 — команды `hr.cli`: `version`, `migrate --pending`, `jobs-running` (порог `load_stuck_hours`), `release-record`, `env-missing`, `job-record` · сценарий: S1, S3, S9 · проверка: auto · исполнитель: main
   Готово, когда: тесты кодов выхода (3 — есть неприменённые, 4 — идёт задача, зависшая — предупреждение) и `env-missing` печатает только имена — зелёные
 - [ ] T4 — `GET /api/version` без входа (роутер в `hr/main.py`) и строка версии в «Как работает портал» · сценарий: S1 · проверка: auto · исполнитель: main
   Готово, когда: тест — без cookie ответ ровно `{version, date}`; node-тест `guide.js` показывает строку версии

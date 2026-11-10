@@ -1,9 +1,11 @@
 """Фича releases: журнал версий, смена умолчаний настроек, замок миграций."""
 import subprocess
 
+import pytest
 from factories import user
 
-from hr import db, version
+from hr import cli as hr_cli
+from hr import db, release, version
 
 
 def _change(conn, key, old, new):
@@ -93,6 +95,106 @@ def test_version_status(conn, tmp_path):
     assert st["db"] == "v1.1.0", "неудачное обновление не считается"
     assert st["pending"] == ["009_release.sql"] and db.pending(conn) == ["009_release.sql"]
     assert st["ahead"] == ["010_from_newer.sql"], "после отката база впереди кода — это норма (S5)"
+
+
+@pytest.fixture
+def cli(conn_factory, monkeypatch, capsys):
+    """hr.cli на транзакции теста: (код выхода, stdout, stderr)."""
+    monkeypatch.setattr(db, "tx", conn_factory)
+
+    def run(*argv):
+        code = hr_cli.main(list(argv))
+        out = capsys.readouterr()
+        return code, out.out, out.err
+
+    return run
+
+
+def test_cli_version_and_pending_exit_codes(conn, cli):
+    """S1: версия, число применённых; выход 3 — есть неприменённые."""
+    code, out, _ = cli("version")
+    assert code == 0 and version.code_version() in out and "неприменённых нет" in out
+    assert f"миграций применено: {len(db.migration_files())}" in out
+    assert cli("migrate", "--pending")[:2] == (0, "неприменённых нет\n")
+
+    db.run(conn, "DELETE FROM ops.schema_migration WHERE name = '009_release.sql'")
+    code, out, _ = cli("version")
+    assert code == 3 and "не применены: 009_release.sql" in out
+    assert cli("migrate", "--pending")[:2] == (3, "не применены: 009_release.sql\n")
+    assert db.applied(conn) == {f.name for f in db.migration_files()} - {"009_release.sql"}, "--pending не применяет"
+
+
+def test_cli_jobs_running(conn, cli):
+    """S3: идущая задача — выход 4; зависшая (старше load_stuck_hours) — только предупреждение."""
+    db.run(conn, "DELETE FROM ops.job_run")
+    assert cli("jobs-running")[0] == 0
+    db.run(conn, "INSERT INTO ops.job_run (job, started_at) VALUES ('collect_hh', now() - interval '5 hours')")
+    db.run(conn, "INSERT INTO ops.job_run (job, started_at, finished_at, ok) VALUES ('score', now(), now(), true)")
+    code, out, err = cli("jobs-running")
+    assert code == 0 and "collect_hh" in err and "зависла" in err and "не идёт" in out
+
+    db.run(conn, "INSERT INTO ops.job_run (job, started_at) VALUES ('collect_trudvsem', now() - interval '1 hour')")
+    code, out, _ = cli("jobs-running")
+    assert code == 4 and "идёт: collect_trudvsem" in out
+
+    db.run(conn, "UPDATE settings SET value = '0.5' WHERE key = 'load_stuck_hours'")
+    code, _, err = cli("jobs-running")
+    assert code == 0 and "collect_trudvsem" in err, "порог — из настройки"
+
+
+def test_cli_release_record(conn, cli):
+    code, out, _ = cli("release-record", "--kind", "update", "--from", "v1.0.0", "--to", "v1.1.0", "--commit", "abc",
+                       "--migrations", "009_release.sql", "--actor", "инженер", "--note", "проба")
+    assert code == 0 and "журнал версий: запись" in out
+    r = db.one(conn, "SELECT * FROM ops.release ORDER BY id DESC LIMIT 1")
+    assert (r["kind"], r["from_version"], r["to_version"], r["git_commit"], r["migrations"], r["actor"], r["ok"]) == \
+        ("update", "v1.0.0", "v1.1.0", "abc", ["009_release.sql"], "инженер", True)
+    assert r["finished_at"] is not None and version.status(conn)["db"] == "v1.1.0"
+
+    cli("release-record", "--kind", "auto_rollback", "--from", "v1.1.0", "--to", "v1.2.0", "--failed")
+    r = db.one(conn, "SELECT * FROM ops.release ORDER BY id DESC LIMIT 1")
+    assert r["kind"] == "auto_rollback" and r["ok"] is False and r["actor"]
+    assert version.status(conn)["db"] == "v1.1.0"
+    with pytest.raises(SystemExit):
+        cli("release-record", "--kind", "deploy", "--to", "v1.1.0")
+
+
+def test_release_notices_of_run(conn):
+    """S8: migrate печатает заметки только своих миграций."""
+    db.run(conn, "UPDATE settings SET value = '70' WHERE key = 'alert_score_new'")
+    _change(conn, "alert_score_new", 75, 80)
+    assert release.notices(conn, ["999_test.sql"]) == ["настройка alert_score_new оставлена как есть"]
+    assert release.notices(conn, ["009_release.sql"]) == [] and release.notices(conn, []) == []
+
+
+def test_cli_env_missing_prints_names_only(tmp_path, cli):
+    """S9: только имена переменных, которых нет или пусто; значения не печатаются."""
+    example = tmp_path / ".env.example"
+    example.write_text("# комментарий\nDATABASE_URL=postgresql://x\nSECRETS_KEY=\n# OPTIONAL_KEY=\n"
+                       "BOT_TOKEN=\nLLM_MODEL=\nexport HH_CLIENT_ID=\n", encoding="utf-8")
+    env = tmp_path / ".env"
+    env.write_text("DATABASE_URL=postgresql://secret-host/db\nSECRETS_KEY='s3cr3t-value'\nLLM_MODEL=\"\"\n"
+                   "HH_CLIENT_ID = id-value\n", encoding="utf-8")
+    code, out, err = cli("env-missing", "--example", str(example), "--env", str(env))
+    assert code == 0 and out == "не заданы в .env: BOT_TOKEN, LLM_MODEL\n" and err == ""
+    for secret in ("secret-host", "s3cr3t", "id-value"):
+        assert secret not in out
+    env.write_text("DATABASE_URL=a\nSECRETS_KEY=b\nBOT_TOKEN=c\nLLM_MODEL=d\nHH_CLIENT_ID=e\n", encoding="utf-8")
+    assert cli("env-missing", "--example", str(example), "--env", str(env))[1] == \
+        "все переменные из .env.example заданы\n"
+    assert release.env_missing(example, tmp_path / "нет") == \
+        ["DATABASE_URL", "SECRETS_KEY", "BOT_TOKEN", "LLM_MODEL", "HH_CLIENT_ID"]
+
+
+def test_cli_job_record(conn, cli):
+    """S12: итог копии базы — в истории задач."""
+    db.run(conn, "DELETE FROM ops.job_run")
+    assert cli("job-record", "db_copy", "--stats", '{"bytes": 1024}')[0] == 0
+    assert cli("job-record", "db_copy", "--failed", "--error", "мало места")[0] == 0
+    ok, bad = db.rows(conn, "SELECT ok, stats, error, finished_at FROM ops.job_run WHERE job = 'db_copy' ORDER BY id")
+    assert ok["ok"] is True and ok["stats"] == {"bytes": 1024} and ok["finished_at"] is not None
+    assert bad["ok"] is False and bad["error"] == "мало места"
+    assert cli("jobs-running")[0] == 0
 
 
 def test_version_code_without_version_file(tmp_path):

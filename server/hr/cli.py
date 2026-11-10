@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import sys
+from pathlib import Path
 
-from . import auth, crypto, db, hh
+from . import auth, crypto, db, hh, release, version
 from .clock import SYSTEM
 from .config import get_config
 from .http import client
@@ -15,7 +17,27 @@ from .jobs import JobError
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hr.cli", description="Агент подбора: служебные команды")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("migrate", help="накатить схему и миграции")
+    mig = sub.add_parser("migrate", help="накатить схему и миграции")
+    mig.add_argument("--pending", action="store_true", help="только показать неприменённые (выход 3 — есть)")
+    sub.add_parser("version", help="версия кода и базы, миграции (выход 3 — есть неприменённые)")
+    sub.add_parser("jobs-running", help="идущие фоновые задачи (выход 4 — идут; зависшие — предупреждение)")
+    rr = sub.add_parser("release-record", help="запись в журнал версий ops.release")
+    rr.add_argument("--kind", required=True, choices=release.KINDS)
+    rr.add_argument("--to", required=True, dest="to_version")
+    rr.add_argument("--from", dest="from_version")
+    rr.add_argument("--commit")
+    rr.add_argument("--migrations", default="", help="имена через запятую")
+    rr.add_argument("--actor", default=None, help="кто обновлял; по умолчанию — пользователь системы")
+    rr.add_argument("--failed", action="store_true", help="неудача (по умолчанию — удачно)")
+    rr.add_argument("--note")
+    em = sub.add_parser("env-missing", help="переменные из .env.example, которых нет или пусто в .env (только имена)")
+    em.add_argument("--env", type=Path)
+    em.add_argument("--example", type=Path)
+    jr = sub.add_parser("job-record", help="итог задачи вне портала (копия базы) в истории задач")
+    jr.add_argument("job")
+    jr.add_argument("--failed", action="store_true")
+    jr.add_argument("--error")
+    jr.add_argument("--stats", type=json.loads, default=None, help="JSON с цифрами итога")
     sub.add_parser("gen-key", help="сгенерировать SECRETS_KEY для .env")
     sub.add_parser("hh-auth", help="одноразовая ссылка авторизации hh (действует 10 минут)")
     sub.add_parser("hh-selftest", help="проверить доступ к базе резюме hh")
@@ -30,9 +52,51 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("task", choices=sorted(TASKS))
     args = parser.parse_args(argv)
 
-    if args.cmd == "migrate":
+    if args.cmd == "migrate" and args.pending:
+        with db.tx() as conn:
+            todo = db.pending(conn)
+        print("не применены: " + ", ".join(todo) if todo else "неприменённых нет")
+        return 3 if todo else 0
+    elif args.cmd == "migrate":
         applied = db.migrate()
         print("применено: " + (", ".join(applied) if applied else "ничего, база актуальна"))
+        with db.tx() as conn:
+            for msg in release.notices(conn, applied):
+                print(msg)
+    elif args.cmd == "version":
+        with db.tx() as conn:
+            st = version.status(conn)
+        print(f"версия кода: {st['code']} от {version.release_date(st['code']) or 'неизвестно'}")
+        print(f"по журналу версий: {st['db'] or 'записей нет'}")
+        print(f"миграций применено: {st['applied']}")
+        print("не применены: " + ", ".join(st["pending"]) if st["pending"] else "неприменённых нет")
+        if st["ahead"]:
+            print("база новее кода (так бывает после отката): " + ", ".join(st["ahead"]))
+        return 3 if st["pending"] else 0
+    elif args.cmd == "jobs-running":
+        with db.tx() as conn:
+            going, stuck = release.jobs_running(conn)
+        for r in stuck:
+            print(f"предупреждение: {r['job']} не завершена с {r['started_at']:%d.%m %H:%M} — похоже, зависла",
+                  file=sys.stderr)
+        for r in going:
+            print(f"идёт: {r['job']} с {r['started_at']:%d.%m %H:%M}")
+        if not going:
+            print("фоновых задач не идёт")
+        return 4 if going else 0
+    elif args.cmd == "release-record":
+        migs = [m.strip() for m in args.migrations.split(",") if m.strip()]
+        with db.tx() as conn:
+            rid = release.record(conn, args.kind, args.to_version, from_version=args.from_version,
+                                 git_commit=args.commit, migrations=migs, actor=args.actor or getpass.getuser(),
+                                 ok=not args.failed, note=args.note)
+        print(f"журнал версий: запись {rid}")
+    elif args.cmd == "env-missing":
+        names = release.env_missing(args.example, args.env)
+        print("не заданы в .env: " + ", ".join(names) if names else "все переменные из .env.example заданы")
+    elif args.cmd == "job-record":
+        with db.tx() as conn:
+            release.job_record(conn, args.job, not args.failed, args.error, args.stats)
     elif args.cmd == "gen-key":
         print(crypto.new_key())
     elif args.cmd == "hh-auth":
