@@ -178,9 +178,12 @@ def norm_person(n: Norm) -> scoring.Person:
 
 
 def person_data(conn: psycopg.Connection, person_id: int) -> scoring.Person:
-    """Все наблюдения человека: свежее резюме главное, навыки и места работы объединяются."""
-    obs = rows(conn, """SELECT * FROM observation WHERE person_id = %s
-                        ORDER BY is_gone, coalesce(updated_at_src, last_seen) DESC""", (person_id,))
+    """Все наблюдения человека: свежее резюме главное, навыки и места работы объединяются.
+    Должности из опыта и текст — из разбора сырого ответа (normalize): в колонках observation их нет,
+    а балл обязан совпадать с баллом при входе (norm_person) — AD-2."""
+    obs = rows(conn, """SELECT o.*, s.code AS source_code FROM observation o JOIN source s ON s.id = o.source_id
+                        WHERE o.person_id = %s
+                        ORDER BY o.is_gone, coalesce(o.updated_at_src, o.last_seen) DESC""", (person_id,))
     p = scoring.Person()
     if not obs:
         return p
@@ -188,14 +191,17 @@ def person_data(conn: psycopg.Connection, person_id: int) -> scoring.Person:
     p.title, p.city, p.salary_expect = main["title"], main["city"], main["salary_expect"]
     p.relocation_ready, p.avg_tenure_months = main["relocation_ready"], main["avg_tenure_months"]
     p.exp_years = max((float(o["exp_years"]) for o in obs if o["exp_years"] is not None), default=None)
+    texts = []
     for o in obs:
         p.employers += [e for e in o["employers"] if e not in p.employers]
         p.skills += [s for s in o["skills"] if s.lower() not in {x.lower() for x in p.skills}]
-        if o["title"] and o["title"] not in p.positions:
-            p.positions.append(o["title"])
-        about = (o["raw"] or {}).get("skills")
-        if isinstance(about, str):
-            p.text += " " + about
+        n = norm_person(normalize(o["source_code"], o["raw"]))
+        if o is main:
+            p.positions = list(n.positions)      # как при входе: должности опыта главного резюме
+        else:
+            p.positions += [t for t in [o["title"], *n.positions] if t and t != p.title and t not in p.positions]
+        texts.append(n.text)
+    p.text = " ".join(filter(None, texts))
     p.open_code = bool(one(conn, """SELECT 1 FROM social_profile WHERE person_id = %s
                                     AND kind IN ('github', 'gitlab') AND confidence = 'confirmed'""", (person_id,)))
     return p
