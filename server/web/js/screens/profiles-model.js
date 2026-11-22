@@ -5,7 +5,7 @@ import { plural } from "../format.js";
 /** Признаки балла в порядке показа: код для API и подпись. */
 export const FEATURES = [["exp_years", "Опыт по профилю"], ["keywords", "Ключевые слова и инструменты"], ["title_match", "Совпадение должности"],
   ["donor_company", "Опыт в компании-доноре"], ["tenure", "Держится на месте"], ["geo", "География"], ["salary", "Ожидания против вилки"],
-  ["open_code", "Открытый код"]];
+  ["open_code", "Открытый код"], ["semantic", "Близость по смыслу"]];
 export const GEO_OPTIONS = [["krasnodar", "Краснодар"], ["remote_ru", "Удалённо по России"], ["relocation_ru", "Переезд по России"]];
 const ROLES = { head_recruiter: "Руководитель отдела персонала", recruiter: "Рекрутер", hiring_manager: "Нанимающий руководитель", director: "Директор" };
 const STATES = { approved: { text: "действует", pill: "cand" }, pending: { text: "ждёт утверждения", pill: "watch" }, draft: { text: "черновик", pill: "obs" },
@@ -36,6 +36,16 @@ export function groupByDept(items) {
 }
 
 /** Ввод чипсов: запятая, точка с запятой, перенос строки; пустое и повторы (без учёта регистра) убираются. */
+/** Дописать слова (строка или список) к чипсам без повторов (регистр не важен). Возвращает {items, changed}. */
+export function mergeChips(items, input) {
+  const words = Array.isArray(input) ? input.flatMap((part) => splitChips(part)) : splitChips(input);
+  const next = [...items];
+  for (const word of words) {
+    if (!next.some((existing) => existing.toLowerCase() === word.toLowerCase())) next.push(word);
+  }
+  return { items: next, changed: next.length !== items.length };
+}
+
 export function splitChips(text) {
   const seen = new Set();
   const out = [];
@@ -63,9 +73,14 @@ export function conditionsFromLines(text, existing) {
 
 // ------------------------------------------------------------------ веса
 
+// Умолчание настройки semantic_weight_default (migrations/010_semantic_search.sql): профиль без своего веса
+// считается с ним. Сервер умолчание не отдаёт — при новом ops.change_default поменять и здесь
+// (тест profiles.test.mjs сверяет с миграциями; правку админа через hr.cli setting set экран не видит).
+export const SEMANTIC_WEIGHT = 15;
+
 export function defaultWeights(deptCode) {
   return { exp_years: 20, keywords: 25, title_match: 15, donor_company: 10, tenure: 10, geo: 10, salary: 10,
-    open_code: OPEN_CODE_DEPTS.has(deptCode) ? 10 : 0 };
+    open_code: OPEN_CODE_DEPTS.has(deptCode) ? 10 : 0, semantic: SEMANTIC_WEIGHT };
 }
 export const weightSum = (weights) => Object.values(weights || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
 
@@ -80,6 +95,7 @@ const EXTRA_HINTS = {
   title_match: "Насколько должности из резюме похожи на название этой должности.",
   tenure: "Как долго человек держится на местах работы: частые смены снижают оценку.",
   open_code: "Подтверждённый профиль с открытым кодом. Важен для инженерных и программных должностей.",
+  semantic: "Насколько резюме по смыслу похоже на профиль, даже другими словами",
 };
 export const featureLabel = (key) => (FEATURES.find(([code]) => code === key) || [key, String(key)])[1];
 /** [[код, подпись, пояснение]] для блока «Ещё признаки». */
@@ -115,7 +131,7 @@ export function formFromProfile(profile) {
     must_have: conditionLines(profile.must_have).join("\n"),
     nice_to_have: conditionLines(profile.nice_to_have).join("\n"),
     stop_factors: conditionLines(profile.stop_factors).join("\n"),
-    weights: own ? Object.fromEntries(FEATURES.map(([key]) => [key, profile.weights[key] ?? 0])) : defaultWeights(profile.dept_code),
+    weights: own ? Object.fromEntries(FEATURES.map(([key]) => [key, profile.weights[key] ?? (key === "semantic" ? SEMANTIC_WEIGHT : 0)])) : defaultWeights(profile.dept_code),
     usingDefaultWeights: !own,
   };
 }

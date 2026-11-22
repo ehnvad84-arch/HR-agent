@@ -50,7 +50,7 @@ def explain_pair(conn_factory: ConnFactory, person_id: int, role_profile_id: int
         if not m:
             raise NotFound
         template = {"text": m["explanation"] or "", "by": "template"}
-        if not get_config().llm_enabled:
+        if not get_config().llm_enabled or not llm.assist_enabled(conn):
             return template
         data = explain.payload(conn, m)          # только структурные поля, без имени и контактов
         key = cache_key("explain", version, data)
@@ -61,9 +61,10 @@ def explain_pair(conn_factory: ConnFactory, person_id: int, role_profile_id: int
             return template
         pause = float(setting(conn, "llm_pause_minutes", 60))
     try:   # вне транзакции: модель отвечает секунды
-        reply = llm.complete([{"role": "system", "content": system},
-                              {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}],
-                             http=http, pause_minutes=pause)
+        reply = llm.guarded_complete(conn_factory, "explain",
+                                     [{"role": "system", "content": system},
+                                      {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}],
+                                     http=http, pause_minutes=pause)
     except llm.LLMUnavailable as e:
         log.info("разбор по шаблону: %s", e)
         return template

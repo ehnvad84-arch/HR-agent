@@ -4,7 +4,7 @@
 # Службы — systemd пользователя (без root): ruware-pg, ruware-portal, таймеры ruware-hh-daily и ruware-trudvsem.
 # Ключи читаются из server/.env и ~/.config/ruware-hr/session_key при старте службы, в файлы служб не копируются.
 # Убрать всё:  systemctl --user disable --now ruware-pg ruware-portal ruware-hh-daily.timer ruware-trudvsem.timer \
-#               ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer
+#               ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer ruware-reembed-night.timer
 set -euo pipefail
 
 APP="$HOME/projects/HR-agent/server"
@@ -160,6 +160,30 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
+cat > "$UNITS/ruware-reembed-night.service" <<EOF
+[Unit]
+Description=Рувер: ночной пересчёт векторов базы по частям, до 06:30 (S10)
+After=ruware-pg.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP
+ExecStart=/bin/bash -c '$ENV_LOAD; exec .venv/bin/python -m hr.cli run reembed_night'
+EOF
+
+cat > "$UNITS/ruware-reembed-night.timer" <<EOF
+[Unit]
+Description=Рувер: пересчёт векторов каждую ночь в 02:30 по Москве
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Europe/Moscow
+# пропущенную ночь днём не догоняем — процессор нужен порталу; продолжит следующей ночью
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # то, что сейчас запущено вручную, уступает службам
 "$PG/bin/pg_ctl" -D "$DATA" status >/dev/null 2>&1 && "$PG/bin/pg_ctl" -D "$DATA" stop -m fast || true
 pkill -f "uvicorn hr.main:app --host 127.0.0.1 --port 8000" || true
@@ -167,7 +191,7 @@ sleep 2
 
 systemctl --user daemon-reload
 systemctl --user enable --now ruware-pg.service ruware-portal.service ruware-hh-daily.timer ruware-trudvsem.timer \
-    ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer
+    ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer ruware-reembed-night.timer
 # без входа в систему службы пользователя не живут после перезагрузки — включаем «linger»
 loginctl enable-linger "$USER" || echo "Не удалось включить linger: выполните  sudo loginctl enable-linger $USER"
 

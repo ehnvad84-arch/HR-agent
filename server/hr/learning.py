@@ -80,12 +80,14 @@ def post(conn_factory: ConnFactory, user_id: int, body: str, tag: str, now: date
         masked, sure = mask(conn, body)
         from . import tweaks  # предложения личных поправок по тексту замечания — только proposed (S15, A1)
         tweaks.suggest(conn, user_id, fid, body, now)
-        use_model = get_config().llm_enabled and sure and not assist._over_hourly_cap(conn)
+        use_model = (get_config().llm_enabled and sure and llm.assist_enabled(conn)
+                     and not assist._over_hourly_cap(conn))
         pause = float(setting(conn, "llm_pause_minutes", 60))
     reply, by = TEMPLATE_REPLY.get(tag, DEFAULT_REPLY), "template"
     if use_model:
         try:
-            got = actions.validate(llm.complete(
+            got = actions.validate(llm.guarded_complete(
+                conn_factory, "chat",
                 [{"role": "system", "content": system},
                  {"role": "user", "content": json.dumps({"tag": tag, "text": masked}, ensure_ascii=False)}],
                 http=http, pause_minutes=pause, max_tokens=200))
@@ -204,6 +206,7 @@ def build_digest(conn_factory: ConnFactory, now: datetime, *, http: httpx.Client
                                + EXCLUDED.messages RETURNING id""",
                   (min(m["created_at"] for m in msgs).date(), now.date(), len(msgs)))
         pause = float(setting(conn, "llm_pause_minutes", 60))
+        use_model = get_config().llm_enabled and llm.assist_enabled(conn)
     groups = _clusters([t for t, _ in masked], threshold)
     for g in groups:
         stats.seen += len(g)
@@ -213,12 +216,13 @@ def build_digest(conn_factory: ConnFactory, now: datetime, *, http: httpx.Client
                 "rationale": f"{len(g)} сообщ. за неделю об одном и том же.",
                 "question": "Принять и внести изменение?", "target": {}}
         sure = all(masked[i][1] for i in g)
-        if get_config().llm_enabled and sure:
+        if use_model and sure:
             try:
-                reply = llm.complete([{"role": "system", "content": system},
-                                      {"role": "user", "content": json.dumps(
-                                          {"messages": [masked[i][0] for i in g]}, ensure_ascii=False)}],
-                                     http=http, pause_minutes=pause, max_tokens=400)
+                reply = llm.guarded_complete(conn_factory, "digest",
+                                             [{"role": "system", "content": system},
+                                              {"role": "user", "content": json.dumps(
+                                                  {"messages": [masked[i][0] for i in g]}, ensure_ascii=False)}],
+                                             http=http, pause_minutes=pause, max_tokens=400)
                 if isinstance(reply, dict) and all(isinstance(reply.get(k), str) and reply[k].strip()
                                                    for k in ("title", "rationale", "question")):
                     text = " ".join(reply[k] for k in ("title", "rationale", "question"))

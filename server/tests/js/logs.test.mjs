@@ -10,10 +10,11 @@ import {
 const NOW = new Date(2026, 9, 29, 15, 0);
 const local = (d, h, m) => new Date(2026, 9, d, h, m).toISOString();   // время в часовом поясе, где идёт проверка
 
-test("виды изменений — шесть, по-русски, как в отчёте сервера", () => {
-  assert.deepEqual(KINDS.map(([code]) => code), ["threshold", "weight", "profile", "template", "source", "permission"]);
-  assert.deepEqual(KINDS.map(([, label]) => label), ["Пороги", "Веса", "Профили должностей", "Шаблоны", "Источники и пределы", "Права"]);
+test("виды изменений — семь, по-русски, как в отчёте сервера", () => {
+  assert.deepEqual(KINDS.map(([code]) => code), ["threshold", "weight", "profile", "template", "source", "permission", "synonyms"]);
+  assert.deepEqual(KINDS.map(([, label]) => label), ["Пороги", "Веса", "Профили должностей", "Шаблоны", "Источники и пределы", "Права", "Синонимы"]);
   assert.equal(kindLabel("source"), "Источники и пределы");
+  assert.equal(kindLabel("synonyms"), "Синонимы");
   assert.equal(kindLabel("неведомое"), "неведомое");
 });
 
@@ -181,6 +182,25 @@ test("источники: несколько значений — число и 
     before: { crawl_max_pages: 2000, crawl_per_profile_pages: 5 }, after: { crawl_max_pages: 110, crawl_per_profile_pages: 1 } }, { now: NOW });
   assert.equal(line.summary, "Изменено значений: 2");
   assert.deepEqual(line.details, ["Страниц за прогон: 2000 → 110", "Страниц на профиль: 5 → 1"]);
+});
+
+test("синонимы: по ключам «+добавлено −убрано», без сырого «Было/Стало» (ревью, находка 7)", () => {
+  const one = describeChange({ id: 1, kind: "synonyms", applied_at: local(27, 10, 0), note: "синонимы ключей профиля «Инженер»", author: "А",
+    before: { role_code: "E1", synonyms: { altium: ["P-CAD"] } },
+    after: { role_code: "E1", synonyms: { altium: ["P-CAD", "Altium Designer"], kicad: ["KiCAD EDA"] }, profile_id: 3, rollback_of: null } }, { now: NOW });
+  assert.equal(one.kindLabel, "Синонимы");
+  assert.equal(one.summary, "Изменены синонимы ключей: 2");
+  assert.deepEqual(one.details, ["altium: добавлено Altium Designer", "kicad: добавлено KiCAD EDA"]);
+  const back = describeChange({ id: 2, kind: "synonyms", applied_at: local(27, 11, 0), note: "откат", author: "А",
+    before: { role_code: "E1", synonyms: { altium: ["P-CAD", "Altium Designer"] } },
+    after: { role_code: "E1", synonyms: { altium: ["P-CAD"] }, profile_id: 3, rollback_of: 1 } }, { now: NOW });
+  assert.equal(back.summary, "Откат правки синонимов № 1. Ключ «altium»: убрано Altium Designer");
+  assert.deepEqual(back.details, []);
+  const gone = describeChange({ id: 3, kind: "synonyms", applied_at: local(27, 12, 0), note: "ключ удалён", author: null,
+    before: { role_code: "E1", synonyms: { altium: ["P-CAD"], orcad: ["OrCAD Capture"] } },
+    after: { role_code: "E1", synonyms: { altium: ["P-CAD"] } } }, { now: NOW });
+  assert.equal(gone.summary, "Ключ «orcad»: убрано OrCAD Capture");
+  for (const line of [one, back, gone]) assert.ok(!line.details.some((d) => d.startsWith("Было") || d.startsWith("Стало")));
 });
 
 test("незнакомая форма записи: ничего не теряется, но без сырого JSON", () => {

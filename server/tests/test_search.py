@@ -1,4 +1,6 @@
 """T19: поиск по смыслу (S31)."""
+import json
+
 import pytest
 from factories import hh_item, profile, source
 
@@ -73,10 +75,11 @@ def test_reembed_switches_method_and_fills_missing(conn, conn_factory, people, m
 
         def handler(req):
             calls.append(req)
-            return httpx.Response(200, json={"data": [{"embedding": [0.03125] * 1024}]})
+            n = len(json.loads(req.content)["input"])   # пачка input: [...] (T10)
+            return httpx.Response(200, json={"data": [{"index": i, "embedding": [0.03125] * 1024} for i in range(n)]})
 
         stats = search.reembed(conn_factory, http=httpx.Client(transport=httpx.MockTransport(handler)), clock=clock)
-        assert stats.changed == 3 and len(calls) == 3
+        assert stats.changed == 3 and len(calls) == 1   # одна пачка (T10)
         assert {r["embed_model"] for r in db.rows(conn, "SELECT embed_model FROM person_embedding")} == {"emb-1024"}
         again = search.reembed(conn_factory, http=httpx.Client(transport=httpx.MockTransport(handler)),
                                only_stale=True, clock=clock)

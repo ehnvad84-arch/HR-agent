@@ -19,7 +19,9 @@ FEATURE_LABELS = {
     "geo": "География",
     "salary": "Ожидания против вилки",
     "open_code": "Открытый код",
+    "semantic": "Близость по смыслу",
 }
+SEMANTIC = "semantic"   # признак вне default_weights: вес — profile.weights или semantic_weight_default
 
 # Только для профиля без весов; это видно в Score.default_weights
 _DEFAULT_WEIGHTS = {"exp_years": 20, "keywords": 25, "title_match": 15, "donor_company": 10,
@@ -43,13 +45,19 @@ class Params:
     must_penalty_pct: int = 10
     must_penalty_max_pct: int = 30
     local_cities: set[str] = field(default_factory=lambda: {"краснодар"})
+    semantic_weight: int = 15          # semantic_weight_default
+    sim_floor: float = 0.40            # semantic_sim_floor
+    sim_full: float = 0.75             # semantic_sim_full
 
     @classmethod
     def load(cls, get: Callable[[str, Any], Any]) -> Params:
         return cls(stop_cap=int(get("stop_factor_cap", 40)),
                    must_penalty_pct=int(get("must_penalty_pct", 10)),
                    must_penalty_max_pct=int(get("must_penalty_max_pct", 30)),
-                   local_cities={c.lower() for c in get("local_area_cities", ["краснодар"])})
+                   local_cities={c.lower() for c in get("local_area_cities", ["краснодар"])},
+                   semantic_weight=int(get("semantic_weight_default", 15)),
+                   sim_floor=float(get("semantic_sim_floor", 0.40)),
+                   sim_full=float(get("semantic_sim_full", 0.75)))
 
 
 @dataclass
@@ -85,6 +93,7 @@ class Profile:
     weights: dict = field(default_factory=dict)
     keywords: list[str] = field(default_factory=list)
     donor_companies: list[str] = field(default_factory=list)
+    synonyms: dict[str, list[str]] = field(default_factory=dict)   # {norm_keyword(ключ): [термины]}, S5
 
     @classmethod
     def from_row(cls, r: dict, criteria: dict | None = None) -> Profile:
@@ -92,7 +101,8 @@ class Profile:
                 salary_min=r.get("salary_min"), salary_max=r.get("salary_max"),
                 must_have=_reqs(r.get("must_have")), nice_to_have=_reqs(r.get("nice_to_have")),
                 stop_factors=_reqs(r.get("stop_factors")), weights=dict(r.get("weights") or {}),
-                keywords=list(r.get("keywords") or []), donor_companies=list(r.get("donor_companies") or []))
+                keywords=list(r.get("keywords") or []), donor_companies=list(r.get("donor_companies") or []),
+                synonyms=dict(r.get("synonyms") or {}))
         if criteria:
             p.apply_criteria(criteria)
         return p
@@ -172,6 +182,19 @@ def phrase_found(phrase: str, hay: str) -> bool:
     return bool(words) and all(_stem(w) in hay for w in words)
 
 
+def norm_keyword(keyword: str) -> str:
+    """Ключ словаря синонимов: нижний регистр, «ё» → «е», пробелы схлопнуты."""
+    return re.sub(r"\s+", " ", keyword).strip().lower().replace("ё", "е")
+
+
+def synonym_found(term: str, hay: str) -> bool:
+    """Синоним короче 5 знаков — только целым словом: «ПП» не найдётся внутри «ППУ»."""
+    t = term.lower().strip()
+    if len(t) < 5:
+        return bool(t) and re.search(rf"(?<!\w){re.escape(t)}(?!\w)", hay) is not None
+    return phrase_found(t, hay)
+
+
 def exact_without_negation(phrase: str, hay: str) -> bool:
     """Точная фраза, перед которой нет «нет», «без», «не»: «нет судимости» не равно «судимость»."""
     p = phrase.lower().strip()
@@ -216,7 +239,14 @@ def _f_exp(person: Person, profile: Profile) -> tuple[float, str]:
 def _f_keywords(profile: Profile, hay: str) -> tuple[float, str]:
     if not profile.keywords:
         return 0.5, "ключевые слова в профиле не заданы"
-    found = [k for k in dict.fromkeys(profile.keywords) if phrase_found(k, hay)]
+    found = []
+    for k in dict.fromkeys(profile.keywords):
+        if phrase_found(k, hay):
+            found.append(k)
+            continue
+        syn = next((t for t in profile.synonyms.get(norm_keyword(k), []) if synonym_found(t, hay)), None)
+        if syn:
+            found.append(f"{k} ≈ {syn}")
     need = max(3, (len(profile.keywords) + 1) // 2)
     return min(len(found) / need, 1.0), (", ".join(found[:6]) if found else "совпадений нет")
 
@@ -288,12 +318,35 @@ def _f_keywords_partial(profile: Profile, hay: str) -> tuple[float, str]:
     return (ratio, detail) if ratio >= 0.5 else (0.5, "навыки видны только в полном резюме")
 
 
-def score(person: Person, profile: Profile, params: Params, partial: bool = False) -> Score:
-    """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме."""
+SKIP_DETAIL = {"no_vector": "вектор резюме ещё не посчитан", "no_profile_vector": "вектор профиля ещё не посчитан",
+               "embed_down": "модель векторов недоступна"}
+
+
+def semantic_weight(profile: Profile, params: Params) -> int:
+    """Вес «Близости по смыслу»: из профиля, иначе semantic_weight_default; 0 выключает признак."""
+    w = profile.weights.get(SEMANTIC) if SEMANTIC in profile.weights else params.semantic_weight
+    return max(0, int(w or 0))
+
+
+def _f_semantic(cos: float, params: Params) -> tuple[float, str]:
+    span = params.sim_full - params.sim_floor
+    ratio = 1.0 if span <= 0 else (cos - params.sim_floor) / span
+    return max(0.0, min(1.0, ratio)), f"близко к профилю по смыслу: {round(cos * 100)} %"
+
+
+def score(person: Person, profile: Profile, params: Params, partial: bool = False,
+          semantic: float | None = None, semantic_skip: str | None = None) -> Score:
+    """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме.
+    semantic — косинус векторов резюме и профиля (S7). Без него признак вне суммы весов: с
+    semantic_skip ("no_vector" | "no_profile_vector" | "embed_down") — пометка «не учтено»,
+    без — признака нет (hash-v1)."""
     use_defaults = not profile.weights
     weights = default_weights(profile.dept_code) if use_defaults else \
-        {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS}
+        {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS and k != SEMANTIC}
     weights = {k: max(0, int(v)) for k, v in weights.items() if v}
+    sem_w = semantic_weight(profile, params) if (semantic is not None or semantic_skip) and not partial else 0
+    if semantic is not None and sem_w:
+        weights[SEMANTIC] = sem_w
     total_w = sum(weights.values()) or 1
     hay = person.haystack()
     parts = {
@@ -306,6 +359,7 @@ def score(person: Person, profile: Profile, params: Params, partial: bool = Fals
         "salary": lambda: _f_salary(person, profile),
         "open_code": lambda: (1.0, "подтверждённый профиль") if person.open_code
         else (0.0, "не найден или не подтверждён"),
+        SEMANTIC: lambda: _f_semantic(semantic, params),
     }
     features: dict[str, dict] = {}
     raw = 0.0
@@ -314,6 +368,11 @@ def score(person: Person, profile: Profile, params: Params, partial: bool = Fals
         mx = round(w * 100 / total_w)
         features[key] = {"label": FEATURE_LABELS[key], "points": round(ratio * mx), "max": mx, "detail": detail}
         raw += ratio * w * 100 / total_w
+    if SEMANTIC in features:
+        features[SEMANTIC]["sim"] = round(semantic, 3)
+    elif sem_w and semantic_skip:
+        features[SEMANTIC] = {"label": FEATURE_LABELS[SEMANTIC], "points": 0, "max": 0, "skipped": semantic_skip,
+                              "detail": SKIP_DETAIL.get(semantic_skip, semantic_skip)}
 
     missing, broken = [], []
     for req in profile.must_have:

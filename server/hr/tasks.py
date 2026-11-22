@@ -27,9 +27,10 @@ from .jobs import JobStats
 
 
 def score(conn_factory: ConnFactory, *, http=None, clock: Clock | None = None, **_) -> JobStats:
-    """06:50: объяснения моделью для пар выше порога и досчёт векторов (S16, S19, S31)."""
+    """06:50: объяснения моделью для пар выше порога и досчёт векторов — одна пачка, остальное ночью
+    (S16, S19, S31; semantic-search S10)."""
     stats = explain.explain_pending(conn_factory, http=http)
-    vec = search.reembed(conn_factory, only_stale=True, clock=clock)
+    vec = search.reembed(conn_factory, only_stale=True, clock=clock, max_batches=1)
     stats.extra = {"vectors": vec.changed, "vector_errors": vec.errors}
     return stats
 
@@ -76,6 +77,7 @@ TASKS: dict[str, Task] = {
     "load_watchdog": Task(load_check.load_watchdog),
     "feedback_week": Task(learning.feedback_week),
     "staff_sync": Task(staff_1c.sync_task),
+    "reembed_night": Task(search.reembed_night, ("embed",)),
 }
 
 

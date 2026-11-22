@@ -10,7 +10,7 @@ import { hashFor } from "../router.js";
 import { emptyCard, errorCard, loadingLine } from "../ui.js";
 import {
   WHERE_VALUES, apiRequest, ariaSort, columnTitle, filtersActive, fitBarText, fitEmptyText, fitRoleTitle, nextSort, pageInfo, parseState,
-  similarityText, sourceTitle, stateToQuery, tableColumns, whereTitle,
+  similarityText, sourceTitle, vectorsPendingText, stateToQuery, tableColumns, whereTitle,
 } from "./base-model.js";
 
 const DEBOUNCE_MS = 400;
@@ -34,7 +34,7 @@ export function render(box, ctx) {
   // ---------------------------------------------------------------- каркас
 
   const search = h("input.search", { id: "base-q", type: "search", name: "q", value: state.q, "data-tip": "search",
-    placeholder: "Поиск по имени, должности, навыку, городу", autocomplete: "off" });
+    placeholder: "Опишите, кто нужен: разработчик печатных плат", autocomplete: "off" });
   const found = h("span.hint", { role: "status" });
   const vacancyBar = h("div");
   const resetButton = h("button.b", { type: "button", onClick: () => resetAll() }, "Сбросить");
@@ -46,6 +46,7 @@ export function render(box, ctx) {
   const searchHint = h("p.hint", { style: "margin:-4px 6px 12px" },
     "Поиск по смыслу: опишите словами, кто нужен, например «схемотехник Altium». Показывается список по близости; фильтры таблицы в нём не действуют.");
   const searchBox = h("div", { "aria-live": "polite" });
+  const vectorsHint = h("p.hint", { style: "margin:-8px 6px 12px", role: "status" });
 
   const headerRow = h("tr");
   const filterRow = h("tr.filters");
@@ -159,6 +160,12 @@ export function render(box, ctx) {
     changed();
     tableWrap.scrollTop = 0;
   }
+  function clearSearch() {   // «Очистить поиск»: назад к таблице, фильтры остаются
+    state = { ...state, q: "", page: 0 };
+    search.value = "";
+    changed();
+    search.focus();
+  }
   function resetAll() {
     state = parseState({});
     search.value = "";
@@ -242,6 +249,7 @@ export function render(box, ctx) {
     remember(data.items);
     if (!hasMy && (data.items || []).some((r) => typeof r.my_score === "number")) { hasMy = true; buildHeaders(); }   // личные поправки появились: колонка «Мой балл»
     searchBox.hidden = true;
+    vectorsHint.hidden = true;
     tableBox.hidden = false;
     const info = pageInfo(data);
     if (!data.items.length && data.total > 0 && state.page > 0) {   // страниц стало меньше (сменился фильтр): на последнюю
@@ -269,6 +277,9 @@ export function render(box, ctx) {
     searchBox.hidden = false;
     const items = data.items || [];
     found.textContent = items.length ? `Найдено по смыслу: ${items.length}` : "";
+    const pendingText = vectorsPendingText(data.vectors_pending);
+    vectorsHint.textContent = pendingText;
+    vectorsHint.hidden = !pendingText;
     mount(searchBox, items.length
       ? h("div.list", items.map((row) => h("a.li", { href: personHref(row.person_id) },
         face(row, { size: "md" }),
@@ -279,7 +290,10 @@ export function render(box, ctx) {
 
   function failed(error, retry) {
     found.textContent = "";
-    const card = errorCard(error, { onRetry: retry });
+    vectorsHint.hidden = true;
+    const embedDown = Boolean(state.q) && Boolean(error) && (error.code === "embed" || error.status === 503);
+    const card = embedDown ? errorCard(error, { title: "Поиск по смыслу недоступен" }) : errorCard(error, { onRetry: retry });   // S8
+    if (embedDown) card.append(h("div.btns", h("button.b", { type: "button", onClick: clearSearch }, "Очистить поиск")));
     if (state.q) {
       tableBox.hidden = true;
       searchBox.hidden = false;
@@ -323,7 +337,8 @@ export function render(box, ctx) {
 
   // ---------------------------------------------------------------- старт
 
-  mount(box, tools, searchHint, searchBox, tableBox);
+  mount(box, tools, searchHint, vectorsHint, searchBox, tableBox);
+  vectorsHint.hidden = true;
   searchBox.hidden = true;
   buildHeaders();
   drawFilters();

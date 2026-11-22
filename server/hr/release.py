@@ -1,6 +1,7 @@
 """Журнал версий и проверки для update.sh: идущие задачи, недостающие переменные .env, итог копии базы."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,52 @@ def last(conn: psycopg.Connection, kind: str = "update") -> dict | None:
     """Последняя удачная запись вида kind: откуда и куда (S5 — дальше from_version обновления не откатываемся)."""
     return db.one(conn, """SELECT from_version, to_version FROM ops.release WHERE ok AND kind = %s
                            ORDER BY coalesce(finished_at, started_at) DESC, id DESC LIMIT 1""", (kind,))
+
+
+_HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+
+
+def _same_type(key: str, cur: Any, value: Any) -> None:
+    """Новое значение — того же вида, что текущее: иначе `llm_assist_enabled "False"` молча выключает модель
+    (сравнение `is True`), а неверное время роняет ночную задачу."""
+    if isinstance(cur, bool):
+        ok, want = isinstance(value, bool), "true или false"
+    elif isinstance(cur, (int, float)):
+        ok, want = isinstance(value, (int, float)) and not isinstance(value, bool), "число"
+    elif isinstance(cur, str) and _HHMM.fullmatch(cur):
+        ok, want = isinstance(value, str) and bool(_HHMM.fullmatch(value)), "время ЧЧ:ММ, например 06:30"
+    elif isinstance(cur, str):
+        ok, want = isinstance(value, str), "строка"
+    elif isinstance(cur, list):
+        ok, want = isinstance(value, list), "список в JSON, например [\"a\", \"b\"]"
+    else:
+        ok, want = True, ""
+    if not ok:
+        raise ValueError(f"{key} — {want}")
+
+
+def setting_set(conn: psycopg.Connection, key: str, raw: str, login: str) -> tuple[Any, Any]:
+    """Правка настройки человеком без экрана (S12): agent_change с applied_by — ops.change_default её не перетрёт.
+
+    Значение — JSON (`false`, `300`, `"06:30"`); не JSON — строка как есть. Вид — как у текущего значения
+    (_same_type), иначе ValueError и ничего не меняется. Возвращает (было, стало).
+    """
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = raw
+    uid = db.val(conn, "SELECT id FROM app_user WHERE lower(login) = lower(%s) AND is_active", (login.strip(),))
+    if uid is None:
+        raise ValueError(f"нет пользователя {login}")
+    cur = db.one(conn, "SELECT value FROM settings WHERE key = %s FOR UPDATE", (key,))
+    if cur is None:
+        raise ValueError(f"нет настройки {key}")
+    _same_type(key, cur["value"], value)
+    db.run(conn, "UPDATE settings SET value = %s, updated_at = now() WHERE key = %s", (db.j(value), key))
+    db.run(conn, """INSERT INTO agent_change (kind, before, after, applied_by, note)
+                    VALUES ('threshold', %s, %s, %s, 'hr.cli setting set')""",
+           (db.j({"setting": key, "value": cur["value"]}), db.j({"setting": key, "value": value}), uid))
+    return cur["value"], value
 
 
 def notices(conn: psycopg.Connection, migrations: list[str]) -> list[str]:

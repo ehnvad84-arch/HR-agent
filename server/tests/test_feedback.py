@@ -85,3 +85,10 @@ def test_hiring_manager_writes_own_feedback(api):
     assert send(c, h).status_code == 200
     n, nh, _ = api("no_access")
     assert send(n, nh).status_code == 403
+
+
+def test_s12_flag_off_chat_reply_by_template(conn, api, model):
+    db.run(conn, "UPDATE settings SET value = 'false' WHERE key = 'llm_assist_enabled'")
+    c, h, _ = api()
+    r = send(c, h)
+    assert r.json()["by"] == "template" and model.requests == []

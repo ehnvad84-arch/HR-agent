@@ -59,6 +59,8 @@ def test_watchdog_missed_and_stuck(conn, conn_factory):
     a, _, _ = hr_users(conn)
     db.run(conn, "INSERT INTO ops.job_run (job, started_at) VALUES ('collect_trudvsem', %s)",
            (datetime(2026, 11, 2, 22, 0, tzinfo=UTC),))   # вторник 01:00 МСК — началась и зависла
+    db.run(conn, "INSERT INTO ops.job_run (job, started_at, finished_at) VALUES ('reembed_night', %s, %s)",
+           (datetime(2026, 11, 2, 23, 30, tzinfo=UTC), datetime(2026, 11, 3, 3, 30, tzinfo=UTC)))   # ночь прошла
 
     class C:
         def now(self):

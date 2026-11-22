@@ -2,11 +2,12 @@
 from hr import db
 
 
-def test_public_has_46_tables_and_4_views(conn):
+def test_public_has_47_tables_and_4_views(conn):
+    """46 таблиц приёмки ТЗ (пункт 2) и role_synonym из 010_semantic_search.sql."""
     tables = db.val(conn, """SELECT count(*) FROM information_schema.tables
                              WHERE table_schema = 'public' AND table_type = 'BASE TABLE'""")
     views = db.val(conn, "SELECT count(*) FROM information_schema.views WHERE table_schema = 'public'")
-    assert (tables, views) == (46, 4)
+    assert (tables, views) == (47, 4)
 
 
 def test_ops_service_tables(conn):
@@ -51,7 +52,7 @@ def test_workplace_permissions_logged(conn):
               ("head_recruiter", "vacancy.edit"), ("head_recruiter", "feedback.write")):
         assert p in perms, p
     assert ("hiring_manager", "contact.open") not in perms
-    assert db.val(conn, "SELECT count(*) FROM agent_change WHERE kind = 'permission'") == 2
+    assert db.val(conn, "SELECT count(*) FROM agent_change WHERE kind = 'permission'") == 3  # 002, 007, 010
 
 
 def test_workplace_settings(conn):
@@ -95,3 +96,45 @@ def test_manager_cabinet_tables_and_rights(conn):
             assert (role, p) not in perms, (role, p)
     assert not db.rows(conn, "SELECT 1 FROM role_permission WHERE role = 'no_access'")
     assert db.setting(conn, "handoff_comment_min") == 50 and db.setting(conn, "invite_code_hours") == 72
+
+
+def test_semantic_search_tables_and_settings(conn):
+    """T1 semantic-search (S2, S11, S12): синонимы, векторы профилей, суточные пределы, здоровье служб."""
+    ops = {r["table_name"] for r in db.rows(conn, """SELECT table_name FROM information_schema.tables
+                                                      WHERE table_schema = 'ops'""")}
+    assert {"profile_embedding", "daily_quota", "service_health"} <= ops
+    cols = {r["column_name"]: r for r in db.rows(conn, """SELECT column_name, is_nullable, data_type
+                                                           FROM information_schema.columns
+                                                           WHERE table_schema = 'public'
+                                                             AND table_name = 'role_synonym'""")}
+    assert set(cols) == {"role_code", "keyword", "synonyms", "updated_by", "updated_at"}
+    assert cols["synonyms"]["data_type"] == "ARRAY" and cols["updated_at"]["is_nullable"] == "NO"
+    assert db.val(conn, """SELECT format_type(atttypid, atttypmod) FROM pg_attribute
+                           WHERE attrelid = 'ops.profile_embedding'::regclass AND attname = 'embedding'""") \
+        == "vector(1024)"
+    expected = {"hh_full_resume_per_day": 300, "llm_calls_per_day": 500, "llm_synonyms_per_day": 100,
+                "llm_assist_enabled": True, "semantic_weight_default": 15, "semantic_sim_floor": 0.40,
+                "semantic_sim_full": 0.75, "hh_query_max_terms": 20, "embed_batch_size": 32,
+                "embed_night_until": "06:30"}
+    assert {k: db.setting(conn, k) for k in expected} == expected
+    logged = {r["after"]["setting"] for r in db.rows(conn, """SELECT after FROM agent_change
+                                                               WHERE note LIKE 'выпуск 010%%'""")}
+    assert set(expected) <= logged
+
+
+def test_semantic_search_synonyms_permission_logged(conn):
+    """T1 semantic-search: синонимы правят только рекрутеры; руководители с profile.edit — только видят."""
+    perms = {(r["role"], r["permission"]) for r in db.rows(conn, "SELECT role::text, permission FROM role_permission")}
+    assert ("recruiter", "profile.synonyms") in perms and ("head_recruiter", "profile.synonyms") in perms
+    assert ("hiring_manager", "profile.synonyms") not in perms and ("director", "profile.synonyms") not in perms
+    added = db.val(conn, """SELECT after->'add' FROM agent_change
+                            WHERE kind = 'permission' AND note LIKE 'миграция 010%%'""")
+    assert sorted(added) == ["head_recruiter:profile.synonyms", "recruiter:profile.synonyms"]
+
+
+def test_daily_quota_take_is_atomic_upsert(conn):
+    """T1 semantic-search (S11): ключ (day, key) уникален — счёт ведётся одной строкой."""
+    sql = """INSERT INTO ops.daily_quota (day, key, used) VALUES ('2026-11-22', 'hh_full_resume', 1)
+             ON CONFLICT (day, key) DO UPDATE SET used = ops.daily_quota.used + 1
+             WHERE ops.daily_quota.used < %s RETURNING used"""
+    assert [db.val(conn, sql, (2,)) for _ in range(3)] == [1, 2, None]

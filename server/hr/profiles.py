@@ -11,7 +11,7 @@ from pathlib import Path, PurePath
 
 import psycopg
 
-from . import pipeline, scoring
+from . import pipeline, scoring, synonyms
 from .config import get_config
 from .db import j, one, rows, run, setting, val
 from .scoring import FEATURE_LABELS
@@ -158,6 +158,7 @@ def approve(conn: psycopg.Connection, profile_id: int, user_id: int, now: dateti
         (j({"id": profile_id, "state": p["state"]}), j({"id": profile_id, "version": p["version"],
                                                           "state": "approved"}),
          user_id, now, f"утверждена версия {p['version']} профиля «{p['title']}»"))
+    synonyms.prune(conn, p["code"], p["keywords"], p["version"], profile_id, user_id, now)
     return {"id": profile_id, "state": "approved"}
 
 
@@ -167,6 +168,7 @@ def preview(conn: psycopg.Connection, profile_id: int) -> dict:
                        JOIN department d ON d.id = rp.department_id WHERE rp.id = %s""", (profile_id,))
     if not new:
         raise NotFound
+    pipeline.with_synonyms(conn, [new])
     if new["approved_at"]:
         raise Conflict("версия уже утверждена")
     cur = next((p for p in pipeline.current_profiles(conn) if p["code"] == new["code"]), None)

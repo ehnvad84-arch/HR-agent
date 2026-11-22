@@ -55,3 +55,28 @@ def test_s20_expired_observation_not_rechecked(conn, conn_factory, clock):
     v2 = profile(conn, version="1.1")
     rescore_profile(conn_factory, v2["id"], now=clock.now())
     assert db.val(conn, "SELECT person_id FROM observation WHERE id = %s", (r.observation_id,)) is None
+
+
+def test_score_on_entry_equals_rescore_with_positions_in_experience(conn, conn_factory, clock):
+    """Балл воспроизводим (AD-2): должность профиля только в опыте работы, не в заголовке резюме —
+    балл при входе (порог, событие «new») == match == после rescore_person и rescore_profile."""
+    from hr import pipeline
+
+    v1 = profile(conn, version="1.0")
+    exp = [{"company": "Болид", "position": "Ведущий инженер-электронщик", "start": "2016-01-01", "end": None}]
+    it = hh_item(id="pos-1", title="Схемотехник", experience=exp)
+    r = ingest(conn, it, clock)
+    entry = db.val(conn, "SELECT (detail->>'score')::int FROM obs_event WHERE person_id = %s AND kind = 'new'",
+                   (r.person_id,))
+    match = lambda pid: db.val(conn, "SELECT score FROM match WHERE person_id = %s AND role_profile_id = %s",  # noqa: E731
+                               (r.person_id, pid))
+    assert entry == match(v1["id"])
+    pipeline.rescore_person(conn, r.person_id)
+    assert match(v1["id"]) == entry
+    events = db.val(conn, "SELECT count(*) FROM obs_event")
+    alerts = db.val(conn, "SELECT count(*) FROM alert")
+    v2 = profile(conn, version="1.1")
+    rescore_profile(conn_factory, v2["id"], now=clock.now())
+    assert match(v2["id"]) == entry
+    assert db.val(conn, "SELECT count(*) FROM obs_event") == events, "пересчёт не порождает событий"
+    assert db.val(conn, "SELECT count(*) FROM alert") == alerts, "пересчёт не порождает сигналов"

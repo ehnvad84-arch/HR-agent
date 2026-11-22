@@ -190,6 +190,8 @@ export function createClient({ fetchImpl, session = defaultSession, reauth = nul
     get: (path, options) => request("GET", path, options),
     /** body — объект, уйдёт как JSON. */
     post: (path, body, options) => request("POST", path, { ...options, body }),
+    /** body — объект, уйдёт как JSON (замена: синонимы ключей). */
+    put: (path, body, options) => request("PUT", path, { ...options, body }),
     /** form — FormData (загрузка файла ДИ). */
     upload: (path, form, options) => request("POST", path, { ...options, form }),
     /** Окно входа для 401: функция возвращает промис, который завершается после успешного входа. */

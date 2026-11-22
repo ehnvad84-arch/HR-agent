@@ -1,5 +1,6 @@
 // «База» без DOM: состояние экрана в адресе, запрос к API, сортировка, страницы (S19, S20, S22).
 // Состояние живёт в хэше (#/base?city=Томск&sort=city&dir=asc): ссылку можно скопировать, F5 её сохраняет.
+import { numText } from "../format.js";
 
 export const COLUMNS = [
   { key: "name", title: "ФИО", sort: "name", type: "text" },
@@ -55,7 +56,15 @@ export const fitEmptyText = (canLoad) => (canLoad
 
 export const whereTitle = (where) => WHERE_TITLES[where] || String(where ?? "");
 export const sourceTitle = (code) => SOURCE_TITLES[code] || String(code ?? "");
-export const similarityText = (value) => (typeof value === "number" ? `близость ${Math.round(value * 100)} %` : "");
+export const similarityText = (value) => (typeof value === "number" ? `близко по смыслу: ${Math.round(value * 100)} %` : "");
+
+/** Подсказка под поиском: сколько резюме ещё без вектора и потому вне поиска по смыслу (S10); нет таких — пусто. */
+export function vectorsPendingText(pending) {
+  const n = Number(pending);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const one = n % 10 === 1 && n % 100 !== 11;
+  return `Ещё ${numText(n)} резюме не ${one ? "участвует" : "участвуют"} в поиске по смыслу: векторы считаются ночью`;
+}
 
 const text = (value, limit = 200) => String(value ?? "").trim().slice(0, limit);
 

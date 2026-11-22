@@ -61,6 +61,9 @@ def explain_pending(conn_factory: ConnFactory, *, http: httpx.Client | None = No
     system, version = llm.prompt("explain_score")
     model = f"{get_config().llm_model}/explain_score@{version}"
     with conn_factory() as conn:
+        if not llm.assist_enabled(conn):
+            stats.note = "объяснения моделью выключены"
+            return stats
         limit = int(setting(conn, "llm_explain_per_run", 500))
         threshold = int(setting(conn, "watch_threshold", 60))
         todo = rows(conn, """
@@ -77,9 +80,13 @@ def explain_pending(conn_factory: ConnFactory, *, http: httpx.Client | None = No
             break
         stats.seen += 1
         try:
-            reply = llm.complete([{"role": "system", "content": system},
-                                  {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}],
-                                 http=http)
+            reply = llm.guarded_complete(
+                conn_factory, llm.EXPLAIN_BACKGROUND,
+                [{"role": "system", "content": system},
+                 {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}], http=http)
+        except (llm.LLMDailyLimit, llm.LLMDisabled) as e:
+            stats.note = f"{e} — остальные пары остались с шаблоном"
+            break
         except llm.LLMUnavailable:
             fails += 1
             stats.errors += 1

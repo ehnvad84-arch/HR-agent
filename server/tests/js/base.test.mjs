@@ -5,7 +5,7 @@ import test from "node:test";
 import { hashFor, parseHash } from "../../web/js/router.js";
 import {
   COLUMNS, MY_COLUMN, apiRequest, ariaSort, canShowFit, columnTitle, filtersActive, fitAvailability, fitBarText, fitEmptyText, fitQuery, fitRoleTitle, nextSort, pageInfo, parseState,
-  similarityText, sourceTitle, stateToQuery, tableColumns, whereTitle,
+  similarityText, sourceTitle, vectorsPendingText, stateToQuery, tableColumns, whereTitle,
 } from "../../web/js/screens/base-model.js";
 
 test("колонки таблицы — как в прототипе, у каждой своё имя сортировки для API", () => {
@@ -125,8 +125,8 @@ test("«Где числится» и источник — русскими сл�
 });
 
 test("близость поиска — проценты", () => {
-  assert.equal(similarityText(0.1807), "близость 18 %");
-  assert.equal(similarityText(0.995), "близость 100 %");
+  assert.equal(similarityText(0.1807), "близко по смыслу: 18 %");
+  assert.equal(similarityText(0.995), "близко по смыслу: 100 %");
   assert.equal(similarityText(null), "");
 });
 
@@ -218,4 +218,11 @@ test("T13: сортировка по моему баллу допустима в
   assert.deepEqual(apiRequest(parseState({ sort: "my", dir: "desc" })).query, { sort: "my", dir: "desc", page: 0 });
   assert.equal(ariaSort(parseState({ sort: "my" }), "my"), "descending");
   assert.equal(columnTitle(MY_COLUMN, parseState({ fit: "hw_lead" })), "Мой балл");
+});
+
+test("S10: подсказка поиска про резюме без вектора — только когда они есть", () => {
+  assert.equal(vectorsPendingText(12400), "Ещё 12 400 резюме не участвуют в поиске по смыслу: векторы считаются ночью");
+  assert.equal(vectorsPendingText(1), "Ещё 1 резюме не участвует в поиске по смыслу: векторы считаются ночью");
+  assert.equal(vectorsPendingText(0), "");
+  assert.equal(vectorsPendingText(undefined), "");
 });

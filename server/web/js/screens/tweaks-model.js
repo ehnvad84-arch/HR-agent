@@ -55,7 +55,8 @@ export const proposalText = (tweak) => `По вашим замечаниям: ${
 
 /** Строки блока «Веса признаков»: общий вес рядом, свой поверх; без своей поправки свой равен общему. */
 export function weightRows(common, mine) {
-  return FEATURES.map(([key, label]) => {
+  // «Близость по смыслу» — вес профиля («База должностей»): личной поправкой её не правят
+  return FEATURES.filter(([key]) => key !== "semantic").map(([key, label]) => {
     const shared = Number(common && common[key]) || 0;
     const own = mine && Number.isFinite(mine[key]) ? mine[key] : shared;
     return { key, label, common: shared, value: own, changed: own !== shared };

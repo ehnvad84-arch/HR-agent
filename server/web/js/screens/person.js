@@ -241,7 +241,7 @@ function socialCard(social, env) {
 // ------------------------------------------------------------------ правая колонка
 
 /** Блок разбора одного профиля: текст шаблона, пометка или «Агент пишет разбор…». Возвращает {el, set(reply)}. */
-function explainSlot(match, cached) {
+function explainSlot(match, cached, llmOn = true) {
   const el = h("div.explain", { "aria-live": "polite" });
   const set = (text, by) => {
     el.removeAttribute("aria-busy");
@@ -252,6 +252,7 @@ function explainSlot(match, cached) {
     mount(el, h("div.t2", "Агент пишет разбор…"));
   };
   if (cached) set(cached.text, cached.by);
+  else if (match.model === "template" && !llmOn) set(match.explanation, "template");   // флаг выключен (S12): сразу шаблон
   else if (match.model === "template") pending();
   else set(match.explanation, "model");
   return { el, set };
@@ -264,10 +265,12 @@ function matchCard(match, slot, cabinet = false) {
       h("div.grow", h("h2.t1", "Из чего сложился балл"),
         h("div.t2", `«${match.role_title}» · версия профиля ${match.profile_version}`),
         typeof match.my_score === "number" ? h("div.chips", chip(`мой ${match.my_score}`, "b")) : null)),
-    h("div", { style: "margin-top:12px" }, rows.map((r) =>
-      h("div.feat", h("div.lbl", h("span", r.label), h("span.num", `${r.points} / ${r.max}`)),
+    h("div", { style: "margin-top:12px" }, rows.map((r) => (r.skipped
+      ? h("div.feat", h("div.lbl", h("span", r.label), chip("не учтено", "")),
+        r.detail ? h("div.detail", r.detail) : null)
+      : h("div.feat", h("div.lbl", h("span", r.label), h("span.num", `${r.points} / ${r.max}`)),
         h("div.bar", { class: r.low ? "low" : null }, h("i", { style: `width:${r.pct}%` })),
-        r.detail ? h("div.detail", r.detail) : null))),
+        r.detail ? h("div.detail", r.detail) : null)))),
     slot.el,
     h("div.t2", { style: "margin-top:8px" }, cabinet
       ? `Веса признаков задаются в профиле должности «${match.role_title}»; свои поправки вы вносите в «Обучении агента».`
@@ -398,7 +401,7 @@ function decisionsCard(data) {
 // ------------------------------------------------------------------ экран
 
 export function view(data, env) {
-  const slots = new Map(data.matches.map((m) => [m.role_profile_id, explainSlot(m, env.explained.get(m.role_profile_id))]));
+  const slots = new Map(data.matches.map((m) => [m.role_profile_id, explainSlot(m, env.explained.get(m.role_profile_id), data.llm_assist_enabled !== false)]));
   const cabinet = isCabinet(env.session.user);
   const matchCards = data.matches.length
     ? data.matches.map((m) => matchCard(m, slots.get(m.role_profile_id), cabinet))
@@ -470,6 +473,7 @@ export function render(box, ctx) {
   /** Разбор моделью по одному профилю за раз: на сервере модель одна, параллельные запросы получили бы «модель занята». */
   async function explainAll(data, slots) {
     const mine = ++generation;
+    if (data.llm_assist_enabled === false) return;   // S12: разбор моделью выключен, шаблон уже на месте
     for (const match of explainTargets(data.matches)) {
       if (explained.has(match.role_profile_id)) continue;
       let reply;

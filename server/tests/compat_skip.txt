@@ -2,3 +2,8 @@
 # Строка: `nodeid  причина` — nodeid от каталога server/, причина обязательна. Только тесты, которые знают список
 # миграций или значения настроек (так было в test_migrate.py), а не сломанное поведение: его чинят миграцией.
 # v1.0.0 на миграциях v1.1.0 (009_release.sql) — исключений нет, 393 теста зелёные (проверено 2026-11-10).
+# v1.1.0 на миграциях v1.2.0 (010_semantic_search.sql):
+tests/test_migrate.py::test_public_has_46_tables_and_4_views  010 добавляет таблицу role_synonym — тест знает число таблиц
+tests/test_migrate.py::test_workplace_permissions_logged  010 пишет третью запись о правах (profile.synonyms) — тест знает число записей
+tests/test_release.py::test_s10_changelog_matches_version  сверяет миграции HEAD с CHANGELOG v1.1.0 — тест знает список миграций, от базы не зависит
+tests/test_release.py::test_s10_release_without_changelog_section_refused  запускает release.sh из временного worktree проверки, где нет .venv — от базы не зависит

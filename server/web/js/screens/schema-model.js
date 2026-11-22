@@ -1,12 +1,12 @@
 // «Схема» без DOM (S34): названия задач, последний прогон каждой из ops.job_run словами, живые цифры базы.
 // Данные — GET /api/schema: {jobs: последний прогон каждой задачи, counts: объём базы} (hr/views.py: schema).
-import { capitalize, numText, plural, whenLabel } from "../format.js";
+import { capitalize, numText, plural, timeLabel, whenLabel } from "../format.js";
 
 /** Задачи в порядке пути данных: сбор → оценка → сигналы → обучение → почта → пересчёт. */
 export const JOBS = [["collect_hh", "Сбор с hh"], ["import_files", "Выгрузки из кабинетов"], ["mark_gone", "Проверка пропавших"],
   ["score", "Оценка и разборы"], ["alerts", "Сигналы"], ["collect_social", "Следы в сети"], ["photos", "Фото"],
   ["digest", "Недельная сводка"], ["apply_digest", "Применение решений"], ["digest_mail", "Утренний дайджест"],
-  ["weekly_report", "Недельный отчёт"], ["rescore_profile", "Пересчёт по профилю"]];
+  ["weekly_report", "Недельный отчёт"], ["rescore_profile", "Пересчёт по профилю"], ["reembed_night", "Пересчёт векторов"]];
 export const jobTitle = (code) => (JOBS.find(([c]) => c === code) || [code, String(code ?? "")])[1];
 
 /** Задача без конца дольше этого срока считается прерванной: экран не ждёт её вечно. */
@@ -132,4 +132,41 @@ export function zonesTitle(counts) {
   const c = countOf(counts, "candidates");
   if (o === null || p === null || c === null) return base;
   return `${base}: ${numText(o)} резюме, ${numText(p)} ${plural(p, "карточка", "карточки", "карточек")}, ${numText(c)} ${plural(c, "кандидат", "кандидата", "кандидатов")}`;
+}
+
+// ------------------------------------------------------------------ пределы суток и предупреждения (S8, S10–S12)
+
+const QUOTA_TILES = [["hh_full_resume", "Полных резюме hh сегодня"], ["llm", "Запросов к модели сегодня"]];
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** Плитки «Полных резюме hh сегодня 214 / 300» и «Запросов к модели сегодня 12 / 500»; нет данных — нет плитки. */
+export function quotaTiles(quota) {
+  return QUOTA_TILES
+    .filter(([key]) => quota && quota[key] && isNum(quota[key].used) && isNum(quota[key].limit))
+    .map(([key, label]) => ({ key, label, value: `${numText(quota[key].used)} / ${numText(quota[key].limit)}` }));
+}
+
+/**
+ * Строки над плитками: видны, пока выполняется условие. {key, text, progress?: {now, max, percent}}.
+ * Порядок: модель недоступна, пересчёт векторов, предел резюме hh.
+ */
+export function schemaNotices(data) {
+  const out = [];
+  const vectors = (data && data.vectors) || {};
+  if (vectors.down_since) {
+    const since = timeLabel(vectors.down_since);
+    out.push({ key: "embed_down", text: `Модель векторов недоступна${since ? ` с ${since}` : ""}: балл считается без смысла, поиск по смыслу не работает. Сбор идёт.` });
+  }
+  if (isNum(vectors.pending) && vectors.pending > 0 && isNum(vectors.total) && vectors.total > 0) {
+    const done = Math.max(0, vectors.total - vectors.pending);
+    out.push({ key: "vectors_pending",
+      text: `Пересчёт векторов базы: осталось ${numText(vectors.pending)} из ${numText(vectors.total)} резюме. Идёт ночью по частям; до пересчёта человек оценивается без смысла.`,
+      progress: { now: done, max: vectors.total, percent: Math.round((done / vectors.total) * 100) } });
+  }
+  const hh = data && data.quota && data.quota.hh_full_resume;
+  if (hh && isNum(hh.used) && isNum(hh.limit) && hh.limit > 0 && hh.used >= hh.limit) {
+    out.push({ key: "hh_full_cap",
+      text: `Предел полных резюме hh на сегодня исчерпан: ${numText(hh.used)} из ${numText(hh.limit)}. Остальные подходящие — в завтрашнем сборе.` });
+  }
+  return out;
 }
