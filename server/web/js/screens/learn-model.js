@@ -49,6 +49,12 @@ export const SETTING_TITLES = {
   watch_threshold: "порог наблюдения", daily_cards_limit: "число карточек в день", alert_score_new: "порог сигнала по новым людям",
   alert_score_pool_event: "порог сигнала по резерву", stalled_after_days: "дней до статуса «зависли»",
   reserve_touch_months: "месяцев до напоминания по резерву",
+  hh_full_resume_per_day: "полных резюме hh в сутки", llm_calls_per_day: "запросов к модели в сутки",
+  llm_explain_per_day: "фоновых объяснений моделью в сутки", llm_synonyms_per_day: "запросов синонимов в сутки",
+  llm_assist_enabled: "объяснения и черновики моделью", semantic_weight_default: "вес близости по смыслу",
+  semantic_sim_floor: "нижний порог близости по смыслу", semantic_sim_full: "полная близость по смыслу",
+  hh_query_max_terms: "слов в запросе hh", embed_batch_size: "резюме в пачке векторов",
+  embed_night_until: "конец ночного пересчёта векторов",
 };
 
 /** Что изменится, если принять: «порог наблюдения → 65», «вес «Открытый код» в профиле «…» → 12». */
