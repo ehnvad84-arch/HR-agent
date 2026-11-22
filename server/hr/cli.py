@@ -49,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
     uc.add_argument("--name", required=True, help="ФИО для журнала действий")
     uc.add_argument("--role", default="head_recruiter",
                     choices=["recruiter", "head_recruiter", "hiring_manager", "director"])
+    st = sub.add_parser("setting", help="настройки портала")
+    st_sub = st.add_subparsers(dest="setting_cmd", required=True)
+    ss = st_sub.add_parser("set", help="поменять настройку; правка пишется в журнал изменений и переживает выпуски")
+    ss.add_argument("key")
+    ss.add_argument("value", help="JSON: false, 300, \"06:30\"; не JSON — строка как есть")
+    ss.add_argument("--by", required=True, help="логин того, кто меняет")
     sub.add_parser("reembed", help="пересчитать векторы поиска по смыслу текущим способом")
     from .tasks import TASKS
     run_p = sub.add_parser("run", help="запустить фоновую задачу вручную")
@@ -157,6 +163,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Учётная запись не создана: {e}")
             return 1
         print(f"Учётная запись {args.login} ({args.role}) готова, id {uid}")
+    elif args.cmd == "setting":
+        try:
+            with db.tx() as conn:
+                old, new = release.setting_set(conn, args.key, args.value, args.by)
+        except ValueError as e:
+            print(f"Настройка не изменена: {e}", file=sys.stderr)
+            return 1
+        print(f"{args.key}: {json.dumps(old, ensure_ascii=False)} → {json.dumps(new, ensure_ascii=False)}")
     elif args.cmd == "reembed":
         from . import search
         print(f"пересчитано векторов: {search.reembed(db.tx).changed}")
