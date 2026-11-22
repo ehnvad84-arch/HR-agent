@@ -136,6 +136,38 @@ def last_change_id(conn: psycopg.Connection, role_code: str) -> int | None:
                         ORDER BY id DESC LIMIT 1""", (role_code,))
 
 
+def _diff(before: dict, after: dict) -> dict[str, dict[str, list[str]]]:
+    out = {}
+    for kw in sorted(before.keys() | after.keys()):
+        b, a = before.get(kw) or [], after.get(kw) or []
+        plus, minus = [t for t in a if t not in b], [t for t in b if t not in a]
+        if plus or minus:
+            out[kw] = {"+": plus, "-": minus}
+    return out
+
+
+def view(conn: psycopg.Connection, profile_id: int, can_edit: bool) -> dict:
+    """Карточка «Синонимы ключей»: ключи действующей версии с синонимами и история правок должности."""
+    code = val(conn, "SELECT code FROM role_profile WHERE id = %s", (profile_id,))
+    if code is None:
+        raise NotFound
+    try:
+        keywords = [k for k in (current(conn, profile_id)["keywords"] or []) if k and k.strip()]
+    except NoKeywords:
+        keywords = []
+    have = load(conn, code)
+    hist = rows(conn, """SELECT c.id, c.applied_at, c.before, c.after, u.full_name AS by
+                         FROM agent_change c LEFT JOIN app_user u ON u.id = c.applied_by
+                         WHERE c.kind = 'synonyms' AND c.after->>'role_code' = %s
+                         ORDER BY c.id DESC""", (code,))
+    return {"role_code": code, "can_edit": can_edit,
+            "items": [{"keyword": k, "synonyms": have.get(norm(k), [])} for k in keywords],
+            "history": [{"id": h["id"], "applied_at": h["applied_at"].isoformat(), "by": h["by"],
+                         "diff": _diff(h["before"].get("synonyms") or {}, h["after"].get("synonyms") or {}),
+                         "rollback_of": h["after"].get("rollback_of"), "can_rollback": can_edit and i == 0}
+                        for i, h in enumerate(hist)]}
+
+
 def _lock(conn: psycopg.Connection, role_code: str) -> None:
     """Правки синонимов одной должности — по очереди: проверка stale и запись в одной блокировке."""
     run(conn, "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"synonyms:{role_code}",))
