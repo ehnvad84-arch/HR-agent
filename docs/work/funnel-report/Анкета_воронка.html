@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт по воронке — вопросы</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1c1f24;--muted:#5c6470;--line:#d9dde3;--accent:#1f6f43;--accent-tint:#e4f2ea;--warn:#8a5a00;--warn-tint:#fff4dc;--focus:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--card:#1f2226;--ink:#e9ecef;--muted:#a3abb5;--line:#353a41;--accent:#5cc28a;--accent-tint:#1d3328;--warn:#f0c060;--warn-tint:#3a3020;--focus:#7aa2ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 120px}
+h1{font-size:24px;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+.who label{display:block;font-weight:600;margin-bottom:6px}
+input[type=text],textarea,select{width:100%;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+textarea{min-height:84px;resize:vertical}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.progress{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin:8px 0 18px}
+.progress>i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.meta{display:flex;justify-content:space-between;color:var(--muted);font-size:14px}
+.sec{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);font-weight:700;margin:0 0 6px}
+.q h2{font-size:20px;margin:0 0 8px}
+.why{color:var(--muted);font-size:14px;margin:0 0 14px}
+.opts{display:grid;gap:8px;margin:0 0 14px}
+.opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.opt:has(input:checked){border-color:var(--accent);background:var(--accent-tint)}
+.opt input{margin-top:4px}
+.press{background:var(--warn-tint);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 8px}
+.lbl{font-weight:600;font-size:14px;margin:12px 0 6px;display:block}
+.map{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;align-items:center}
+.nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px}
+.nav .in{max-width:760px;margin:0 auto;display:flex;gap:10px;justify-content:space-between;align-items:center}
+button{font:inherit;border-radius:10px;padding:10px 16px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.main{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+@media (prefers-color-scheme:dark){button.main{color:#10140f}}
+button:disabled{opacity:.45;cursor:default}
+.list{margin:0;padding-left:20px}
+.list li{margin:4px 0}
+.list a{color:inherit}
+.ok{color:var(--accent);font-weight:600}
+.hint{color:var(--muted);font-size:14px}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px;max-height:240px;overflow:auto}
+@media (max-width:560px){.map{grid-template-columns:1fr}.map .pl{font-weight:600;margin-top:6px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Отчёт по воронке подбора</h1>
+  <p class="lead">Вопросы к руководителю отдела персонала перед тем, как мы начнём делать отчёт. Вопросы неудобные специально: чем точнее ответ, тем меньше переделок. Отвечайте как есть сейчас, а не как должно быть. Ответы сохраняются в этом браузере — можно закрыть и продолжить позже.</p>
+
+  <div class="card who">
+    <label for="who">Как вас зовут</label>
+    <input id="who" type="text" autocomplete="name" placeholder="Имя и фамилия">
+  </div>
+
+  <div class="meta"><span id="pos"></span><span id="done"></span></div>
+  <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+
+  <section class="card q" id="qbox" aria-live="polite"></section>
+  <section class="card" id="finish" hidden></section>
+</main>
+
+<nav class="nav" aria-label="Переход по вопросам">
+  <div class="in">
+    <button id="prev" type="button">← Назад</button>
+    <button id="all" type="button">Все вопросы</button>
+    <button id="next" type="button" class="main">Дальше →</button>
+  </div>
+</nav>
+
+<script>
+"use strict";
+const FORM = "funnel-report-questions";
+const VERSION = "2026-11-22";
+const STORE = FORM + ":" + VERSION;
+
+const PORTAL_STAGES = ["Отобран агентом", "Написали", "Ответил", "Телефонное интервью", "Встреча с руководителем",
+  "Тестовое задание", "Проверка СБ", "Оффер", "Резерв"];
+const REPORT_STAGES = ["— не считать в отчёте —", "Резюме (отобранные рекрутером)", "Первичный контакт", "Пройденное интервью",
+  "Интервью", "Собеседование", "Проверка СБ", "Оффер", "Вышел в первый день", "Не знаю"];
+
+// type: one — один вариант; many — несколько; text — свободный ответ; texts — несколько полей; map — соответствие этапов
+const Q = [
+  {s:"Зачем отчёт", id:"decision", type:"one", t:"Кто смотрит отчёт по воронке и что решает по нему?",
+   why:"Отчёт без решения превращается в обязанность. Нужно знать, ради какого вывода его открывают.",
+   o:["Руководитель отдела персонала — каждую неделю, чтобы видеть, где застряли вакансии","Директор или руководство — раз в месяц","Каждый рекрутер — по своим вакансиям","Руководители подразделений — по своим вакансиям"],
+   press:"Назовите последнее конкретное решение, которое вы приняли по этому отчёту (или приняли бы, если бы он был).", comment:true},
+  {s:"Зачем отчёт", id:"sample", type:"one", t:"Пришлёте образец отчёта, который вы ведёте сейчас?",
+   why:"Мы обещали сделать Excel «в виде отчёта отдела персонала». Без образца мы угадываем столбцы и формулы.",
+   o:["Да, пришлю файл Excel отдельным письмом","Пришлю, но без фамилий кандидатов — их уберу","Единого файла нет — каждый ведёт по-своему","Отчёта сейчас нет, ведём в голове"], comment:true},
+  {s:"Зачем отчёт", id:"period", type:"one", t:"Кандидата отобрали 28 октября, оффер сделали 5 ноября. В каком месяце он в отчёте?",
+   why:"От этого зависит, совпадут ли цифры портала с вашими. Это самый частый источник споров о конверсии.",
+   o:["Каждый этап — в месяце, когда человек на него попал (отбор — октябрь, оффер — ноябрь)","Весь путь — в месяце, когда его отобрали (всё в октябре)","Весь путь — в месяце, когда вакансия закрыта","Весь путь — в месяце открытия вакансии"],
+   press:"Как вы считаете сейчас в своём файле? Если по-разному в разных листах — опишите.", comment:true},
+
+  {s:"Этапы", id:"stage_meaning", type:"texts", t:"Одним предложением: чем отличаются эти три этапа?",
+   why:"В вашем отчёте есть «Пройденное интервью», «Интервью» и «Собеседование». Со стороны они звучат одинаково — и именно здесь отчёт может врать.",
+   fields:["Пройденное интервью — это…","Интервью — это…","Собеседование — это…"],
+   press:"Для каждого: кто проводит, где (телефон, видео, офис) и что считается «прошёл»."},
+  {s:"Этапы", id:"stage_map", type:"map", t:"Сейчас в портале у кандидата такие этапы. Каким строкам вашего отчёта они соответствуют?",
+   why:"Если соответствие понятно, отчёт можно собирать из того, что рекрутеры уже отмечают, — без двойной работы.",
+   press:"Если одному этапу портала соответствуют два этапа отчёта — опишите в комментарии.", comment:true},
+  {s:"Этапы", id:"skip", type:"one", t:"Кандидата сразу позвали на собеседование, без телефонного интервью. Как его считать?",
+   why:"Пропуски этапов бывают часто. Если не договориться, конверсия на пропущенном этапе будет «больше 100%» или провалится.",
+   o:["Считать, что пропущенные этапы он прошёл","Не считать его на пропущенных этапах вообще","Такого у нас не бывает — этапы всегда по порядку"], comment:true},
+  {s:"Этапы", id:"back", type:"one", t:"Бывает, что кандидата возвращают на этап назад (например, из «Оффер» обратно на собеседование)?",
+   why:"Возвраты ломают простой счёт «вошли → прошли». Нужно понять, как их показывать.",
+   o:["Нет, только вперёд или отказ","Бывает редко — считать как новый проход этапа","Бывает редко — учитывать только последний раз","Бывает часто"], comment:true},
+  {s:"Этапы", id:"templates", type:"one", t:"Вы писали, что воронка для СПЛ отличается от воронки для контент-менеджера. Сколько разных воронок вам реально нужно?",
+   why:"Каждая лишняя настройка — это то, что рекрутер забудет поставить. Ищем минимум, который покрывает все вакансии.",
+   o:["Одна общая, у вакансии можно выключить ненужные этапы","2–3 готовых шаблона (перечислите ниже какие)","Своя у каждой вакансии, собирается вручную"],
+   press:"Перечислите типы вакансий и чем отличаются их этапы. Например: «рабочие — без тестового задания; инженеры — с тестовым».", comment:true},
+  {s:"Этапы", id:"who_edits", type:"one", t:"Кто может менять этапы у вакансии?",
+   why:"Если менять может каждый, отчёты по разным рекрутерам станут несравнимы.",
+   o:["Рекрутер, который ведёт вакансию","Только руководитель отдела персонала","Рекрутер предлагает, руководитель отдела утверждает"], comment:true},
+
+  {s:"Отказы и итоги", id:"reasons", type:"many", t:"Причины отказа: отметьте те, что нужны в списке. Лишние не отмечайте.",
+   why:"Список утверждаете вы. Короткий список заполняют, длинный — пропускают и ставят «другое».",
+   o:["Отказали мы: не подошёл опыт или навыки","Отказали мы: не прошёл тестовое задание","Отказали мы: не прошёл проверку СБ","Отказали мы: завышенные ожидания по зарплате","Отказался сам: не устроила зарплата","Отказался сам: выбрал другое предложение","Отказался сам: не устроили график или место работы","Отказался сам: передумал менять работу","Не вышел на связь","Не пришёл на встречу","Не вышел в первый день"],
+   press:"Чего не хватает? Какая причина у вас сейчас самая частая?", comment:true},
+  {s:"Отказы и итоги", id:"first_day", type:"one", t:"«Вышел в первый день» — кто и где это отмечает?",
+   why:"Это последний этап воронки. Если его никто не отмечает в портале, конверсия до выхода будет всегда нулевой.",
+   o:["Рекрутер в портале в день выхода","Подтягивать из 1С по дате приёма","Руководитель подразделения сообщает рекрутеру"], comment:true},
+  {s:"Отказы и итоги", id:"probation", type:"one", t:"Прошёл ли человек испытательный срок — нужно в этом отчёте уже сейчас?",
+   why:"Это данные из 1С, их нужно отдельно договариваться выгружать. Можно сделать позже отдельной доработкой.",
+   o:["Да, без этого отчёт неполный","Позже — сначала сама воронка","Не нужно"], comment:true},
+
+  {s:"Сроки вакансии", id:"open_date", type:"one", t:"С какого дня считается срок ведения вакансии?",
+   why:"Разница между датой заявки в 1С и датой, когда рекрутер начал работу, бывает неделями. Отчёт должен считать так же, как вы.",
+   o:["С даты заявки в 1С","С дня, когда рекрутер завёл вакансию в портале","С даты публикации на hh"],
+   press:"А если вакансию поставили на паузу (заморозили) — дни паузы считаются в срок?", comment:true},
+  {s:"Сроки вакансии", id:"norms", type:"one", t:"Норма срока закрытия вакансии — какая она у вас?",
+   why:"Без нормы отчёт показывает только цифры, но не говорит, хорошо это или плохо.",
+   o:["Одна для всех вакансий","Разная по категориям (рабочие, специалисты, руководители…)","Своя у каждой вакансии","Норм сейчас нет"],
+   press:"Напишите сами нормы в днях. Например: «рабочие — 14, инженеры — 45, руководители — 60».", comment:true},
+
+  {s:"Вид отчёта", id:"cuts", type:"many", t:"Какие разрезы нужны в первую очередь? Не больше трёх.",
+   why:"Все разрезы будут, но первые три мы сделаем удобными, остальные — фильтрами.",
+   o:["По вакансиям","По рекрутерам","По подразделениям","По должностям","По источникам (hh, «Работа России», рекомендации…)","По периодам (месяц, квартал)"], max:3, comment:true},
+  {s:"Вид отчёта", id:"charts", type:"many", t:"Какие графики хотите видеть на экране? Не больше трёх.",
+   why:"Экран с десятью графиками никто не читает. Выберите то, на что будете смотреть каждую неделю.",
+   o:["Воронка по этапам: сколько дошло до каждого","Конверсия этапов по рекрутерам","Срок закрытия вакансий против нормы","Какие источники дают вышедших на работу","Причины отказов","Динамика по месяцам"], max:3, comment:true},
+  {s:"Вид отчёта", id:"history", type:"one", t:"Что делать с данными, которые были до запуска отчёта?",
+   why:"Перенос старых данных — отдельная работа. Если он не нужен, отчёт будет раньше.",
+   o:["Начать с чистого листа с даты запуска","Перенести прошлые месяцы из нашего Excel","Перенести только открытые сейчас вакансии"], comment:true},
+
+  {s:"Главное", id:"must", type:"one", t:"Если к концу ноября успеем только половину — что обязательно должно быть?",
+   why:"Срок жёсткий. Лучше сделать главное хорошо, чем всё наполовину.",
+   o:["Выгрузка в Excel в виде нашего отчёта","Экран с графиками","Настройка этапов под вакансию","Причины отказов"],
+   press:"Почему именно это? Что случится, если остального не будет до декабря?", comment:true},
+  {s:"Главное", id:"fear", type:"text", t:"Чего вы опасаетесь в этом отчёте?",
+   why:"Например: цифры будут использовать против рекрутеров, или рекрутеры перестанут честно отмечать этапы. Об этом лучше знать заранее.",
+   ph:"Как отчёт могут прочитать неправильно или использовать не по назначению"},
+];
+
+let state = load();
+let cur = Math.min(state.cur || 0, Q.length - 1);
+
+function load(){ try { return JSON.parse(localStorage.getItem(STORE)) || {answers:{}} } catch(e){ return {answers:{}} } }
+function save(){ state.cur = cur; try { localStorage.setItem(STORE, JSON.stringify(state)) } catch(e){} }
+function ans(id){ return state.answers[id] || (state.answers[id] = {}) }
+function el(tag, attrs, ...kids){ const n = document.createElement(tag); for (const [k,v] of Object.entries(attrs||{})) { if (v == null || v === false) continue; if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (k === "text") n.textContent = v; else n.setAttribute(k, v === true ? "" : v) } for (const c of kids.flat()) if (c != null) n.append(c); return n }
+
+function answered(q){
+  const a = state.answers[q.id]; if (!a) return false;
+  if (q.type === "one") return !!(a.choice || (a.other||"").trim());
+  if (q.type === "many") return (a.choices||[]).length > 0 || !!(a.other||"").trim();
+  if (q.type === "text") return !!(a.text||"").trim();
+  if (q.type === "texts") return (a.texts||[]).some(t => (t||"").trim());
+  if (q.type === "map") return Object.values(a.map||{}).some(Boolean);
+  return false;
+}
+
+function render(){
+  const q = Q[cur], a = ans(q.id), box = document.getElementById("qbox");
+  document.getElementById("finish").hidden = true; box.hidden = false;
+  box.replaceChildren();
+  box.append(el("p",{class:"sec",text:q.s}), el("h2",{id:"qt",text:(cur+1)+". "+q.t}), el("p",{class:"why",text:"Зачем спрашиваю: "+q.why}));
+  if (q.type === "one" || q.type === "many") {
+    const opts = el("div",{class:"opts",role:q.type==="one"?"radiogroup":"group","aria-labelledby":"qt"});
+    q.o.forEach((o,i) => {
+      const id = q.id+"_"+i;
+      const checked = q.type==="one" ? a.choice === o : (a.choices||[]).includes(o);
+      const inp = el("input",{type:q.type==="one"?"radio":"checkbox",name:q.id,id,checked,onchange:()=>{
+        if (q.type==="one") a.choice = o;
+        else { let c = new Set(a.choices||[]); inp.checked ? c.add(o) : c.delete(o);
+          if (q.max && c.size > q.max) { c.delete(o); inp.checked = false; alert("Не больше "+q.max+". Снимите отметку с другого варианта."); }
+          a.choices = [...c] }
+        save(); meta() }});
+      opts.append(el("label",{class:"opt",for:id}, inp, el("span",{text:o})));
+    });
+    box.append(opts);
+    box.append(el("label",{class:"lbl",for:q.id+"_other",text:"Свой вариант"}),
+      el("input",{type:"text",id:q.id+"_other",value:a.other||"",placeholder:"Если ни один вариант не подходит",oninput:e=>{a.other=e.target.value;save();meta()}}));
+  }
+  if (q.type === "texts") q.fields.forEach((f,i) => {
+    a.texts = a.texts || [];
+    box.append(el("label",{class:"lbl",for:q.id+"_"+i,text:f}),
+      el("textarea",{id:q.id+"_"+i,oninput:e=>{a.texts[i]=e.target.value;save();meta()}}));
+    box.lastChild.value = a.texts[i] || "";
+  });
+  if (q.type === "map") {
+    a.map = a.map || {};
+    const g = el("div",{class:"map"});
+    PORTAL_STAGES.forEach((p,i) => {
+      const sel = el("select",{id:q.id+"_"+i,"aria-label":"Этап отчёта для «"+p+"»",onchange:e=>{a.map[p]=e.target.value;save();meta()}},
+        el("option",{value:"",text:"выберите…"}), REPORT_STAGES.map(r => el("option",{value:r,text:r})));
+      sel.value = a.map[p] || "";
+      g.append(el("label",{class:"pl",for:q.id+"_"+i,text:p}), sel);
+    });
+    box.append(g);
+  }
+  if (q.type === "text") {
+    const t = el("textarea",{id:q.id+"_t","aria-labelledby":"qt",placeholder:q.ph||"",oninput:e=>{a.text=e.target.value;save();meta()}});
+    t.value = a.text || ""; box.append(t);
+  }
+  if (q.press || q.comment) {
+    if (q.press) box.append(el("p",{class:"press",text:"Уточните: "+q.press}));
+    const c = el("textarea",{id:q.id+"_c","aria-label":q.press||"Комментарий",placeholder:q.press?"Ваш ответ":"Комментарий, если хочется пояснить",oninput:e=>{a.comment=e.target.value;save()}});
+    c.value = a.comment || ""; box.append(c);
+  }
+  meta(); save();
+  document.getElementById("qt").focus?.();
+}
+
+function meta(){
+  const n = Q.filter(answered).length;
+  document.getElementById("pos").textContent = "Вопрос "+(cur+1)+" из "+Q.length;
+  document.getElementById("done").textContent = "Отвечено: "+n;
+  document.getElementById("bar").style.width = (n/Q.length*100)+"%";
+  document.getElementById("prev").disabled = cur === 0;
+  document.getElementById("next").textContent = cur === Q.length-1 ? "Готово →" : "Дальше →";
+}
+
+function result(){
+  return {form:FORM, version:VERSION, filled_at:new Date().toISOString(),
+    respondent:(document.getElementById("who").value||"").trim(),
+    answers:Object.fromEntries(Q.map(q => [q.id, {question:q.t, ...(state.answers[q.id]||{})}]))};
+}
+
+function finish(){
+  const box = document.getElementById("finish"), missing = Q.map((q,i)=>[q,i]).filter(([q])=>!answered(q));
+  document.getElementById("qbox").hidden = true; box.hidden = false; box.replaceChildren();
+  box.append(el("h2",{text:"Почти всё"}));
+  if (missing.length) {
+    box.append(el("p",{text:"Без ответа "+missing.length+" из "+Q.length+". Можно отправить и так, но лучше ответить хотя бы коротко:"}));
+    box.append(el("ul",{class:"list"}, missing.map(([q,i]) => el("li",{}, el("a",{href:"#",onclick:e=>{e.preventDefault();cur=i;render()},text:(i+1)+". "+q.t})))));
+  } else box.append(el("p",{class:"ok",text:"На все вопросы есть ответ. Спасибо!"}));
+  if (!document.getElementById("who").value.trim()) box.append(el("p",{class:"hint",text:"Впишите, пожалуйста, имя вверху страницы."}));
+  box.append(el("p",{text:"Скачайте файл с ответами и пришлите его Вадиму. Если скачать не получается — скопируйте ответы и вставьте в письмо."}));
+  const json = JSON.stringify(result(), null, 2);
+  box.append(el("p",{}, el("button",{class:"main",type:"button",onclick:download,text:"Скачать ответы (.json)"}), " ",
+    el("button",{type:"button",onclick:()=>copy(json),text:"Скопировать ответы"})));
+  box.append(el("pre",{text:json}));
+}
+
+function download(){
+  const blob = new Blob([JSON.stringify(result(), null, 2)], {type:"application/json"});
+  const who = (document.getElementById("who").value||"ответы").trim().replace(/[^\p{L}\p{N}]+/gu,"_");
+  const a = el("a",{href:URL.createObjectURL(blob),download:"воронка_"+who+"_"+new Date().toISOString().slice(0,10)+".json"});
+  document.body.append(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+}
+function copy(text){
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+    ()=>alert("Ответы скопированы — вставьте их в письмо."),
+    ()=>{ const t = el("textarea",{}); t.value = text; document.body.append(t); t.select(); try{document.execCommand("copy");alert("Ответы скопированы — вставьте их в письмо.")}catch(e){alert("Не удалось скопировать — выделите текст в рамке и скопируйте вручную.")} t.remove() });
+}
+
+function listAll(){
+  const box = document.getElementById("finish");
+  document.getElementById("qbox").hidden = true; box.hidden = false; box.replaceChildren();
+  box.append(el("h2",{text:"Все вопросы"}),
+    el("ul",{class:"list"}, Q.map((q,i) => el("li",{}, el("a",{href:"#",onclick:e=>{e.preventDefault();cur=i;render()},text:(i+1)+". "+q.t}), answered(q)?" ✓":""))),
+    el("p",{}, el("button",{class:"main",type:"button",onclick:finish,text:"К отправке ответов"})));
+}
+
+document.getElementById("who").value = state.who || "";
+document.getElementById("who").addEventListener("input", e => { state.who = e.target.value; save() });
+document.getElementById("prev").addEventListener("click", () => { if (cur>0){cur--;render();scrollTo(0,0)} });
+document.getElementById("next").addEventListener("click", () => { if (cur<Q.length-1){cur++;render();scrollTo(0,0)} else finish() });
+document.getElementById("all").addEventListener("click", listAll);
+render();
+</script>
+</body>
+</html>
