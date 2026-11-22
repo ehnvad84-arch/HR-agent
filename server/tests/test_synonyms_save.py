@@ -191,3 +191,46 @@ def test_s02_background_rescore_of_current_version(conn, conn_factory, prof, rec
     draft = profile(conn, title="Инженер-электроник", version="1.1", approved=False)
     synonyms.rescore(conn_factory, draft["id"])
     assert calls == [("profile", prof["id"]), ("user", None)], "пересчёт по действующей версии и «мой балл»"
+
+
+def test_s03_rollback_of_prune_restores_removed_keys_synonyms(conn, prof, rec):
+    """Откат записи о чистке при утверждении: синонимы удалённого ключа — как до утверждения, откат в журнале."""
+    synonyms.save(conn, prof["id"], [{"keyword": "Altium", "synonyms": ["P-CAD"]},
+                                     {"keyword": "ЭМС", "synonyms": ["электромагнитная совместимость"]}],
+                  rec, NOW, base_change_id=None)
+    head = user(conn, "head_syn", "head_recruiter")
+    new = profiles.edit(conn, prof["id"], {"keywords": ["Altium", "схемотехника"]}, rec, NOW)
+    profiles.approve(conn, new["id"], head, NOW + timedelta(hours=1))
+    pruned = synonyms.last_change_id(conn, "engineer_hw_lead")
+    assert state(conn) == {"altium": ["P-CAD"]}
+    cid = synonyms.rollback(conn, new["id"], pruned, head, NOW + timedelta(hours=2))
+    assert state(conn) == {"altium": ["P-CAD"], "эмс": ["электромагнитная совместимость"]}
+    c = change(conn, cid)
+    assert c["after"]["rollback_of"] == pruned and c["applied_by"] == head
+    assert synonyms.last_change_id(conn, "engineer_hw_lead") == cid
+
+
+def test_s03_prune_record_is_in_history_and_rollbackable_only_while_latest(conn, prof, rec):
+    synonyms.save(conn, prof["id"], [{"keyword": "ЭМС", "synonyms": ["электромагнитная совместимость"]}],
+                  rec, NOW, base_change_id=None)
+    new = profiles.edit(conn, prof["id"], {"keywords": ["Altium", "схемотехника"]}, rec, NOW)
+    profiles.approve(conn, new["id"], user(conn, "head_syn", "head_recruiter"), NOW + timedelta(hours=1))
+    hist = synonyms.view(conn, new["id"], True)["history"]
+    assert [h["can_rollback"] for h in hist] == [True, False]
+    assert hist[0]["diff"] == {"эмс": {"+": [], "-": ["электромагнитная совместимость"]}}
+
+
+@pytest.mark.xfail(strict=True, reason="баг: rollback возвращает синоним, ставший ключом действующей версии "
+                                       "(save такое отклоняет, S2); скоринг получает ключ и как ключ, и как синоним")
+def test_s03_rollback_does_not_restore_term_that_is_now_a_profile_key(conn, prof, rec):
+    synonyms.save(conn, prof["id"], [{"keyword": "Altium", "synonyms": ["P-CAD", "KiCad"]}], rec, NOW,
+                  base_change_id=None)
+    head = user(conn, "head_syn", "head_recruiter")
+    new = profiles.edit(conn, prof["id"], {"keywords": ["схемотехника", "KiCad"]}, rec, NOW)   # Altium ушёл
+    profiles.approve(conn, new["id"], head, NOW + timedelta(hours=1))
+    assert state(conn) == {}
+    synonyms.rollback(conn, new["id"], synonyms.last_change_id(conn, "engineer_hw_lead"), head,
+                      NOW + timedelta(hours=2))
+    keys = {synonyms.norm(k) for k in ["схемотехника", "KiCad"]}
+    terms = {synonyms.norm(t) for ts in state(conn).values() for t in ts}
+    assert not (terms & keys), "синоним, совпавший с ключом версии, не должен вернуться"

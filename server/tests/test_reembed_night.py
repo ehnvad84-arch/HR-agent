@@ -118,3 +118,31 @@ def test_s10_reembed_night_registered_scheduled_and_has_timer():
     enable = re.search(r"enable --now (.*?)\n(?!\s)", text, re.S).group(1)
     assert "ruware-reembed-night.timer" in enable
     assert load_check.TITLES["reembed_night"] == "Ночной пересчёт векторов"
+
+
+def test_s10_manual_run_by_day_goes_until_next_0630_msk(conn, conn_factory, base, bge, night, monkeypatch):
+    """Ручной запуск днём (12:00 по Москве) не останавливается сразу: срок — 06:30 следующих суток."""
+    day = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)   # 12:00 по Москве
+    clock = FakeClock(day)
+    assert search.night_deadline(conn, day) == datetime(2026, 10, 26, 3, 30, tzinfo=UTC)
+
+    def slow(req):   # каждый запрос к bge-m3 — три часа
+        clock.advance(3 * 3600)
+        return bge(req)
+
+    monkeypatch.setattr(embed, "client", lambda: httpx.Client(transport=httpx.MockTransport(slow)))
+    st = search.reembed_night(conn_factory, clock=clock)
+    assert with_vector(conn) == set(base["people"]) and st.changed == 3, "12:00, 15:00, 18:00, 21:00 — всё досчитано"
+    assert not st.note, "до срока 06:30 остановки не было"
+
+
+def test_s10_manual_run_by_day_stops_at_next_0630_msk(conn, conn_factory, base, bge, monkeypatch):
+    clock = FakeClock(datetime(2026, 10, 25, 9, 0, tzinfo=UTC))   # 12:00 по Москве
+
+    def slow(req):   # запрос — восемь часов: 12:00 профиль, 20:00 первый, 04:00 второй, в 12:00 следующих суток — стоп
+        clock.advance(8 * 3600)
+        return bge(req)
+
+    monkeypatch.setattr(embed, "client", lambda: httpx.Client(transport=httpx.MockTransport(slow)))
+    st = search.reembed_night(conn_factory, clock=clock)
+    assert len(with_vector(conn)) == 2 and "06:30" in (st.note or "")

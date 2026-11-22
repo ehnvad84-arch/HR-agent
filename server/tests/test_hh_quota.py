@@ -121,3 +121,41 @@ def test_s11_recruiter_contact_open_ignores_cap(conn, api, clock, conn_factory):
     r = c.post(f"/api/action/{aid}/approve", json={}, headers=h)
     assert r.status_code == 200 and r.json()["state"] == "executed"
     assert db.val(conn, "SELECT sum(used) FROM ops.daily_quota WHERE key = 'hh_full_resume'") == 1
+
+
+@pytest.mark.parametrize("gone_first", [True, False])
+def test_s11_mark_gone_and_evening_collect_share_one_daily_cap(conn, conn_factory, clock, gone_first):
+    """Перепроверка пропавших и вечерний сбор за одни сутки берут из одного предела — в любом порядке."""
+    profile(conn)
+    for rid in ("r1", "r2"):
+        it = hh_item(id=rid, experience=[{"company": f"Завод {rid}", "position": "Инженер-электронщик",
+                                          "start": "2018-01-01", "end": None}])
+        process(conn, source(conn, "hh"), normalize("hh", it), it, clock.now())
+    clock.advance(days=50)
+    hh.store_tokens(conn, {"access_token": "AT", "expires_in": 30 * 86400}, "777", clock.now())
+    per_day(conn, 2)
+    rechecked = []
+
+    def handler(req):
+        rechecked.append(req.url.path)
+        return httpx.Response(200, json=hh_item(id=req.url.path.rsplit("/", 1)[1]))
+
+    fake = Limited(100)
+
+    def gone():
+        return collect.mark_gone(conn_factory, http=httpx.Client(transport=httpx.MockTransport(handler)),
+                                 clock=clock, limiter=RateLimiter(clock))
+
+    def evening():
+        return collect.collect_hh_daily(conn_factory, http=fake.client(), clock=clock, limiter=RateLimiter(clock))
+
+    first, second = (gone, evening) if gone_first else (evening, gone)
+    first()
+    second()
+    assert used(conn, clock) == 2, "за сутки взято ровно предел, не больше"
+    assert len(rechecked) + len(fake.full_fetches) == 2
+    if gone_first:
+        assert len(rechecked) == 2 and fake.full_fetches == [], "перепроверка заняла весь предел"
+    else:
+        assert len(fake.full_fetches) == 2 and rechecked == [], "сбор занял весь предел — перепроверка до завтра"
+    assert db.val(conn, "SELECT count(*) FROM observation WHERE is_gone") == 0
