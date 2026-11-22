@@ -24,6 +24,21 @@ test("S6: признаки — «сколько из скольких», кру�
   assert.deepEqual(rows.map((r) => r.pct), [68, 100, 50]);
 });
 
+test("S8, S10: признак без вектора — строка «не учтено» с подписью сервера, без полосы, в конце; с вектором — обычная полоса", () => {
+  const rows = featureRows({
+    semantic: { label: "Близость по смыслу", points: 0, max: 0, skipped: "no_vector", detail: "вектор резюме ещё не посчитан" },
+    keywords: { label: "Ключевые слова", points: 17, max: 25, detail: "Altium" },
+    geo: { label: "География", points: 10, max: 10, detail: "" },
+  });
+  assert.deepEqual(rows.map((r) => r.label), ["Ключевые слова", "География", "Близость по смыслу"]);
+  assert.equal(rows[2].skipped, true);
+  assert.equal(rows[2].detail, "вектор резюме ещё не посчитан");
+  assert.equal(rows[0].skipped, false);
+  const live = featureRows({ semantic: { label: "Близость по смыслу", points: 12, max: 15, detail: "близко к профилю по смыслу: 82 %", sim: 0.82 } });
+  assert.deepEqual([live[0].skipped, live[0].pct, live[0].detail], [false, 80, "близко к профилю по смыслу: 82 %"]);
+  assert.deepEqual(featureRows({ other: { label: "x", points: 0, max: 0 } }), []);   // нулевой вес без пометки по-прежнему скрыт
+});
+
 test("признаки приходят и списком, и пустыми", () => {
   assert.equal(featureRows([{ label: "A", points: 3, max: 4, detail: "d" }])[0].pct, 75);
   assert.deepEqual(featureRows(null), []);

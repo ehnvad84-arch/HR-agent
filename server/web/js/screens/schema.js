@@ -7,7 +7,7 @@ import { guideBlock } from "../guide-view.js";
 import { hasFullBase } from "../nav-model.js";
 import { chip } from "../people.js";
 import { mountAsync, toast } from "../ui.js";
-import { countTiles, hasRunning, jobRows } from "./schema-model.js";
+import { countTiles, hasRunning, jobRows, quotaTiles, schemaNotices } from "./schema-model.js";
 import { schemeSvg } from "./schema-svg.js";
 
 const POLL_MS = 3000;   // как часто перечитывать, пока что-то идёт
@@ -40,14 +40,19 @@ export function render(box, ctx) {
 
   const view = (data) => {
     const tilesBox = h("div.livecounts", { role: "group", "aria-label": "Объём базы сейчас" });
+    const noticesBox = h("div", { role: "status" });
     const svgBox = h("div");
     const tbody = h("tbody");
     const updated = h("span.hint");
 
     const draw = (fresh) => {
       const now = new Date();
-      mount(tilesBox, countTiles(fresh.counts).map((tile) => h("div.livecount", { "data-tip": `schema-${tile.key}` },
+      mount(tilesBox, [...countTiles(fresh.counts), ...quotaTiles(fresh.quota)].map((tile) => h("div.livecount", { "data-tip": `schema-${tile.key}` },
         h("div.n", tile.value), h("div.l", tile.label))));
+      mount(noticesBox, schemaNotices(fresh).map((note) => h("div.note", { "data-notice": note.key, style: "margin-bottom:10px" },
+        note.text,
+        note.progress ? h("div.lsprog", { role: "progressbar", "aria-label": "Ход пересчёта векторов", "aria-valuemin": 0, "aria-valuemax": note.progress.max,
+          "aria-valuenow": note.progress.now }, h("i", { style: `width:${note.progress.percent}%` })) : null)));
       mount(svgBox, schemeSvg(fresh.counts));
       mount(tbody, jobRows(fresh.jobs, now).map(runRow));
       updated.textContent = `Обновлено в ${timeLabel(now)}`;
@@ -77,6 +82,7 @@ export function render(box, ctx) {
     draw(data);
 
     return [
+      noticesBox,
       tilesBox,
       h("div.card", { style: "margin-top:14px" }, h("div.t1", { style: "margin-bottom:12px" }, "Путь данных: от площадки до рекрутера"), svgBox),
       h("div.sechead", { style: "justify-content:space-between" }, h("span", "Последние прогоны"),

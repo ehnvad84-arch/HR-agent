@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  JOBS, STALE_HOURS, countTiles, durationText, hasRunning, jobRows, jobTitle, profilesLabel, runInfo, statFacts, zonesTitle,
+  JOBS, STALE_HOURS, countTiles, durationText, hasRunning, jobRows, jobTitle, profilesLabel, quotaTiles, runInfo, schemaNotices, statFacts, zonesTitle,
 } from "../../web/js/screens/schema-model.js";
 
 const NOW = new Date(2026, 9, 29, 15, 0, 0);
@@ -11,11 +11,11 @@ const at = (d, h, m, s = 0) => new Date(2026, 9, d, h, m, s).toISOString();   //
 
 const ZERO = { seen: 0, new: 0, changed: 0, persons: 0, alerts: 0, skipped: 0, errors: 0, pages: 0, limit_reached: false, note: null, extra: {} };
 
-test("задачи — двенадцать, по-русски, в порядке пути данных", () => {
+test("задачи — тринадцать, по-русски, в порядке пути данных", () => {
   assert.deepEqual(JOBS.map(([code]) => code), ["collect_hh", "import_files", "mark_gone", "score", "alerts", "collect_social", "photos",
-    "digest", "apply_digest", "digest_mail", "weekly_report", "rescore_profile"]);
+    "digest", "apply_digest", "digest_mail", "weekly_report", "rescore_profile", "reembed_night"]);
   assert.deepEqual(JOBS.map(([, title]) => title), ["Сбор с hh", "Выгрузки из кабинетов", "Проверка пропавших", "Оценка и разборы", "Сигналы",
-    "Следы в сети", "Фото", "Недельная сводка", "Применение решений", "Утренний дайджест", "Недельный отчёт", "Пересчёт по профилю"]);
+    "Следы в сети", "Фото", "Недельная сводка", "Применение решений", "Утренний дайджест", "Недельный отчёт", "Пересчёт по профилю", "Пересчёт векторов"]);
   assert.equal(jobTitle("rescore_profile"), "Пересчёт по профилю");
   assert.equal(jobTitle("новая_задача"), "новая_задача");
 });
@@ -128,7 +128,7 @@ test("задача «идёт» давно: считаем прерванной,
 
 test("S34: все задачи списком — незапускавшиеся помечены, незнакомые добавлены в конец", () => {
   const rows = jobRows([ROW, { ...ROW, job: "photos" }, { ...ROW, job: "тайная_задача" }], NOW);
-  assert.equal(rows.length, 13);
+  assert.equal(rows.length, 14);
   assert.deepEqual(rows.slice(0, 3).map((r) => r.job), ["collect_hh", "import_files", "mark_gone"]);
   assert.equal(rows[0].never, false);
   assert.equal(rows[1].never, true);
@@ -138,7 +138,7 @@ test("S34: все задачи списком — незапускавшиеся
   assert.equal(rows.find((r) => r.job === "photos").never, false);
   assert.equal(rows.at(-1).job, "тайная_задача");
   assert.equal(rows.at(-1).title, "тайная_задача");
-  assert.equal(jobRows([], NOW).length, 12);
+  assert.equal(jobRows([], NOW).length, 13);
   assert.equal(jobRows(null, NOW).every((r) => r.never), true);
 });
 
@@ -166,4 +166,50 @@ test("надписи на самой схеме берут цифры из ба�
   assert.equal(zonesTitle({ observations: 100, persons: 55, candidates: 1 }), "База на сервере компании — две зоны: 100 резюме, 55 карточек, 1 кандидат");
   assert.equal(zonesTitle({ observations: 1240, persons: 22, candidates: 3 }), "База на сервере компании — две зоны: 1 240 резюме, 22 карточки, 3 кандидата");
   assert.equal(zonesTitle(null), "База на сервере компании — две зоны");
+});
+
+// ------------------------------------------------------------------ S8, S10–S12: предупреждения и плитки пределов
+
+const VEC = { model: "bge-m3", pending: 0, total: 15000, down_since: null };
+const QUOTA = { hh_full_resume: { used: 214, limit: 300 }, llm: { used: 12, limit: 500 } };
+
+test("S11, S12: плитки пределов — «сегодня N / предел»; нет данных — плиток нет", () => {
+  assert.deepEqual(quotaTiles(QUOTA).map((t) => [t.key, t.label, t.value]), [
+    ["hh_full_resume", "Полных резюме hh сегодня", "214 / 300"], ["llm", "Запросов к модели сегодня", "12 / 500"]]);
+  assert.deepEqual(quotaTiles({ llm: { used: 1200, limit: 5000 } }).map((t) => t.value), ["1 200 / 5 000"]);
+  assert.deepEqual(quotaTiles(undefined), []);
+  assert.deepEqual(quotaTiles({}), []);
+});
+
+test("предупреждений нет, пока всё в порядке", () => {
+  assert.deepEqual(schemaNotices({ vectors: VEC, quota: QUOTA }), []);
+  assert.deepEqual(schemaNotices({}), []);
+});
+
+test("S8: модель векторов недоступна — время отказа и последствия", () => {
+  const notes = schemaNotices({ vectors: { ...VEC, down_since: at(29, 14, 5) }, quota: QUOTA });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].key, "embed_down");
+  assert.match(notes[0].text.replace(/[  ]/g, " "), /^Модель векторов недоступна с 14:05: балл считается без смысла, поиск по смыслу не работает\. Сбор идёт\.$/);
+});
+
+test("S10: пересчёт векторов — сколько осталось из скольких и полоса хода", () => {
+  const notes = schemaNotices({ vectors: { ...VEC, pending: 12400 }, quota: QUOTA });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].key, "vectors_pending");
+  assert.equal(notes[0].text, "Пересчёт векторов базы: осталось 12 400 из 15 000 резюме. Идёт ночью по частям; до пересчёта человек оценивается без смысла.");
+  assert.deepEqual(notes[0].progress, { now: 2600, max: 15000, percent: 17 });
+});
+
+test("S11: предел полных резюме hh исчерпан — только при used >= limit", () => {
+  assert.equal(schemaNotices({ quota: { hh_full_resume: { used: 299, limit: 300 } } }).length, 0);
+  const notes = schemaNotices({ quota: { hh_full_resume: { used: 300, limit: 300 } } });
+  assert.deepEqual(notes.map((n) => n.key), ["hh_full_cap"]);
+  assert.equal(notes[0].text, "Предел полных резюме hh на сегодня исчерпан: 300 из 300. Остальные подходящие — в завтрашнем сборе.");
+  assert.equal(schemaNotices({ quota: { hh_full_resume: { used: 0, limit: 0 } } }).length, 0);   // предела нет — не исчерпан
+});
+
+test("несколько условий — несколько строк, по порядку важности", () => {
+  const notes = schemaNotices({ vectors: { ...VEC, pending: 10, down_since: at(29, 3, 0) }, quota: { hh_full_resume: { used: 5, limit: 5 } } });
+  assert.deepEqual(notes.map((n) => n.key), ["embed_down", "vectors_pending", "hh_full_cap"]);
 });

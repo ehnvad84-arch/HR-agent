@@ -58,7 +58,9 @@ export function synonymsCard({ api, signal, pid }) {
 
     function refresh() {
       const p = ps();
+      const wasHidden = bar.hidden;
       bar.hidden = !p.showSave;
+      if (wasHidden && p.showSave) bar.scrollIntoView?.({ block: "nearest" });   // липкая панель профиля не закрывает кнопки
       dirty.textContent = p.dirtyText;
       if (askButton) {
         askButton.textContent = p.suggest.label;
@@ -79,7 +81,7 @@ export function synonymsCard({ api, signal, pid }) {
         const reply = await api.post(`/api/profiles/${pid}/synonyms/suggest`, {}, { signal: asking.signal });
         const result = applySuggestions(draft, reply.suggestions);
         draft = result.draft;
-        for (const row of draft.rows) for (const term of row.fresh) inputs.get(row.keyword).add(term);
+        for (const row of draft.rows) if (row.fresh.length) inputs.get(row.keyword).add(row.fresh);   // сразу списком: иначе onChange после первого слова сбросит пометку у остальных
         mount(info, result.added > 0 ? h("p.hint", { style: "margin:10px 0 0" }, "(i) ", suggestedText(result.added)) : note(suggestedText(0)));
       } catch (error) {
         if (error && error.name === "AbortError") {

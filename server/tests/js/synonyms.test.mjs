@@ -145,3 +145,21 @@ test("S2: клиент умеет PUT с токеном и JSON (сохране�
   assert.equal(calls[0].init.body, JSON.stringify({ items: [], base_change_id: null }));
   assert.ok(ApiError);
 });
+
+test("предложенные термины остаются «новыми» все, когда чипсы добавлены списком", async () => {
+  const { mergeChips } = await import("../../web/js/screens/profiles-model.js");
+  let draft = draftFromView({ items: [{ keyword: "Altium", synonyms: [] }], history: [] });
+  draft = applySuggestions(draft, { Altium: ["P-CAD", "KiCad", "OrCAD"] }).draft;
+  const merged = mergeChips([], draft.rows[0].fresh);   // одним вызовом, как в карточке
+  assert.deepEqual(merged.items, ["P-CAD", "KiCad", "OrCAD"]);
+  draft = setTerms(draft, "Altium", merged.items);
+  assert.deepEqual(draft.rows[0].fresh, ["P-CAD", "KiCad", "OrCAD"]);
+  assert.equal(mergeChips(merged.items, "kicad").changed, false);
+});
+
+test("липкая панель профиля не закрывает кнопки синонимов, дробь в плитке не переносится", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../../web/app.css", import.meta.url), "utf8");
+  assert.match(css, /\.syncard \.btns\{scroll-margin-bottom:\d+px\}/);
+  assert.match(css, /\.livecount \.n\{white-space:nowrap;/);
+});

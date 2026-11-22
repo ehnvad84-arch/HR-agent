@@ -27,20 +27,23 @@ export function personState(person, candidate) {
 
 /**
  * Признаки балла для полос «сколько из скольких». features — словарь {код: {label, points, max, detail}} или список;
- * коды с «_» служебные, признаки без веса не показываются. Сверху самые весомые.
+ * коды с «_» служебные, признаки без веса не показываются; кроме пропущенных (`skipped`) — они идут в конце как «не учтено». Сверху самые весомые.
  */
 export function featureRows(features) {
   const list = Array.isArray(features)
     ? features.map((f, i) => [String(i), f])
     : Object.entries(features || {});
   return list
-    .filter(([key, f]) => !key.startsWith("_") && f && f.max > 0)
-    .map(([key, f]) => ({
-      key, label: f.label || key, points: f.points ?? 0, max: f.max, detail: f.detail || "",
+    .filter(([key, f]) => !key.startsWith("_") && f && (f.max > 0 || f.skipped))
+    .map(([key, f]) => (f.max > 0 ? {
+      key, label: f.label || key, points: f.points ?? 0, max: f.max, detail: f.detail || "", skipped: false,
       pct: Math.round(((f.points ?? 0) / f.max) * 100),
       low: (f.points ?? 0) / f.max < 0.75,
+    } : {
+      // признак «не учтено» (нет вектора, модель недоступна): полосы нет — нулевая читалась бы как «плохо»
+      key, label: f.label || key, points: 0, max: 0, detail: f.detail || "", skipped: true, pct: 0, low: false,
     }))
-    .sort((a, b) => b.max - a.max || b.points - a.points);
+    .sort((a, b) => Number(a.skipped) - Number(b.skipped) || b.max - a.max || b.points - a.points);
 }
 
 const EXPLANATION_LABELS = /^(Сильнее всего|Чего не хватает|Спросить):\s*(.*)$/;

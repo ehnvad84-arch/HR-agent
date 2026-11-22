@@ -1,7 +1,7 @@
 // Поле «чипсы со вводом»: ключевые слова, компании-доноры. Enter, запятая или потеря фокуса добавляют слово,
 // «×» убирает, Backspace в пустом поле убирает последнее. Значения — только текст.
 import { h, mount, uid } from "./dom.js";
-import { splitChips } from "./screens/profiles-model.js";
+import { mergeChips } from "./screens/profiles-model.js";
 
 export function chipsInput({ label, values = [], placeholder = "", hint = "", disabled = false, isNew = null }) {
   const id = uid("chips");
@@ -19,16 +19,11 @@ export function chipsInput({ label, values = [], placeholder = "", hint = "", di
       disabled ? null : h("button", { type: "button", "data-tip": "chips-remove", "aria-label": `Убрать «${item}»`, onClick: (event) => { event.stopPropagation(); remove(item); } }, "×"))));
     listeners.forEach((fn) => fn(items));
   };
-  function add(text) {
-    let changed = false;
-    for (const word of splitChips(text)) {
-      if (!items.some((existing) => existing.toLowerCase() === word.toLowerCase())) {
-        items.push(word);
-        changed = true;
-      }
-    }
+  function add(text) {   // строка или список слов: список добавляется одной перерисовкой
+    const merged = mergeChips(items, text);
+    items = merged.items;
     input.value = "";
-    if (changed) draw();
+    if (merged.changed) draw();
   }
   function remove(item) {
     items = items.filter((existing) => existing !== item);

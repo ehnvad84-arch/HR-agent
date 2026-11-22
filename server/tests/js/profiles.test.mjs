@@ -14,13 +14,13 @@ const PROFILE = {
   state: "approved", geo: "krasnodar", salary_min: 150000, salary_max: 200000,
   keywords: ["Altium", "OrCAD"], donor_companies: ["Болид"],
   must_have: [{ text: "Профильный опыт от 3 лет", feature: "exp_years", op: ">=", value: 3 }, { text: "Схемотехника" }],
-  nice_to_have: [{ text: "ЭМС" }], stop_factors: [], weights: { exp_years: 20, keywords: 20, title_match: 15, donor_company: 10, tenure: 15, geo: 10, salary: 10, open_code: 0 },
+  nice_to_have: [{ text: "ЭМС" }], stop_factors: [], weights: { exp_years: 20, keywords: 20, title_match: 15, donor_company: 10, tenure: 15, geo: 10, salary: 10, open_code: 0, semantic: 0 },
 };
 
 test("признаки весов и подписи — как в задаче", () => {
-  assert.deepEqual(FEATURES.map(([key]) => key), ["exp_years", "keywords", "title_match", "donor_company", "tenure", "geo", "salary", "open_code"]);
+  assert.deepEqual(FEATURES.map(([key]) => key), ["exp_years", "keywords", "title_match", "donor_company", "tenure", "geo", "salary", "open_code", "semantic"]);
   assert.deepEqual(FEATURES.map(([, label]) => label), ["Опыт по профилю", "Ключевые слова и инструменты", "Совпадение должности",
-    "Опыт в компании-доноре", "Держится на месте", "География", "Ожидания против вилки", "Открытый код"]);
+    "Опыт в компании-доноре", "Держится на месте", "География", "Ожидания против вилки", "Открытый код", "Близость по смыслу"]);
   assert.deepEqual(GEO_OPTIONS.map(([code]) => code), ["krasnodar", "remote_ru", "relocation_ru"]);
 });
 
@@ -58,7 +58,7 @@ test("условия правятся строками; неизменённая
 });
 
 test("веса: из профиля или стандартные по подразделению, сумма не обязана быть 100", () => {
-  assert.deepEqual(defaultWeights("sales"), { exp_years: 20, keywords: 25, title_match: 15, donor_company: 10, tenure: 10, geo: 10, salary: 10, open_code: 0 });
+  assert.deepEqual(defaultWeights("sales"), { exp_years: 20, keywords: 25, title_match: 15, donor_company: 10, tenure: 10, geo: 10, salary: 10, open_code: 0, semantic: 15 });
   assert.equal(defaultWeights("rnd_hw").open_code, 10);
   assert.equal(defaultWeights("rnd_sw").open_code, 10);
   const form = formFromProfile(PROFILE);
@@ -103,7 +103,7 @@ test("S26: в запрос уходят только изменённые пол
   assert.equal(changes.salary_max, 220000);
   assert.deepEqual(changes.keywords, ["Altium", "OrCAD", "KiCad"]);
   assert.deepEqual(changes.must_have, [PROFILE.must_have[0], PROFILE.must_have[1], { text: "Вывод изделия в серию" }]);
-  assert.deepEqual(changes.weights, { exp_years: 15, keywords: 25, title_match: 15, donor_company: 10, tenure: 15, geo: 10, salary: 10, open_code: 0 });
+  assert.deepEqual(changes.weights, { exp_years: 15, keywords: 25, title_match: 15, donor_company: 10, tenure: 15, geo: 10, salary: 10, open_code: 0, semantic: 0 });
 });
 
 test("стандартные веса не отправляются, пока человек их не менял", () => {
@@ -163,11 +163,13 @@ test("адрес редактора: #/profiles и #/profiles/<id>", () => {
 
 test("портрет: вес стоит у поля, которое задаёт признак; остальные признаки — в блоке «Ещё признаки»", () => {
   assert.deepEqual(FEATURE_FIELDS, { keywords: "keywords", donor_company: "donors", geo: "geo", salary: "salary" });
-  assert.deepEqual(EXTRA_FEATURES, ["exp_years", "title_match", "tenure", "open_code"]);
+  assert.deepEqual(EXTRA_FEATURES, ["exp_years", "title_match", "tenure", "open_code", "semantic"]);
   // каждый признак показан ровно один раз: либо у своего поля, либо в «Ещё признаках»
   const placed = [...Object.keys(FEATURE_FIELDS), ...EXTRA_FEATURES].sort();
   assert.deepEqual(placed, FEATURES.map(([key]) => key).sort());
-  assert.deepEqual(extraFeatures().map(([key]) => key), ["exp_years", "title_match", "tenure", "open_code"]);
+  assert.deepEqual(extraFeatures().map(([key]) => key), ["exp_years", "title_match", "tenure", "open_code", "semantic"]);
+  assert.equal(featureLabel("semantic"), "Близость по смыслу");
+  assert.match(extraFeatures().find(([key]) => key === "semantic")[2], /по смыслу похоже на профиль, даже другими словами/);
   assert.equal(extraFeatures().every(([, label, hint]) => label.length > 0 && hint.length > 10), true);
   assert.equal(featureLabel("donor_company"), "Опыт в компании-доноре");
   assert.equal(featureLabel("неведомое"), "неведомое");
@@ -200,4 +202,12 @@ test("сумма весов одной строкой", () => {
   assert.equal(weightSumText(100), "Сумма весов: 100 — сервер приводит к 100");
   assert.equal(weightSumText(110), "Сумма весов: 110 — сервер приводит к 100");
   assert.equal(weightSumText(0), "Сумма весов: 0 — сервер приводит к 100");
+});
+
+test("S7: у профиля со своими весами без «semantic» вес показывается 15 (как умолчание сервера) и сам по себе не считается правкой", () => {
+  const profile = { title: "Схемотехник", dept_code: "sales", weights: { exp_years: 20, keywords: 25, title_match: 15, donor_company: 10, tenure: 10, geo: 10, salary: 10, open_code: 0 } };
+  const form = formFromProfile(profile);
+  assert.equal(form.weights.semantic, 15);
+  const withZero = formFromProfile({ ...profile, weights: { ...profile.weights, semantic: 0 } });
+  assert.equal(withZero.weights.semantic, 0);   // 0 выключает признак у профиля
 });
