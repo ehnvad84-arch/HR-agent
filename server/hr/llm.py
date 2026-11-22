@@ -37,7 +37,7 @@ class LLMDailyLimit(LLMUnavailable):
 SYNONYMS = "synonyms"
 # синонимы — свой предел, чтобы утренние объяснения не закрыли кнопку «Предложить» (S12)
 _QUOTA = {SYNONYMS: ("llm_synonyms", "llm_synonyms_per_day", 100)}
-_QUOTA_OTHER = ("llm_call", "llm_calls_per_day", 500)
+QUOTA_CALLS = ("llm_call", "llm_calls_per_day", 500)   # общий предел; «Схема» показывает его
 
 
 def assist_enabled(conn) -> bool:
@@ -53,7 +53,7 @@ def guarded_complete(conn_factory: ConnFactory, purpose: str, messages: list[dic
     """
     if not get_config().llm_enabled:
         raise LLMUnavailable("модель не настроена: LLM_BASE_URL и LLM_MODEL пусты")
-    key, cap_key, cap_default = _QUOTA.get(purpose, _QUOTA_OTHER)
+    key, cap_key, cap_default = _QUOTA.get(purpose, QUOTA_CALLS)
     with conn_factory() as conn:
         if purpose != SYNONYMS and not assist_enabled(conn):
             raise LLMDisabled("объяснения моделью выключены")

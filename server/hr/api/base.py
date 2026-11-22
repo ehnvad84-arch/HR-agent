@@ -69,6 +69,9 @@ def candidates(vacancy_id: int, user: Reader, conn_factory: Conn, page: int = 0)
 def semantic(user: Reader, conn_factory: Conn, q: str = ""):
     if not q.strip():
         raise HTTPException(422, {"error": "validation", "message": "Пустой запрос"})
+    if len(q) > search.QUERY_MAX:
+        raise HTTPException(422, {"error": "validation",
+                                  "message": f"Запрос длиннее {search.QUERY_MAX} знаков — сократите его"})
     try:
         vec = embed.tracked(conn_factory, [q])[0]   # отказ службы — в ops.service_health (S8)
         with conn_factory() as conn:
@@ -76,8 +79,9 @@ def semantic(user: Reader, conn_factory: Conn, q: str = ""):
             if not user[1].all:
                 found = [r for r in found if scope.person_ok(conn, user[1], r["person_id"])]
             info = views.cards(conn, [r["person_id"] for r in found])
+            pending = search.missing_count(conn, embed.method())
     except embed.ERRORS:
         raise HTTPException(503, {"error": "embed", "message": "Поиск по смыслу сейчас недоступен"}) from None
     for r in found:
         r.update(views._card(info.get(r["person_id"])))
-    return {"items": found}
+    return {"items": found, "vectors_pending": pending}

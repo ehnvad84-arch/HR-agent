@@ -32,11 +32,16 @@ def take(conn_factory: ConnFactory, key: str, cap: int, *, now: datetime | None 
     return r is not None
 
 
-def left(conn, key: str, cap: int, *, now: datetime | None = None) -> int:
-    """Остаток предела `cap` на сегодня (не меньше нуля) — для расчёта, списывает только take."""
+def used(conn, key: str, *, now: datetime | None = None) -> int:
+    """Сколько единиц `key` взято сегодня (для «Схемы»)."""
     r = one(conn, "SELECT used FROM ops.daily_quota WHERE day = %s AND key = %s",
             (day_of(now or SYSTEM.now()), key))
-    return max(cap - (r["used"] if r else 0), 0)
+    return r["used"] if r else 0
+
+
+def left(conn, key: str, cap: int, *, now: datetime | None = None) -> int:
+    """Остаток предела `cap` на сегодня (не меньше нуля) — для расчёта, списывает только take."""
+    return max(cap - used(conn, key, now=now), 0)
 
 
 HH_FULL = "hh_full_resume"
