@@ -134,13 +134,36 @@ def upsert_observation(conn: psycopg.Connection, source: dict, n: Norm, raw: dic
 
 # ------------------------------------------------------------------ профили и человек
 
+def with_synonyms(conn: psycopg.Connection, profiles: list[dict]) -> list[dict]:
+    """Добавляет к строкам профилей синонимы ключей (S5): {нормализованный ключ: [термины]}."""
+    syn: dict[str, dict[str, list[str]]] = {}
+    for r in rows(conn, """SELECT role_code, keyword, synonyms FROM role_synonym
+                           WHERE role_code = ANY(%s) AND cardinality(synonyms) > 0""",
+                  ([p["code"] for p in profiles],)):
+        syn.setdefault(r["role_code"], {})[r["keyword"]] = list(r["synonyms"])
+    for p in profiles:
+        p["synonyms"] = syn.get(p["code"], {})
+    return profiles
+
+
 def current_profiles(conn: psycopg.Connection) -> list[dict]:
     """Действующая версия по каждому коду: активна, утверждена, утверждена последней (S17)."""
-    return rows(conn, """
+    return with_synonyms(conn, rows(conn, """
         SELECT DISTINCT ON (rp.code) rp.*, d.code AS dept_code
         FROM role_profile rp JOIN department d ON d.id = rp.department_id
         WHERE rp.is_active AND rp.approved_by IS NOT NULL AND rp.approved_at IS NOT NULL
-        ORDER BY rp.code, rp.approved_at DESC, rp.id DESC""")
+        ORDER BY rp.code, rp.approved_at DESC, rp.id DESC"""))
+
+
+def keyword_terms(profiles: list[dict]) -> set[str]:
+    """Ключи профилей и их синонимы — для события «новый навык» (S5)."""
+    out: set[str] = set()
+    for pr in profiles:
+        syn = pr.get("synonyms") or {}
+        for k in pr.get("keywords") or []:
+            out.add(k)
+            out.update(syn.get(scoring.norm_keyword(k), []))
+    return out
 
 
 def params(conn: psycopg.Connection) -> scoring.Params:
@@ -354,8 +377,8 @@ def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: dat
         if not card_for_observation(conn, res, source["code"], n, now, profiles):
             return res              # «увидел, но мимо»: наблюдение лежит до следующего изменения
     else:
-        keywords = {k for pr in profiles for k in pr["keywords"] or []}
-        res.events = events_from_diff(obs.diff, keywords) if obs.changed else [("resume_updated", {"reappeared": True})]
+        res.events = (events_from_diff(obs.diff, keyword_terms(profiles)) if obs.changed
+                      else [("resume_updated", {"reappeared": True})])
         run(conn, "UPDATE person SET label = %s, city = coalesce(%s, city) WHERE id = %s",
             (label_of(n), n.city, res.person_id))
     return _finish(conn, res, now, profiles)
@@ -380,6 +403,7 @@ def rescore_profile(conn_factory: ConnFactory, role_profile_id: int, now: dateti
                           JOIN department d ON d.id = rp.department_id WHERE rp.id = %s""", (role_profile_id,))
         if not pr or pr["approved_by"] is None or pr["approved_at"] is None:
             raise ProfileNotApproved(f"версия профиля {role_profile_id} не утверждена")
+        with_synonyms(conn, [pr])
     last = 0
     while True:
         with conn_factory() as conn:

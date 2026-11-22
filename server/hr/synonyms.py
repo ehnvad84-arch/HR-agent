@@ -18,7 +18,7 @@ from datetime import datetime
 import httpx
 import psycopg
 
-from . import llm
+from . import llm, scoring
 from .assist import cache_key
 from .db import ConnFactory, j, one, rows, run, val
 
@@ -51,8 +51,8 @@ class NoKeywords(ValueError):
 
 
 def norm(keyword: str) -> str:
-    """Ключ в role_synonym: нижний регистр, «ё» → «е», пробелы схлопнуты."""
-    return re.sub(r"\s+", " ", keyword).strip().lower().replace("ё", "е")
+    """Ключ в role_synonym: нижний регистр, «ё» → «е», пробелы схлопнуты (как в балле)."""
+    return scoring.norm_keyword(keyword)
 
 
 def clean_term(term: object) -> str | None:

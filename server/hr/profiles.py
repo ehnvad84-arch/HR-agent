@@ -168,6 +168,7 @@ def preview(conn: psycopg.Connection, profile_id: int) -> dict:
                        JOIN department d ON d.id = rp.department_id WHERE rp.id = %s""", (profile_id,))
     if not new:
         raise NotFound
+    pipeline.with_synonyms(conn, [new])
     if new["approved_at"]:
         raise Conflict("версия уже утверждена")
     cur = next((p for p in pipeline.current_profiles(conn) if p["code"] == new["code"]), None)

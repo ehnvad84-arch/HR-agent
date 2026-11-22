@@ -85,6 +85,7 @@ class Profile:
     weights: dict = field(default_factory=dict)
     keywords: list[str] = field(default_factory=list)
     donor_companies: list[str] = field(default_factory=list)
+    synonyms: dict[str, list[str]] = field(default_factory=dict)   # {norm_keyword(ключ): [термины]}, S5
 
     @classmethod
     def from_row(cls, r: dict, criteria: dict | None = None) -> Profile:
@@ -92,7 +93,8 @@ class Profile:
                 salary_min=r.get("salary_min"), salary_max=r.get("salary_max"),
                 must_have=_reqs(r.get("must_have")), nice_to_have=_reqs(r.get("nice_to_have")),
                 stop_factors=_reqs(r.get("stop_factors")), weights=dict(r.get("weights") or {}),
-                keywords=list(r.get("keywords") or []), donor_companies=list(r.get("donor_companies") or []))
+                keywords=list(r.get("keywords") or []), donor_companies=list(r.get("donor_companies") or []),
+                synonyms=dict(r.get("synonyms") or {}))
         if criteria:
             p.apply_criteria(criteria)
         return p
@@ -172,6 +174,19 @@ def phrase_found(phrase: str, hay: str) -> bool:
     return bool(words) and all(_stem(w) in hay for w in words)
 
 
+def norm_keyword(keyword: str) -> str:
+    """Ключ словаря синонимов: нижний регистр, «ё» → «е», пробелы схлопнуты."""
+    return re.sub(r"\s+", " ", keyword).strip().lower().replace("ё", "е")
+
+
+def synonym_found(term: str, hay: str) -> bool:
+    """Синоним короче 5 знаков — только целым словом: «ПП» не найдётся внутри «ППУ»."""
+    t = term.lower().strip()
+    if len(t) < 5:
+        return bool(t) and re.search(rf"(?<!\w){re.escape(t)}(?!\w)", hay) is not None
+    return phrase_found(t, hay)
+
+
 def exact_without_negation(phrase: str, hay: str) -> bool:
     """Точная фраза, перед которой нет «нет», «без», «не»: «нет судимости» не равно «судимость»."""
     p = phrase.lower().strip()
@@ -216,7 +231,14 @@ def _f_exp(person: Person, profile: Profile) -> tuple[float, str]:
 def _f_keywords(profile: Profile, hay: str) -> tuple[float, str]:
     if not profile.keywords:
         return 0.5, "ключевые слова в профиле не заданы"
-    found = [k for k in dict.fromkeys(profile.keywords) if phrase_found(k, hay)]
+    found = []
+    for k in dict.fromkeys(profile.keywords):
+        if phrase_found(k, hay):
+            found.append(k)
+            continue
+        syn = next((t for t in profile.synonyms.get(norm_keyword(k), []) if synonym_found(t, hay)), None)
+        if syn:
+            found.append(f"{k} ≈ {syn}")
     need = max(3, (len(profile.keywords) + 1) // 2)
     return min(len(found) / need, 1.0), (", ".join(found[:6]) if found else "совпадений нет")
 
