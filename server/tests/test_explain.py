@@ -151,3 +151,17 @@ def test_s12_daily_limit_stops_background_explanations(conn, conn_factory, clock
     stats = explain.explain_pending(conn_factory, http=fake.client())
     assert fake.bodies == [] and match(conn, pid)["model"] == "template"
     assert "предел" in stats.note
+
+
+def test_s12_background_explanations_stop_at_own_limit_not_shared(conn, conn_factory, clock, llm_env):
+    """Ревью, находка 1: фон съедал весь общий предел llm_call — у него свой llm_explain_per_day."""
+    from hr import quota
+    from hr.clock import SYSTEM
+    pid = setup_person(conn, clock)
+    db.run(conn, "INSERT INTO ops.daily_quota (day, key, used) VALUES (%s, 'llm_explain', 300)",
+           (quota.day_of(SYSTEM.now()),))
+    fake = FakeLLM()
+    stats = explain.explain_pending(conn_factory, http=fake.client())
+    assert fake.bodies == [] and match(conn, pid)["model"] == "template"
+    assert "предел" in stats.note
+    assert db.val(conn, "SELECT used FROM ops.daily_quota WHERE key = 'llm_call'") is None, "общий не тронут"

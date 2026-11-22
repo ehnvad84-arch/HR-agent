@@ -109,3 +109,24 @@ def _complete_calls(path: Path) -> list[str]:
 def test_s12_lock_llm_complete_only_from_llm_py():
     offenders = [hit for p in sorted(HR.rglob("*.py")) if p.name != "llm.py" for hit in _complete_calls(p)]
     assert offenders == [], "модель зовётся мимо llm.guarded_complete"
+
+
+def test_s12_background_explanations_own_limit_300_leave_recruiter_200(conn, conn_factory, model):
+    """Фон (explain_pending) не занимает больше llm_explain_per_day из общего предела (ревью, находка 1)."""
+    assert db.setting(conn, "llm_explain_per_day") == 300
+    for _ in range(300):
+        llm.guarded_complete(conn_factory, llm.EXPLAIN_BACKGROUND, MSG, http=model.client())
+    with pytest.raises(llm.LLMDailyLimit):
+        llm.guarded_complete(conn_factory, llm.EXPLAIN_BACKGROUND, MSG, http=model.client())
+    assert len(model.requests) == 300
+    assert used(conn, "llm_explain") == 300 and used(conn, "llm_call") == 300, "фон списывает и свой, и общий"
+    assert llm.guarded_complete(conn_factory, "explain", MSG, http=model.client()) == {"ok": True}, \
+        "разбор в досье после 300 фоновых идёт моделью"
+    assert used(conn, "llm_call") == 301 and used(conn, "llm_explain") == 300
+
+
+def test_s12_background_explanations_stop_at_shared_limit(conn, conn_factory, model):
+    preset(conn, "llm_call", 500)
+    with pytest.raises(llm.LLMDailyLimit):
+        llm.guarded_complete(conn_factory, llm.EXPLAIN_BACKGROUND, MSG, http=model.client())
+    assert model.requests == []

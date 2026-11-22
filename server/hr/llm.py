@@ -35,9 +35,12 @@ class LLMDailyLimit(LLMUnavailable):
 
 
 SYNONYMS = "synonyms"
-# синонимы — свой предел, чтобы утренние объяснения не закрыли кнопку «Предложить» (S12)
-_QUOTA = {SYNONYMS: ("llm_synonyms", "llm_synonyms_per_day", 100)}
+EXPLAIN_BACKGROUND = "explain_background"   # explain_pending; разбор в досье — "explain"
 QUOTA_CALLS = ("llm_call", "llm_calls_per_day", 500)   # общий предел; «Схема» показывает его
+# синонимы — свой предел, чтобы утренние объяснения не закрыли кнопку «Предложить» (S12);
+# фоновые объяснения — свой предел внутри общего, чтобы рекрутеру остался остаток общего (ревью, находка 1)
+_QUOTA = {SYNONYMS: [("llm_synonyms", "llm_synonyms_per_day", 100)],
+          EXPLAIN_BACKGROUND: [("llm_explain", "llm_explain_per_day", 300), QUOTA_CALLS]}
 
 
 def assist_enabled(conn) -> bool:
@@ -53,13 +56,14 @@ def guarded_complete(conn_factory: ConnFactory, purpose: str, messages: list[dic
     """
     if not get_config().llm_enabled:
         raise LLMUnavailable("модель не настроена: LLM_BASE_URL и LLM_MODEL пусты")
-    key, cap_key, cap_default = _QUOTA.get(purpose, QUOTA_CALLS)
+    keys = _QUOTA.get(purpose, [QUOTA_CALLS])
     with conn_factory() as conn:
         if purpose != SYNONYMS and not assist_enabled(conn):
             raise LLMDisabled("объяснения моделью выключены")
-        cap = int(setting(conn, cap_key, cap_default))
-    if not quota.take(conn_factory, key, cap):
-        raise LLMDailyLimit("суточный предел вызовов модели исчерпан")
+        caps = [(key, int(setting(conn, cap_key, cap_default))) for key, cap_key, cap_default in keys]
+    for key, cap in caps:   # свой предел первым: исчерпанный фон общий не трогает
+        if not quota.take(conn_factory, key, cap):
+            raise LLMDailyLimit("суточный предел вызовов модели исчерпан")
     return complete(messages, **kw)
 
 

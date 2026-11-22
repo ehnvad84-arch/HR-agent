@@ -81,7 +81,7 @@ def explain_pending(conn_factory: ConnFactory, *, http: httpx.Client | None = No
         stats.seen += 1
         try:
             reply = llm.guarded_complete(
-                conn_factory, "explain",
+                conn_factory, llm.EXPLAIN_BACKGROUND,
                 [{"role": "system", "content": system},
                  {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}], http=http)
         except (llm.LLMDailyLimit, llm.LLMDisabled) as e:
