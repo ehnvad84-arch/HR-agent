@@ -214,12 +214,14 @@ class Semantic:
     on: bool = False
     sims: dict[int, float] = field(default_factory=dict)
     skip: str | None = None
+    no_profile_vec: set[int] = field(default_factory=set)   # версии профиля без вектора текущего способа
 
     @classmethod
     def of(cls, conn: psycopg.Connection, profile_ids: list[int], *, person_id: int | None = None,
            vec: list[float] | None = None) -> Semantic:
         """Один запрос: ops.profile_embedding × вектор человека (person_embedding) или готовый vec
-        текущего способа. Нет вектора — пометка no_vector или embed_down (служба недоступна)."""
+        текущего способа. Нет вектора — пометка embed_down (служба недоступна), иначе no_profile_vector
+        (нет у версии профиля) или no_vector (нет у резюме)."""
         model = embed.method()
         if model == embed.HASH:
             return cls()
@@ -236,9 +238,19 @@ class Semantic:
         else:
             found = []
         sims = {r["role_profile_id"]: float(r["cos"]) for r in found}
-        skip = None if len(sims) == len(set(profile_ids)) else \
-            ("embed_down" if embed.down_since(conn) else "no_vector")
-        return cls(True, sims, skip)
+        if len(sims) == len(set(profile_ids)):
+            return cls(True, sims)
+        if embed.down_since(conn):
+            return cls(True, sims, "embed_down")
+        resume_vec = vec is not None or (person_id is not None and one(
+            conn, "SELECT 1 FROM person_embedding WHERE person_id = %s AND embed_model = %s",
+            (person_id, model)) is not None)
+        if not resume_vec:
+            return cls(True, sims, "no_vector")
+        have = {r["role_profile_id"] for r in rows(conn, """SELECT role_profile_id FROM ops.profile_embedding
+                                                         WHERE role_profile_id = ANY(%s) AND embed_model = %s""",
+                                                      (profile_ids, model))}
+        return cls(True, sims, "no_vector", set(profile_ids) - have)
 
     def kw(self, profile_id: int) -> dict:
         """Аргументы scoring.score для версии профиля."""
@@ -246,6 +258,8 @@ class Semantic:
             return {}
         if profile_id in self.sims:
             return {"semantic": self.sims[profile_id]}
+        if profile_id in self.no_profile_vec:   # вектор резюме есть, нет у профиля
+            return {"semantic_skip": "no_profile_vector"}
         return {"semantic_skip": self.skip}
 
 

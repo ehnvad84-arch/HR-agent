@@ -318,7 +318,8 @@ def _f_keywords_partial(profile: Profile, hay: str) -> tuple[float, str]:
     return (ratio, detail) if ratio >= 0.5 else (0.5, "навыки видны только в полном резюме")
 
 
-SKIP_DETAIL = {"no_vector": "вектор резюме ещё не посчитан", "embed_down": "модель векторов недоступна"}
+SKIP_DETAIL = {"no_vector": "вектор резюме ещё не посчитан", "no_profile_vector": "вектор профиля ещё не посчитан",
+               "embed_down": "модель векторов недоступна"}
 
 
 def semantic_weight(profile: Profile, params: Params) -> int:
@@ -337,7 +338,8 @@ def score(person: Person, profile: Profile, params: Params, partial: bool = Fals
           semantic: float | None = None, semantic_skip: str | None = None) -> Score:
     """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме.
     semantic — косинус векторов резюме и профиля (S7). Без него признак вне суммы весов: с
-    semantic_skip ("no_vector" | "embed_down") — пометка «не учтено», без — признака нет (hash-v1)."""
+    semantic_skip ("no_vector" | "no_profile_vector" | "embed_down") — пометка «не учтено»,
+    без — признака нет (hash-v1)."""
     use_defaults = not profile.weights
     weights = default_weights(profile.dept_code) if use_defaults else \
         {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS and k != SEMANTIC}

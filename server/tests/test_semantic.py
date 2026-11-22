@@ -189,3 +189,16 @@ def test_s08_hash_method_score_as_before(conn, conn_factory, clock, monkeypatch)
     m = match_of(conn, "strong")
     assert "semantic" not in m["features"]
     assert m["score"] == scoring.score(person_of(hh_item(id="strong")), engineer(), scoring.Params()).score
+
+
+def test_s08_profile_without_vector_says_profile_not_resume(conn, conn_factory, clock, bge):
+    """Ревью, находка 5: вектор резюме есть, а у профиля нет — подпись про профиль, а не про резюме."""
+    pr = profile(conn)   # embed_profile не звали: вектора профиля нет (до первой ночи)
+    crawl(conn_factory, FakeHH(items=[hh_item(id="strong")]), clock)
+    pid = db.val(conn, "SELECT person_id FROM observation WHERE external_id = 'strong'")
+    assert db.val(conn, "SELECT count(*) FROM person_embedding WHERE person_id = %s", (pid,)) == 1
+    f = match_of(conn, "strong")["features"]["semantic"]
+    assert f["skipped"] == "no_profile_vector" and f["detail"] == "вектор профиля ещё не посчитан"
+    pipeline.rescore_profile(conn_factory, pr["id"], now=clock.now())
+    f = match_of(conn, "strong")["features"]["semantic"]
+    assert f["skipped"] == "no_profile_vector" and f["detail"] == "вектор профиля ещё не посчитан"
