@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from .. import assist, auth, dossier_docx, photos, scope, views
+from .. import assist, auth, dossier_docx, llm, photos, scope, views
 from ..clock import Clock
 from ..db import ConnFactory, j, run, val
 from ..deps import get_clock, get_conn_factory, get_llm_http
@@ -36,6 +36,7 @@ def _read(person_id: int, us: tuple, conn_factory: ConnFactory, full: bool) -> d
             run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail)
                          VALUES (%s, 'view', 'person', %s, %s)""", (user.id, person_id, j({"channel": "web"})))
             d = views.for_manager(d, sc)
+        d["llm_assist_enabled"] = llm.assist_enabled(conn)   # S12: интерфейс не ждёт разбора моделью
     return d
 
 
