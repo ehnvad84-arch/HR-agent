@@ -27,7 +27,8 @@ from .deps import get_clock, get_conn_factory
 COOKIE = "hr_session"
 CSRF_HEADER = "X-CSRF-Token"
 SESSION_ONLY = "session"            # право «любой вошедший»: /api/me, выход
-OPEN_ROUTES = {"/api/login", "/api/login/code", "/api/oauth/hh/callback"}
+# Без входа: вход, возврат OAuth hh и номер версии (releases S1 — только номер и дата)
+OPEN_ROUTES = {"/api/login", "/api/login/code", "/api/oauth/hh/callback", "/api/version"}
 NO_ACCESS = {"error": "no_access", "message": "Доступ не выдан, обратитесь в отдел персонала"}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -223,32 +224,42 @@ def require_scoped(permission: str, csrf: bool | None = None):
     return dependency
 
 
-def routes_unscoped(app: FastAPI, permission: str = "base.read") -> list[str]:
-    """Маршруты с правом permission без require_scoped: руководитель увидел бы через них чужое (M1)."""
+def api_routes(app: FastAPI) -> list[tuple[str, set[str], list]]:
+    """Все маршруты /api/ приложения: (путь, методы, вызовы всех зависимостей).
+    FastAPI 0.16x кладёт include_router в app.routes обёрткой с original_router и include_context —
+    разворачиваем её с префиксом и зависимостями включения, иначе замки ниже не видят маршрутов."""
     def walk(dep):
         yield dep
         for d in dep.dependencies:
             yield from walk(d)
 
+    def collect(routes, prefix: str, extra: list):
+        for r in routes:
+            if hasattr(r, "original_router"):
+                ctx = r.include_context
+                yield from collect(r.original_router.routes, prefix + ctx.prefix,
+                                   extra + [d.dependency for d in ctx.dependencies])
+            elif isinstance(r, APIRoute):
+                calls = extra + [d.call for d in walk(r.dependant) if d.call is not None]
+                yield prefix + r.path, r.methods, calls
+
+    return [x for x in collect(app.routes, "", []) if x[0].startswith("/api/")]
+
+
+def routes_unscoped(app: FastAPI, permission: str = "base.read") -> list[str]:
+    """Маршруты с правом permission без require_scoped: руководитель увидел бы через них чужое (M1)."""
     bad = []
-    for r in app.routes:
-        if not (isinstance(r, APIRoute) and r.path.startswith("/api/")):
-            continue
-        deps = [d.call for d in walk(r.dependant) if d.call is not None]
-        if any(getattr(c, "permission", None) == permission for c in deps) \
-                and not any(getattr(c, "scoped", False) for c in deps):
-            bad += [f"{m} {r.path}" for m in sorted(r.methods)]
+    for path, methods, calls in api_routes(app):
+        if any(getattr(c, "permission", None) == permission for c in calls) \
+                and not any(getattr(c, "scoped", False) for c in calls):
+            bad += [f"{m} {path}" for m in sorted(methods)]
     return bad
 
 
 def routes_without_permission(app: FastAPI) -> list[str]:
     """Маршруты /api/, у которых не объявлено право: тест держит этот список пустым (S3)."""
-    def declared(dep) -> bool:
-        return getattr(dep.call, "permission", None) is not None or any(declared(d) for d in dep.dependencies)
-
     bad = []
-    for r in app.routes:
-        if isinstance(r, APIRoute) and r.path.startswith("/api/") and r.path not in OPEN_ROUTES \
-                and not declared(r.dependant):
-            bad += [f"{m} {r.path}" for m in sorted(r.methods)]
+    for path, methods, calls in api_routes(app):
+        if path not in OPEN_ROUTES and not any(getattr(c, "permission", None) is not None for c in calls):
+            bad += [f"{m} {path}" for m in sorted(methods)]
     return bad

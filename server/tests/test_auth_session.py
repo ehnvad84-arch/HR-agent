@@ -3,7 +3,7 @@
 from typing import Annotated
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from hr import auth, config, db
@@ -135,6 +135,35 @@ def test_every_app_route_declares_permission():
     """S3: у каждого маршрута /api/ рабочего места есть право; открыты только вход и OAuth hh."""
     from hr.main import app
     assert auth.routes_without_permission(app) == []
+
+
+def test_locks_see_routes_of_included_routers():
+    """Регрессия: FastAPI 0.162 кладёт include_router в app.routes обёрткой, а не маршрутами —
+    замки прав и скоупа не видели ни одного маршрута и были зелёными впустую."""
+    inner = APIRouter()
+
+    @inner.get("/bare")
+    def bare():
+        return {}
+
+    @inner.get("/leak")
+    def leak(u: Annotated[auth.User, Depends(auth.require("base.read"))]):
+        return {}
+
+    mid = APIRouter()
+    mid.include_router(inner, prefix="/x")
+    app = FastAPI()
+    app.include_router(mid, prefix="/api")
+    assert auth.routes_without_permission(app) == ["GET /api/x/bare"]
+    assert auth.routes_unscoped(app) == ["GET /api/x/leak"]
+
+
+def test_locks_see_all_app_routes():
+    from hr.main import app
+    seen = {f"{m} {path}" for path, methods, _ in auth.api_routes(app) for m in methods}
+    assert len(seen) >= 80
+    assert {"GET /api/profiles/{profile_id}/synonyms", "PUT /api/profiles/{profile_id}/synonyms",
+            "GET /api/version", "GET /api/me", "GET /api/oauth/hh/callback"} <= seen
 
 
 def test_session_key_required(conn, clock, monkeypatch, web):
