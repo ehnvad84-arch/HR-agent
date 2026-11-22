@@ -27,7 +27,8 @@ log = logging.getLogger(__name__)
 MAX_SUGGESTED = 8
 MAX_SAVED = 10
 _URL = re.compile(r"https?://|www\.", re.I)
-_BANNED = set('<>"()!')
+_BANNED = set('<>"()!*:')   # * и : — тоже язык запросов hh (усечение слова, поле)
+_HH_OPERATOR = re.compile(r"(?<!\w)(?:and|or|not)(?!\w)", re.I)   # отдельным словом: «Oracle», «Notepad» — можно
 
 
 class NotFound(LookupError):
@@ -56,11 +57,14 @@ def norm(keyword: str) -> str:
 
 
 def clean_term(term: object) -> str | None:
-    """Синоним по правилам сохранения: 2–60 знаков, без ссылок и < > " ( ) !; иначе None."""
+    """Синоним по правилам сохранения: 2–60 знаков, без ссылок, < > " ( ) ! * : и слов AND, OR, NOT; иначе None.
+
+    Синоним идёт в запрос hh через OR (hh.search_params): оператор в нём меняет смысл запроса.
+    """
     if not isinstance(term, str):
         return None
     t = re.sub(r"\s+", " ", term).strip()
-    if not 2 <= len(t) <= 60 or _URL.search(t) or _BANNED & set(t):
+    if not 2 <= len(t) <= 60 or _URL.search(t) or _BANNED & set(t) or _HH_OPERATOR.search(t):
         return None
     return t
 
@@ -210,7 +214,7 @@ def _clean_items(items: object, keywords: list[str]) -> dict[str, list[str]]:
         for raw in it["synonyms"]:
             t = clean_term(raw)
             if t is None:
-                raise Invalid("синоним — от 2 до 60 знаков, без ссылок и знаков < > \" ( ) !")
+                raise Invalid("синоним — от 2 до 60 знаков, без ссылок, знаков < > \" ( ) ! * : и слов AND, OR, NOT")
             if norm(t) in keys:
                 raise Invalid(f"«{t}» — уже ключ профиля")
             if norm(t) in {norm(x) for x in terms}:

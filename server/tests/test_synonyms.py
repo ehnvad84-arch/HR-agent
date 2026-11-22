@@ -143,6 +143,16 @@ def test_s01_keywords_of_current_version_not_draft(conn, conn_factory, model, pr
 
 @pytest.mark.parametrize("term, ok", [("P-CAD", "P-CAD"), ("  разработка   схем ", "разработка схем"), ("x", None),
                                       ("a" * 61, None), ("www.kicad.org", None), ("схемы!", None),
-                                      ('"схемы"', None), ("OrCAD (Cadence)", None), ("<b>", None), (5, None)])
+                                      ('"схемы"', None), ("OrCAD (Cadence)", None), ("<b>", None), (5, None),
+                                      # операторы языка запросов hh (ревью, находка 6)
+                                      ("NOT", None), ("or", None), ("And", None), ("P-CAD NOT Altium", None),
+                                      ("KiCad OR", None), ("Alti*", None), ("title:Altium", None),
+                                      ("Notepad", "Notepad"), ("Oracle", "Oracle"), ("Android", "Android")])
 def test_s01_clean_term(term, ok):
     assert synonyms.clean_term(term) == ok
+
+
+def test_s01_hh_operators_dropped_from_model_reply(conn_factory, model, prof):
+    """Ревью, находка 6: «NOT» среди синонимов превратил бы запрос hh «… OR NOT OR …» в исключение."""
+    model.reply = {"synonyms": {"Altium": ["NOT", "P-CAD", "or", "KiCad*", "skill:Altium", "OrCAD"]}}
+    assert synonyms.suggest(conn_factory, prof["id"], http=model.client()) == {"Altium": ["P-CAD", "OrCAD"]}
