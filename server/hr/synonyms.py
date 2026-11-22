@@ -1,5 +1,9 @@
 """Синонимы ключей профиля (S1–S4): модель предлагает, рекрутер правит и сохраняет.
 
+save и rollback действуют сразу, без новой версии профиля (таблица role_synonym по коду должности),
+каждое изменение — agent_change kind 'synonyms' с полными снимками до и после. Откат — только последней
+записи должности. Утверждение версии без ключа удаляет его синонимы (prune). Пересчёт — rescore, в фоне.
+
 suggest ничего не пишет, кроме кэша ответа: вход модели — только название и ключи действующей
 версии профиля (данных людей нет), ответ проходит белый список (clean_term, известные ключи,
 не больше 8 на ключ). Повтор с теми же ключами берётся из ops.llm_cache — модель и предел не тратятся.
@@ -9,22 +13,37 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 
 import httpx
+import psycopg
 
 from . import llm
 from .assist import cache_key
-from .db import ConnFactory, j, one, run
+from .db import ConnFactory, j, one, rows, run, val
 
 log = logging.getLogger(__name__)
 
 MAX_SUGGESTED = 8
+MAX_SAVED = 10
 _URL = re.compile(r"https?://|www\.", re.I)
 _BANNED = set('<>"()!')
 
 
 class NotFound(LookupError):
     pass
+
+
+class Invalid(ValueError):
+    """422 validation: причина — в тексте."""
+
+
+class Stale(RuntimeError):
+    """409 stale: после открытия экрана синонимы должности кто-то сохранил."""
+
+
+class NotLatest(RuntimeError):
+    """409 not_latest: откатывать можно только последнюю запись о синонимах должности."""
 
 
 class NoKeywords(ValueError):
@@ -103,3 +122,140 @@ def suggest(conn_factory: ConnFactory, profile_id: int, *, http: httpx.Client | 
     else:
         log.info("модель не предложила синонимов, прошедших проверку")
     return got
+
+
+def load(conn: psycopg.Connection, role_code: str) -> dict[str, list[str]]:
+    """Синонимы должности {нормализованный ключ: [термины]}, без пустых."""
+    return {r["keyword"]: list(r["synonyms"]) for r in rows(
+        conn, """SELECT keyword, synonyms FROM role_synonym WHERE role_code = %s AND cardinality(synonyms) > 0
+                 ORDER BY keyword""", (role_code,))}
+
+
+def last_change_id(conn: psycopg.Connection, role_code: str) -> int | None:
+    return val(conn, """SELECT id FROM agent_change WHERE kind = 'synonyms' AND after->>'role_code' = %s
+                        ORDER BY id DESC LIMIT 1""", (role_code,))
+
+
+def _lock(conn: psycopg.Connection, role_code: str) -> None:
+    """Правки синонимов одной должности — по очереди: проверка stale и запись в одной блокировке."""
+    run(conn, "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"synonyms:{role_code}",))
+
+
+def _write(conn: psycopg.Connection, role_code: str, before: dict[str, list[str]], after: dict[str, list[str]],
+           user_id: int | None, now: datetime, *, profile_id: int, rollback_of: int | None, note: str) -> int:
+    for kw in before.keys() - after.keys():
+        run(conn, "DELETE FROM role_synonym WHERE role_code = %s AND keyword = %s", (role_code, kw))
+    for kw, terms in after.items():
+        if before.get(kw) != terms:
+            run(conn, """INSERT INTO role_synonym (role_code, keyword, synonyms, updated_by, updated_at)
+                         VALUES (%s, %s, %s, %s, %s)
+                         ON CONFLICT (role_code, keyword) DO UPDATE
+                         SET synonyms = EXCLUDED.synonyms, updated_by = EXCLUDED.updated_by,
+                             updated_at = EXCLUDED.updated_at""", (role_code, kw, terms, user_id, now))
+    return val(conn, """INSERT INTO agent_change (kind, before, after, applied_by, applied_at, note)
+                        VALUES ('synonyms', %s, %s, %s, %s, %s) RETURNING id""",
+               (j({"role_code": role_code, "synonyms": before}),
+                j({"role_code": role_code, "synonyms": after, "profile_id": profile_id, "rollback_of": rollback_of}),
+                user_id, now, note))
+
+
+def _clean_items(items: object, keywords: list[str]) -> dict[str, list[str]]:
+    """Проверка сохранения: ключ есть в действующей версии, термины по clean_term, не ключ, без повторов, ≤ 10."""
+    if not isinstance(items, list):
+        raise Invalid("items: список ключей с синонимами")
+    keys = {norm(k) for k in keywords}
+    out: dict[str, list[str]] = {}
+    for it in items:
+        if not isinstance(it, dict) or not isinstance(it.get("keyword"), str) or \
+                not isinstance(it.get("synonyms"), list):
+            raise Invalid("items: ключ и список синонимов")
+        kw = norm(it["keyword"])
+        if kw not in keys:
+            raise Invalid(f"ключа «{it['keyword']}» нет в действующей версии профиля")
+        if kw in out:
+            raise Invalid(f"ключ «{it['keyword']}» указан дважды")
+        terms: list[str] = []
+        for raw in it["synonyms"]:
+            t = clean_term(raw)
+            if t is None:
+                raise Invalid("синоним — от 2 до 60 знаков, без ссылок и знаков < > \" ( ) !")
+            if norm(t) in keys:
+                raise Invalid(f"«{t}» — уже ключ профиля")
+            if norm(t) in {norm(x) for x in terms}:
+                raise Invalid(f"«{t}» повторяется")
+            terms.append(t)
+        if len(terms) > MAX_SAVED:
+            raise Invalid(f"не больше {MAX_SAVED} синонимов на ключ")
+        out[kw] = terms
+    return out
+
+
+def _profile(conn: psycopg.Connection, profile_id: int) -> dict:
+    try:
+        return current(conn, profile_id)
+    except NoKeywords:
+        raise Invalid("у должности нет утверждённой версии с ключами") from None
+
+
+def save(conn: psycopg.Connection, profile_id: int, items: object, user_id: int, now: datetime, *,
+         base_change_id: int | None) -> int:
+    """S2: синонимы названных ключей заменяются сразу, без версии профиля; пустой список — убрать.
+    Ключи, которых нет в items, не меняются. Пересчёт запускает вызывающий (rescore, в фоне)."""
+    p = _profile(conn, profile_id)
+    got = _clean_items(items, p["keywords"] or [])
+    _lock(conn, p["code"])
+    if last_change_id(conn, p["code"]) != base_change_id:
+        raise Stale("синонимы уже изменил кто-то другой — обновите страницу")
+    before = load(conn, p["code"])
+    after = {**before, **got}
+    after = {k: v for k, v in sorted(after.items()) if v}
+    if after == before:
+        raise Invalid("нет изменений")
+    return _write(conn, p["code"], before, after, user_id, now, profile_id=p["id"], rollback_of=None,
+                  note=f"синонимы ключей профиля «{p['title']}»")
+
+
+def rollback(conn: psycopg.Connection, profile_id: int, change_id: int, user_id: int, now: datetime) -> int:
+    """S3: синонимы — как до правки change_id; только последняя запись должности, иначе NotLatest."""
+    code = val(conn, "SELECT code FROM role_profile WHERE id = %s", (profile_id,))
+    if code is None:
+        raise NotFound
+    ch = one(conn, """SELECT id, before FROM agent_change
+                      WHERE id = %s AND kind = 'synonyms' AND after->>'role_code' = %s""", (change_id, code))
+    if not ch:
+        raise NotFound
+    _lock(conn, code)
+    if last_change_id(conn, code) != change_id:
+        raise NotLatest("откатить можно только последнюю правку синонимов")
+    before = load(conn, code)
+    after = {k: list(v) for k, v in sorted((ch["before"].get("synonyms") or {}).items()) if v}
+    cur = one(conn, """SELECT id, title FROM role_profile WHERE code = %s AND is_active AND approved_at IS NOT NULL
+                       ORDER BY approved_at DESC, id DESC LIMIT 1""", (code,))
+    return _write(conn, code, before, after, user_id, now, profile_id=cur["id"] if cur else profile_id,
+                  rollback_of=change_id, note=f"откат правки синонимов № {change_id}")
+
+
+def prune(conn: psycopg.Connection, role_code: str, keywords: list[str], version: str, profile_id: int,
+          user_id: int | None, now: datetime) -> int | None:
+    """Утверждена версия без ключа: его синонимы удаляются с записью в журнале. Нечего удалять — None."""
+    _lock(conn, role_code)
+    before = load(conn, role_code)
+    keys = {norm(k) for k in keywords or []}
+    gone = sorted(before.keys() - keys)
+    if not gone:
+        return None
+    after = {k: v for k, v in before.items() if k in keys}
+    return _write(conn, role_code, before, after, user_id, now, profile_id=profile_id, rollback_of=None,
+                  note=f"ключ удалён в версии {version}: {', '.join(gone)}")
+
+
+def rescore(conn_factory: ConnFactory, profile_id: int) -> None:
+    """Фоновый пересчёт после сохранения и отката: действующая версия профиля, затем «мой балл».
+    Вектор профиля пересчитывается отдельно (embed, T10)."""
+    from . import jobs, pipeline, tweaks  # pipeline и tweaks тянут скоринг; синонимы нужны скорингу (T7)
+
+    with conn_factory() as conn:
+        pid = current(conn, profile_id)["id"]
+    jobs.run("rescore_profile", lambda cf, **_: pipeline.rescore_profile(cf, pid), conn_factory,
+             locks=(f"profile:{pid}",))
+    jobs.run("user_rescore", lambda cf, **_: tweaks.user_rescore(cf), conn_factory)
