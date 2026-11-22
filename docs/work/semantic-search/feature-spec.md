@@ -104,7 +104,7 @@ PRD: docs/PRD.md → `core`, поиск по смыслу
 - **Предложение модели (S1, S4).** Вход — только `{"title", "keywords"}` профиля. Ответ — ровно `{"synonyms": {ключ: [термины]}}`: неизвестные ключи отбрасываются, термины проходят проверку сохранения, не больше 8 на ключ; не прошёл — «модель ничего не предложила». Кэш — `ops.llm_cache` (`002_workplace.sql:43`, purpose `synonyms`, `person_id` NULL): повтор с теми же ключами модель не вызывает и предел не тратит.
 
 ### Нагрузка на модель (S12)
-`llm.guarded_complete(conn_factory, purpose, messages, **kw)`: 1) флаг назначения — `synonyms` всегда, остальные при `llm_assist_enabled = true`; 2) `quota.take('llm_call', llm_calls_per_day)`; 3) `complete`. Ошибки — `LLMDisabled`, `LLMDailyLimit`, `LLMUnavailable`.
+`llm.guarded_complete(conn_factory, purpose, messages, **kw)`: 1) флаг назначения — `synonyms` всегда, остальные при `llm_assist_enabled = true`; 2) `quota.take`: синонимы — ключ `llm_synonyms` с пределом `llm_synonyms_per_day` (100), остальное — `llm_call` с `llm_calls_per_day` (500), чтобы утренние объяснения не закрыли кнопку синонимов; 3) `complete`. Ошибки — `LLMDisabled`, `LLMDailyLimit`, `LLMUnavailable`.
 - На неё переводятся все вызовы `llm.complete`: `explain.py:80` (фоновое объяснение), `assist.py:64` (разбор в досье), `actions.py:107` (черновики), `learning.py:88`, `:218` (разбор замечаний, дайджест). Тест-замок: `llm.complete` вызывается только из `llm.py`, по образцу `routes_unscoped` (AD-7).
 - Флаг выключен — всё по шаблону (AD-2); `explain_pending` сразу выходит с пометкой «объяснения моделью выключены». Часовой предел `llm_calls_per_hour` (`assist.py:28`) остаётся.
 - Флаг правится без экрана: `python -m hr.cli setting set <key> <value> --by <login>` пишет `agent_change` с `after.setting` и `applied_by`, поэтому `ops.change_default` (`009_release.sql:48`) не перетрёт правку человека.
@@ -158,7 +158,7 @@ PRD: docs/PRD.md → `core`, поиск по смыслу
 - `ops.daily_quota`: `day date`, `key text`, `used integer NOT NULL DEFAULT 0`, PK `(day, key)`.
 - `ops.service_health`: `service text PRIMARY KEY`, `down_since timestamptz`, `last_ok_at timestamptz`, `last_error text` (только тип исключения).
 - `role_permission`: `('recruiter','profile.synonyms')`, `('head_recruiter','profile.synonyms')`. `hiring_manager` и `director` с `profile.edit` (`007_manager_cabinet.sql:123`) его не получают — синонимы только видят.
-- Настройки через `ops.change_default('010', key, NULL, value)`: `hh_full_resume_per_day` 300 · `llm_calls_per_day` 500 · `llm_assist_enabled` true · `semantic_weight_default` 15 · `semantic_sim_floor` 0.40 · `semantic_sim_full` 0.75 · `hh_query_max_terms` 20 · `embed_batch_size` 32 · `embed_night_until` `"06:30"`.
+- Настройки через `ops.change_default('010', key, NULL, value)`: `hh_full_resume_per_day` 300 · `llm_calls_per_day` 500 · `llm_synonyms_per_day` 100 · `llm_assist_enabled` true · `semantic_weight_default` 15 · `semantic_sim_floor` 0.40 · `semantic_sim_full` 0.75 · `hh_query_max_terms` 20 · `embed_batch_size` 32 · `embed_night_until` `"06:30"`.
 - Совместимость: старый код новых таблиц не читает, ключ `semantic` в весах отбрасывает (`scoring.py:295`); откат кода безопасен — остаются только пределы за прогон.
 
 ### Сторонние сервисы
