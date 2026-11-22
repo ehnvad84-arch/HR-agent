@@ -9,7 +9,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from .clock import SYSTEM
-from .db import ConnFactory, one
+from .db import ConnFactory, one, setting
 from .views import TZ
 
 _MSK = ZoneInfo(TZ)
@@ -30,3 +30,22 @@ def take(conn_factory: ConnFactory, key: str, cap: int, *, now: datetime | None 
                          ON CONFLICT (day, key) DO UPDATE SET used = q.used + 1 WHERE q.used < %s
                          RETURNING used""", (day, key, cap))
     return r is not None
+
+
+def left(conn, key: str, cap: int, *, now: datetime | None = None) -> int:
+    """Остаток предела `cap` на сегодня (не меньше нуля) — для расчёта, списывает только take."""
+    r = one(conn, "SELECT used FROM ops.daily_quota WHERE day = %s AND key = %s",
+            (day_of(now or SYSTEM.now()), key))
+    return max(cap - (r["used"] if r else 0), 0)
+
+
+HH_FULL = "hh_full_resume"
+
+
+def hh_full_cap(conn) -> int:
+    return int(setting(conn, "hh_full_resume_per_day", 300))
+
+
+def hh_full_note(cap: int) -> str:
+    """Текст S11 для stats.note и «Схемы»."""
+    return f"Предел полных резюме hh на сегодня исчерпан: {cap} из {cap}. Остальные подходящие — в завтрашнем сборе."

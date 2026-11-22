@@ -40,6 +40,12 @@ class _HHItems:
         self.cf, self.api, self.src, self.profiles, self.stats = conn_factory, api, src, profiles, stats
         self.full_left, self.clock = full_left, clock
         self.full_done = 0
+        with conn_factory() as conn:
+            self.daily_cap = quota.hh_full_cap(conn)
+
+    def _take_daily(self) -> bool:
+        """S11: единица суточного предела портала — до запроса, на все прогоны дня."""
+        return quota.take(self.cf, quota.HH_FULL, self.daily_cap, now=self.clock.now())
 
     def handle(self, item: dict) -> None:
         self.stats.seen += 1
@@ -54,6 +60,9 @@ class _HHItems:
                                 pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles,
                                                           partial="skill_set" not in merged) is not None)
         raw = merged
+        if want and self.full_left > 0 and not self._take_daily():
+            self.full_left = 0
+            self.stats.note = quota.hh_full_note(self.daily_cap)
         if want and self.full_left > 0:
             try:
                 full = self.api.get(f"/resumes/{item['id']}")
@@ -155,6 +164,7 @@ def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, cl
     with conn_factory() as conn:
         days = int(setting(conn, "stale_observation_days", 45))
         recheck = int(setting(conn, "hh_recheck_per_run", 100))
+        daily_cap = quota.hh_full_cap(conn)
         budget = PageBudget(int(setting(conn, "crawl_max_pages", 2000)), stats)
         stale = rows(conn, """
             SELECT o.id, o.external_id, s.code FROM observation o JOIN source s ON s.id = o.source_id
@@ -171,6 +181,11 @@ def mark_gone(conn_factory: ConnFactory, *, http: httpx.Client | None = None, cl
             stats.skipped += 1
             continue
         recheck -= 1
+        if not quota.take(conn_factory, quota.HH_FULL, daily_cap, now=clock.now()):   # S11: тоже просмотр
+            stats.note = f"{quota.hh_full_note(daily_cap).split('.')[0]} — перепроверка продолжится завтра"
+            stats.skipped += 1
+            recheck = 0
+            continue
         try:
             api.get(f"/resumes/{o['external_id']}")
         except hh.BudgetExhausted:
@@ -195,13 +210,20 @@ def collect_hh_daily(conn_factory: ConnFactory, *, http: httpx.Client | None = N
                      limiter: RateLimiter | None = None, count: int | None = None, profile_id: int | None = None,
                      area: str | None = None, **_) -> JobStats:
     """Задача collect_hh_daily (18:00 по Москве) и кнопка «Загрузить резюме»: обход hh с полными резюме
-    на остаток дневного лимита просмотров (count — не больше остатка), затем фото новых людей."""
+    на меньший из остатков: лимит просмотров hh, суточный предел портала (S11) и count; затем фото новых людей."""
     clock = clock or SYSTEM
     http = http or client(get_config().hh_user_agent)
     limiter = limiter or _limiter
     left = hh.limits_today(conn_factory, http, clock.now(), limiter=limiter)["views_left"]
-    cap = left if count is None else min(count, left)
+    with conn_factory() as conn:
+        daily_cap = quota.hh_full_cap(conn)
+        daily_left = quota.left(conn, quota.HH_FULL, daily_cap, now=clock.now())
+    cap = min(left, daily_left) if count is None else min(count, left, daily_left)
     jobs.progress(force=True, stage="start", full_total=max(cap, 0), full_done=0)
+    if daily_left <= 0 and left > 0:   # S11: предел портала исчерпан раньше лимита hh
+        stats = JobStats(note=quota.hh_full_note(daily_cap))
+        stats.extra = {"views_left": left}
+        return stats
     if cap <= 0:
         stats = JobStats(note="дневной лимит просмотров hh исчерпан — сбор завтра")
         stats.extra = {"views_left": left}
