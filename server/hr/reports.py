@@ -8,7 +8,7 @@ import psycopg
 from .db import j, one, rows, val
 
 KIND_TITLE = {"threshold": "Пороги", "weight": "Веса", "profile": "Профили должностей", "template": "Шаблоны",
-              "source": "Источники и пределы", "permission": "Права"}
+              "source": "Источники и пределы", "permission": "Права", "synonyms": "Синонимы"}
 
 
 def changelog(conn: psycopg.Connection, date_from: date, date_to: date) -> list[dict]:

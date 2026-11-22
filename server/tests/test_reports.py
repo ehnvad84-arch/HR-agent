@@ -36,3 +36,12 @@ def test_report_needs_permission(api):
     c, _, _ = api("recruiter")
     assert c.get("/api/changelog").status_code == 403
     assert c.get("/api/report/weekly").status_code == 403
+
+
+def test_weekly_report_synonyms_group_titled_in_russian(conn, api, clock):
+    """Ревью, находка 7: вид synonyms в недельном отчёте — «Синонимы», а не код вида."""
+    c, h, uid = api()
+    change(conn, "synonyms", "синонимы ключей профиля", clock.now() - timedelta(days=1), uid)
+    c.post("/api/report/weekly/build", json={}, headers=h)
+    groups = c.get("/api/report/weekly").json()["body"]["groups"]
+    assert [(g["kind"], g["title"]) for g in groups] == [("synonyms", "Синонимы")]

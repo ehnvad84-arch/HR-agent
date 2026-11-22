@@ -6,7 +6,7 @@ import { FEATURES, GEO_OPTIONS, conditionLines, roleTitle, stateInfo } from "./p
 
 /** Виды изменений — как KIND_TITLE в hr/reports.py. */
 export const KINDS = [["threshold", "Пороги"], ["weight", "Веса"], ["profile", "Профили должностей"], ["template", "Шаблоны"],
-  ["source", "Источники и пределы"], ["permission", "Права"]];
+  ["source", "Источники и пределы"], ["permission", "Права"], ["synonyms", "Синонимы"]];
 export const kindLabel = (kind) => (KINDS.find(([code]) => code === kind) || [kind, String(kind ?? "")])[1];
 
 export const DEFAULT_DAYS = 30;
@@ -211,6 +211,30 @@ function sourceChange(before, after) {
     : { summary: `Изменено значений: ${changed.length}`, details: changed.map((key) => line(key, true)) };
 }
 
+/** Синонимы ключей (hr/synonyms.py _write): before/after.synonyms — {ключ: [термины]}; по ключам «добавлено … ; убрано …». */
+function synonymsChange(before, after) {
+  if (!isObject(after) || !isObject(after.synonyms)) return fallback(before, after);
+  const was = isObject(before) && isObject(before.synonyms) ? before.synonyms : {};
+  const now = after.synonyms;
+  const keys = [...new Set([...Object.keys(was), ...Object.keys(now)])].sort();
+  const lines = [];
+  for (const key of keys) {
+    const b = Array.isArray(was[key]) ? was[key] : [];
+    const a = Array.isArray(now[key]) ? now[key] : [];
+    const plus = a.filter((t) => !b.includes(t));
+    const minus = b.filter((t) => !a.includes(t));
+    const parts = [plus.length ? `добавлено ${plus.join(", ")}` : "", minus.length ? `убрано ${minus.join(", ")}` : ""].filter(Boolean);
+    if (parts.length) lines.push([key, parts.join("; ")]);
+  }
+  const head = isEmpty(after.rollback_of) ? "" : `Откат правки синонимов № ${after.rollback_of}`;
+  if (lines.length === 1) {
+    const one = `Ключ «${lines[0][0]}»: ${lines[0][1]}`;
+    return { summary: head ? `${head}. ${one}` : one, details: [] };
+  }
+  const count = lines.length ? `Изменены синонимы ключей: ${lines.length}` : "Синонимы не изменились";
+  return { summary: head ? `${head}. ${count}` : count, details: lines.map(([key, text]) => `${key}: ${text}`) };
+}
+
 /** Строка журнала для показа: время, что сделано, кто, вид, «было → стало» коротко и подробности для раскрытия. */
 export function describeChange(item, { now = new Date(), profileTitles = {} } = {}) {
   const { before, after } = item;
@@ -221,6 +245,7 @@ export function describeChange(item, { now = new Date(), profileTitles = {} } = 
     case "profile": body = profileChange(before, after); break;
     case "permission": body = permissionChange(before, after); break;
     case "source": body = sourceChange(before, after); break;
+    case "synonyms": body = synonymsChange(before, after); break;
     case "template":
       // решение по сводке без автоматической правки: суть уже в тексте записи
       body = isObject(after) && Object.keys(after).every((key) => key === "accepted") ? { summary: null, details: [] } : fallback(before, after);
