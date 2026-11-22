@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import httpx
 
-from . import hh, jobs, photos, pipeline, quota
+from . import embed, hh, jobs, photos, pipeline, quota
 from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
@@ -40,8 +40,23 @@ class _HHItems:
         self.cf, self.api, self.src, self.profiles, self.stats = conn_factory, api, src, profiles, stats
         self.full_left, self.clock = full_left, clock
         self.full_done = 0
+        self.embed_on = True
         with conn_factory() as conn:
             self.daily_cap = quota.hh_full_cap(conn)
+
+    def _vector(self, n) -> list[float] | None:
+        """S7: вектор полного резюме из «серой зоны» — до транзакции резюме, не больше одного на полное
+        резюме. Отказ службы (S8): резюме входит без смысла, до конца прогона служба не вызывается."""
+        if not self.embed_on:
+            return None
+        with self.cf() as conn:
+            if not pipeline.gray_zone(conn, n, self.profiles):
+                return None
+        try:
+            return embed.tracked(self.cf, [pipeline.person_text(pipeline.norm_person(n))], now=self.clock.now())[0]
+        except embed.ERRORS:
+            self.embed_on = False
+            return None
 
     def _take_daily(self) -> bool:
         """S11: единица суточного предела портала — до запроса, на все прогоны дня."""
@@ -59,7 +74,7 @@ class _HHItems:
             want = (updated or "skill_set" not in old["raw"]) and (bool(old and old["person_id"]) or
                                 pipeline.passes_threshold(conn, normalize("hh", merged), self.profiles,
                                                           partial="skill_set" not in merged) is not None)
-        raw = merged
+        raw, vec = merged, None
         if want and self.full_left > 0 and not self._take_daily():
             self.full_left = 0
             self.stats.note = quota.hh_full_note(self.daily_cap)
@@ -73,8 +88,10 @@ class _HHItems:
                 self.full_left -= 1
                 self.full_done += 1
                 raw = {**merged, **full}
+                if not (old and old["person_id"]):
+                    vec = self._vector(normalize("hh", raw))
         with self.cf() as conn:
-            r = pipeline.process(conn, self.src, normalize("hh", raw), raw, self.clock.now())
+            r = pipeline.process(conn, self.src, normalize("hh", raw), raw, self.clock.now(), vec=vec)
         self.stats.new += int(r.new)
         self.stats.changed += int(r.changed)
         self.stats.persons += int(r.person_created)

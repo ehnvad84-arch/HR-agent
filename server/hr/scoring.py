@@ -19,7 +19,9 @@ FEATURE_LABELS = {
     "geo": "География",
     "salary": "Ожидания против вилки",
     "open_code": "Открытый код",
+    "semantic": "Близость по смыслу",
 }
+SEMANTIC = "semantic"   # признак вне default_weights: вес — profile.weights или semantic_weight_default
 
 # Только для профиля без весов; это видно в Score.default_weights
 _DEFAULT_WEIGHTS = {"exp_years": 20, "keywords": 25, "title_match": 15, "donor_company": 10,
@@ -43,13 +45,19 @@ class Params:
     must_penalty_pct: int = 10
     must_penalty_max_pct: int = 30
     local_cities: set[str] = field(default_factory=lambda: {"краснодар"})
+    semantic_weight: int = 15          # semantic_weight_default
+    sim_floor: float = 0.40            # semantic_sim_floor
+    sim_full: float = 0.75             # semantic_sim_full
 
     @classmethod
     def load(cls, get: Callable[[str, Any], Any]) -> Params:
         return cls(stop_cap=int(get("stop_factor_cap", 40)),
                    must_penalty_pct=int(get("must_penalty_pct", 10)),
                    must_penalty_max_pct=int(get("must_penalty_max_pct", 30)),
-                   local_cities={c.lower() for c in get("local_area_cities", ["краснодар"])})
+                   local_cities={c.lower() for c in get("local_area_cities", ["краснодар"])},
+                   semantic_weight=int(get("semantic_weight_default", 15)),
+                   sim_floor=float(get("semantic_sim_floor", 0.40)),
+                   sim_full=float(get("semantic_sim_full", 0.75)))
 
 
 @dataclass
@@ -310,12 +318,33 @@ def _f_keywords_partial(profile: Profile, hay: str) -> tuple[float, str]:
     return (ratio, detail) if ratio >= 0.5 else (0.5, "навыки видны только в полном резюме")
 
 
-def score(person: Person, profile: Profile, params: Params, partial: bool = False) -> Score:
-    """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме."""
+SKIP_DETAIL = {"no_vector": "вектор резюме ещё не посчитан", "embed_down": "модель векторов недоступна"}
+
+
+def semantic_weight(profile: Profile, params: Params) -> int:
+    """Вес «Близости по смыслу»: из профиля, иначе semantic_weight_default; 0 выключает признак."""
+    w = profile.weights.get(SEMANTIC) if SEMANTIC in profile.weights else params.semantic_weight
+    return max(0, int(w or 0))
+
+
+def _f_semantic(cos: float, params: Params) -> tuple[float, str]:
+    span = params.sim_full - params.sim_floor
+    ratio = 1.0 if span <= 0 else (cos - params.sim_floor) / span
+    return max(0.0, min(1.0, ratio)), f"близко к профилю по смыслу: {round(cos * 100)} %"
+
+
+def score(person: Person, profile: Profile, params: Params, partial: bool = False,
+          semantic: float | None = None, semantic_skip: str | None = None) -> Score:
+    """partial — неполные данные (выдача поиска): только для решения, запрашивать ли полное резюме.
+    semantic — косинус векторов резюме и профиля (S7). Без него признак вне суммы весов: с
+    semantic_skip ("no_vector" | "embed_down") — пометка «не учтено», без — признака нет (hash-v1)."""
     use_defaults = not profile.weights
     weights = default_weights(profile.dept_code) if use_defaults else \
-        {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS}
+        {k: v for k, v in profile.weights.items() if k in FEATURE_LABELS and k != SEMANTIC}
     weights = {k: max(0, int(v)) for k, v in weights.items() if v}
+    sem_w = semantic_weight(profile, params) if (semantic is not None or semantic_skip) and not partial else 0
+    if semantic is not None and sem_w:
+        weights[SEMANTIC] = sem_w
     total_w = sum(weights.values()) or 1
     hay = person.haystack()
     parts = {
@@ -328,6 +357,7 @@ def score(person: Person, profile: Profile, params: Params, partial: bool = Fals
         "salary": lambda: _f_salary(person, profile),
         "open_code": lambda: (1.0, "подтверждённый профиль") if person.open_code
         else (0.0, "не найден или не подтверждён"),
+        SEMANTIC: lambda: _f_semantic(semantic, params),
     }
     features: dict[str, dict] = {}
     raw = 0.0
@@ -336,6 +366,11 @@ def score(person: Person, profile: Profile, params: Params, partial: bool = Fals
         mx = round(w * 100 / total_w)
         features[key] = {"label": FEATURE_LABELS[key], "points": round(ratio * mx), "max": mx, "detail": detail}
         raw += ratio * w * 100 / total_w
+    if SEMANTIC in features:
+        features[SEMANTIC]["sim"] = round(semantic, 3)
+    elif sem_w and semantic_skip:
+        features[SEMANTIC] = {"label": FEATURE_LABELS[SEMANTIC], "points": 0, "max": 0, "skipped": semantic_skip,
+                              "detail": SKIP_DETAIL.get(semantic_skip, semantic_skip)}
 
     missing, broken = [], []
     for req in profile.must_have:

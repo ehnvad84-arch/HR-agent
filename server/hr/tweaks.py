@@ -136,7 +136,8 @@ def rescore_user(conn: psycopg.Connection, user_id: int, person_ids: list[int] |
                                AND (%s::bigint[] IS NULL OR person_id = ANY(%s))""",
                       (pr["id"], floor, person_ids, person_ids))
         for p in people:
-            s = scoring.score(pipeline.person_data(conn, p["person_id"]), prof, prm)
+            sem = pipeline.Semantic.of(conn, [pr["id"]], person_id=p["person_id"])
+            s = scoring.score(pipeline.person_data(conn, p["person_id"]), prof, prm, **sem.kw(pr["id"]))
             run(conn, """INSERT INTO ops.user_match (user_id, person_id, role_profile_id, score, features)
                          VALUES (%s, %s, %s, %s, %s)
                          ON CONFLICT (user_id, person_id, role_profile_id) DO UPDATE

@@ -201,13 +201,56 @@ def person_data(conn: psycopg.Connection, person_id: int) -> scoring.Person:
     return p
 
 
+@dataclass
+class Semantic:
+    """Косинус векторов резюме и версий профиля для признака semantic (S7, S8).
+    on=False — способ hash-v1: хеш-векторы смысла не несут, признака нет."""
+    on: bool = False
+    sims: dict[int, float] = field(default_factory=dict)
+    skip: str | None = None
+
+    @classmethod
+    def of(cls, conn: psycopg.Connection, profile_ids: list[int], *, person_id: int | None = None,
+           vec: list[float] | None = None) -> Semantic:
+        """Один запрос: ops.profile_embedding × вектор человека (person_embedding) или готовый vec
+        текущего способа. Нет вектора — пометка no_vector или embed_down (служба недоступна)."""
+        model = embed.method()
+        if model == embed.HASH:
+            return cls()
+        if vec is not None:
+            found = rows(conn, """SELECT role_profile_id, 1 - (embedding <=> %s::vector) AS cos
+                                  FROM ops.profile_embedding WHERE role_profile_id = ANY(%s) AND embed_model = %s""",
+                         (embed.literal(vec), profile_ids, model))
+        elif person_id is not None:
+            found = rows(conn, """SELECT pe.role_profile_id, 1 - (pe.embedding <=> e.embedding) AS cos
+                                  FROM ops.profile_embedding pe
+                                  JOIN person_embedding e ON e.person_id = %s AND e.embed_model = pe.embed_model
+                                  WHERE pe.role_profile_id = ANY(%s) AND pe.embed_model = %s""",
+                         (person_id, profile_ids, model))
+        else:
+            found = []
+        sims = {r["role_profile_id"]: float(r["cos"]) for r in found}
+        skip = None if len(sims) == len(set(profile_ids)) else \
+            ("embed_down" if embed.down_since(conn) else "no_vector")
+        return cls(True, sims, skip)
+
+    def kw(self, profile_id: int) -> dict:
+        """Аргументы scoring.score для версии профиля."""
+        if not self.on:
+            return {}
+        if profile_id in self.sims:
+            return {"semantic": self.sims[profile_id]}
+        return {"semantic_skip": self.skip}
+
+
 def rescore_person(conn: psycopg.Connection, person_id: int, profiles: list[dict] | None = None) -> list[dict]:
     """Пересчёт match по действующим профилям. Разбор — по шаблону; модель досчитает его позже (explain)."""
     profiles = current_profiles(conn) if profiles is None else profiles
     person, prm = person_data(conn, person_id), params(conn)
+    sem = Semantic.of(conn, [pr["id"] for pr in profiles], person_id=person_id)
     out = []
     for pr in profiles:
-        s = scoring.score(person, scoring.Profile.from_row(pr), prm)
+        s = scoring.score(person, scoring.Profile.from_row(pr), prm, **sem.kw(pr["id"]))
         prev = one(conn, "SELECT score, profile_version FROM match WHERE person_id = %s AND role_profile_id = %s",
                    (person_id, pr["id"]))
         t = scoring.template_explanation(s)
@@ -319,19 +362,34 @@ class ProcessResult:
     scores: list[dict] = field(default_factory=list)
 
 
-def passes_threshold(conn: psycopg.Connection, n: Norm, profiles: list[dict], partial: bool = False) -> int | None:
+def passes_threshold(conn: psycopg.Connection, n: Norm, profiles: list[dict], partial: bool = False,
+                     vec: list[float] | None = None) -> int | None:
     """Лучший балл резюме, если он не ниже watch_threshold; иначе None (S12, S13).
-    partial — выдача поиска без навыков: решаем, запрашивать ли полное резюме."""
+    partial — выдача поиска без навыков: решаем, запрашивать ли полное резюме.
+    vec — вектор полного резюме из «серой зоны» (S7): балл с близостью по смыслу."""
     prm = params(conn)
-    best = max((scoring.score(norm_person(n), scoring.Profile.from_row(pr), prm, partial=partial).score
-                for pr in profiles), default=0)
+    sem = Semantic.of(conn, [pr["id"] for pr in profiles], vec=vec) if vec is not None and not partial \
+        else Semantic()
+    best = max((scoring.score(norm_person(n), scoring.Profile.from_row(pr), prm, partial=partial,
+                              **sem.kw(pr["id"])).score for pr in profiles), default=0)
     return best if best >= int(setting(conn, "watch_threshold", 60)) else None
 
 
+def gray_zone(conn: psycopg.Connection, n: Norm, profiles: list[dict]) -> bool:
+    """Полное резюме, которому близость по смыслу может дать порог (S7): балл при полном смысле
+    не ниже watch_threshold. Только тогда вектор считается до транзакции; при hash-v1 — никогда."""
+    if embed.method() == embed.HASH or not profiles:
+        return False
+    prm, person = params(conn), norm_person(n)
+    thr = int(setting(conn, "watch_threshold", 60))
+    return any(scoring.score(person, scoring.Profile.from_row(pr), prm, semantic=1.0).score >= thr
+               for pr in profiles)
+
+
 def card_for_observation(conn: psycopg.Connection, res: ProcessResult, source_code: str, n: Norm,
-                         now: datetime, profiles: list[dict]) -> bool:
+                         now: datetime, profiles: list[dict], vec: list[float] | None = None) -> bool:
     """Наблюдение без карточки: порог → сшивка → своя карточка или привязка. False — ниже порога."""
-    best = passes_threshold(conn, n, profiles) if profiles else None
+    best = passes_threshold(conn, n, profiles, vec=vec) if profiles else None
     if best is None:
         return False
     cands = stitch_candidates(conn, n, res.observation_id)
@@ -352,9 +410,16 @@ def card_for_observation(conn: psycopg.Connection, res: ProcessResult, source_co
     return True
 
 
-def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profiles: list[dict]) -> ProcessResult:
+def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profiles: list[dict],
+            vec: list[float] | None = None) -> ProcessResult:
     for kind, detail in res.events:
         add_event(conn, res.observation_id, res.person_id, kind, detail, now)
+    model = embed.method()
+    if vec is not None and model != embed.HASH and (res.person_created or not one(
+            conn, "SELECT 1 FROM person_embedding WHERE person_id = %s AND embed_model = %s",
+            (res.person_id, model))):
+        # вектор «серой зоны» посчитан до транзакции; у сшитого с вектором человека его досчитает ночь
+        write_embedding(conn, res.person_id, vec, model, now)
     res.scores = rescore_person(conn, res.person_id, profiles)
     if embed.method() == embed.HASH:
         # вектор в коде считается сразу; у провайдера — задачей score, вне транзакции
@@ -366,22 +431,24 @@ def _finish(conn: psycopg.Connection, res: ProcessResult, now: datetime, profile
     return res
 
 
-def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: datetime) -> ProcessResult:
-    """Приём одного резюме: от записи до оценок. Вызывается внутри транзакции резюме."""
+def process(conn: psycopg.Connection, source: dict, n: Norm, raw: dict, now: datetime,
+            vec: list[float] | None = None) -> ProcessResult:
+    """Приём одного резюме: от записи до оценок. Вызывается внутри транзакции резюме.
+    vec — вектор полного резюме hh из «серой зоны», посчитанный до транзакции (S7)."""
     obs = upsert_observation(conn, source, n, raw, now)
     res = ProcessResult(obs.id, obs.new, obs.changed, obs.person_id)
     if not (obs.new or obs.changed or obs.was_gone):
         return res
     profiles = current_profiles(conn)
     if obs.person_id is None:
-        if not card_for_observation(conn, res, source["code"], n, now, profiles):
+        if not card_for_observation(conn, res, source["code"], n, now, profiles, vec):
             return res              # «увидел, но мимо»: наблюдение лежит до следующего изменения
     else:
         res.events = (events_from_diff(obs.diff, keyword_terms(profiles)) if obs.changed
                       else [("resume_updated", {"reappeared": True})])
         run(conn, "UPDATE person SET label = %s, city = coalesce(%s, city) WHERE id = %s",
             (label_of(n), n.city, res.person_id))
-    return _finish(conn, res, now, profiles)
+    return _finish(conn, res, now, profiles, vec)
 
 
 # ------------------------------------------------------------------ переоценка по новой версии
