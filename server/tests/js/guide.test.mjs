@@ -136,3 +136,21 @@ test("releases S1: внизу справки — номер и дата верс
   assert.equal(versionLine({ version: "unknown", date: null }), null);
   assert.equal(versionLine(null), null);
 });
+
+test("semantic-search: синонимы правят рекрутер и руководитель ОП, руководители подразделений только видят", () => {
+  const row = rightsTable().rows.find((r) => r.title.includes("Синонимы"));
+  assert.equal(row.perm, "profile.synonyms");
+  assert.deepEqual(row.cells.map((c) => c.yes), [true, true, false, false]);
+  assert.match(row.cells[2].text, /только видят/);
+  assert.match(row.cells[3].text, /только видят/);
+  assert.ok(myRights(can("profile.synonyms")).some((t) => /синоним/i.test(t)));
+  assert.equal(myRights(can("base.read", "profile.edit")).some((t) => /синоним/i.test(t)), false);
+});
+
+test("semantic-search: правила о синонимах, близости по смыслу и суточных пределах — с цифрами из спеки", () => {
+  const text = RULES.join(" ");
+  for (const part of ["300 полных резюме", "500 раз в сутки", "100 раз", "без утверждения", "откатить", "Близость по смыслу", "02:30", "не учтено", "только видят"]) {
+    assert.ok(text.includes(part), part);
+  }
+  assert.ok(CAN.some((t) => /по смыслу/.test(t)));
+});

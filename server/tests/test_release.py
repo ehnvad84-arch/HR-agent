@@ -249,7 +249,11 @@ def test_api_version_without_login(monkeypatch):
         config.get_config.cache_clear()
     assert r.status_code == 200
     assert r.json() == {"version": version.code_version(), "date": version.release_date()}
-    assert r.json()["version"] == "v1.1.0" and r.json()["date"] == "2026-11-10"
+    ver = (version.ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    head = re.search(rf"^## {re.escape(ver)} — (\d{{4}}-\d{{2}}-\d{{2}})\s*$",
+                     (version.ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), flags=re.M)
+    assert head, f"в CHANGELOG.md нет раздела {ver}"
+    assert r.json()["version"] == ver and r.json()["date"] == head[1]
 
 
 # --- Замок выпущенных миграций (S7), линтер DDL (S6), CHANGELOG ↔ VERSION (S10) ---
@@ -481,7 +485,8 @@ def test_s10_release_without_changelog_section_refused():
                             check=True).stdout
     r = _sh("release.sh", "v9.9.9", "--dry-run")
     assert r.returncode == 1, r.stdout + r.stderr
-    assert "первый раздел CHANGELOG.md — v1.1.0, а VERSION — v9.9.9" in r.stderr
+    top = re.search(r"^## (\S+) — ", (version.ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), flags=re.M)[1]
+    assert f"первый раздел CHANGELOG.md — {top}, а VERSION — v9.9.9" in r.stderr
     assert "Выпуск v9.9.9 не собран: нет готового раздела в CHANGELOG.md (S10)" in r.stderr
     assert "2/9" not in r.stdout
     assert subprocess.run(["git", "status", "--porcelain"], cwd=version.ROOT, capture_output=True, text=True,

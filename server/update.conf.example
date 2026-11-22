@@ -7,7 +7,7 @@
 # Остановка: сначала таймеры, потом портал. Запуск — наоборот. Команда выполняется через bash (eval).
 
 # Вариант 1: systemd пользователя (как в install_autostart.sh)
-TIMERS="ruware-hh-daily.timer ruware-trudvsem.timer ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer"
+TIMERS="ruware-hh-daily.timer ruware-trudvsem.timer ruware-load-watchdog.timer ruware-feedback-week.timer ruware-staff-sync.timer ruware-reembed-night.timer"
 STOP_CMD="systemctl --user stop $TIMERS && systemctl --user stop ruware-portal.service"
 START_CMD="systemctl --user start ruware-portal.service && systemctl --user start $TIMERS"
 
