@@ -73,7 +73,10 @@ export function conditionsFromLines(text, existing) {
 
 // ------------------------------------------------------------------ веса
 
-const SEMANTIC_WEIGHT = 15;   // как semantic_weight_default на сервере: профиль без своего веса считается с ним
+// Умолчание настройки semantic_weight_default (migrations/010_semantic_search.sql): профиль без своего веса
+// считается с ним. Сервер умолчание не отдаёт — при новом ops.change_default поменять и здесь
+// (тест profiles.test.mjs сверяет с миграциями; правку админа через hr.cli setting set экран не видит).
+export const SEMANTIC_WEIGHT = 15;
 
 export function defaultWeights(deptCode) {
   return { exp_years: 20, keywords: 25, title_match: 15, donor_company: 10, tenure: 10, geo: 10, salary: 10,

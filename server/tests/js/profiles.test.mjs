@@ -1,10 +1,11 @@
 // «База должностей»: список, форма правки, изменения для новой версии, предпросмотр (S25–S28, S39)
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
 import { hashFor, parseHash } from "../../web/js/router.js";
 import {
-  EXTRA_FEATURES, FEATURES, FEATURE_FIELDS, GEO_OPTIONS, changesFor, conditionLines, conditionsFromLines, defaultWeights, docError, formFromProfile, groupByDept,
+  EXTRA_FEATURES, FEATURES, FEATURE_FIELDS, GEO_OPTIONS, SEMANTIC_WEIGHT, changesFor, conditionLines, conditionsFromLines, defaultWeights, docError, formFromProfile, groupByDept,
   extraFeatures, featureLabel, parseMoney, previewText, roleTitle, rowSub, splitChips, stateInfo, stepWeight, validateForm, weightShare, weightSum,
   weightSumText,
 } from "../../web/js/screens/profiles-model.js";
@@ -210,4 +211,13 @@ test("S7: у профиля со своими весами без «semantic» �
   assert.equal(form.weights.semantic, 15);
   const withZero = formFromProfile({ ...profile, weights: { ...profile.weights, semantic: 0 } });
   assert.equal(withZero.weights.semantic, 0);   // 0 выключает признак у профиля
+});
+
+test("вес «Близости по смыслу» по умолчанию — последний ops.change_default настройки semantic_weight_default в миграциях", () => {
+  const dir = new URL("../../migrations/", import.meta.url);
+  const values = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort()
+    .flatMap((name) => [...readFileSync(new URL(name, dir), "utf8").matchAll(/change_default\([^,]+,\s*'semantic_weight_default',\s*[^,]+,\s*'(\d+)'/g)].map((m) => Number(m[1])));
+  assert.ok(values.length, "умолчание задано миграцией");
+  assert.equal(SEMANTIC_WEIGHT, values.at(-1));
+  assert.equal(defaultWeights("sales").semantic, SEMANTIC_WEIGHT);
 });
