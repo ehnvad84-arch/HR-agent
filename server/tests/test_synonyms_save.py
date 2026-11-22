@@ -11,7 +11,9 @@ NOW = datetime(2026, 11, 22, 11, 5, tzinfo=UTC)
 
 @pytest.fixture
 def prof(conn):
-    return profile(conn, title="Инженер-электроник", keywords=["Altium", "схемотехника", "ЭМС"])
+    # утверждён раньше NOW: версия, утверждённая в тесте на NOW + 1 ч, — действующая (approved_at DESC)
+    return profile(conn, title="Инженер-электроник", keywords=["Altium", "схемотехника", "ЭМС"],
+                   approved_at=NOW - timedelta(days=1))
 
 
 @pytest.fixture
@@ -220,8 +222,6 @@ def test_s03_prune_record_is_in_history_and_rollbackable_only_while_latest(conn,
     assert hist[0]["diff"] == {"эмс": {"+": [], "-": ["электромагнитная совместимость"]}}
 
 
-@pytest.mark.xfail(strict=True, reason="баг: rollback возвращает синоним, ставший ключом действующей версии "
-                                       "(save такое отклоняет, S2); скоринг получает ключ и как ключ, и как синоним")
 def test_s03_rollback_does_not_restore_term_that_is_now_a_profile_key(conn, prof, rec):
     synonyms.save(conn, prof["id"], [{"keyword": "Altium", "synonyms": ["P-CAD", "KiCad"]}], rec, NOW,
                   base_change_id=None)
@@ -234,3 +234,17 @@ def test_s03_rollback_does_not_restore_term_that_is_now_a_profile_key(conn, prof
     keys = {synonyms.norm(k) for k in ["схемотехника", "KiCad"]}
     terms = {synonyms.norm(t) for ts in state(conn).values() for t in ts}
     assert not (terms & keys), "синоним, совпавший с ключом версии, не должен вернуться"
+
+
+def test_s03_rollback_drops_term_that_became_key_of_kept_keyword(conn, prof, rec):
+    synonyms.save(conn, prof["id"], [{"keyword": "Altium", "synonyms": ["P-CAD", "KiCad"]}], rec, NOW,
+                  base_change_id=None)
+    cid = synonyms.save(conn, prof["id"], [{"keyword": "Altium", "synonyms": ["P-CAD"]}], rec, NOW,
+                        base_change_id=synonyms.last_change_id(conn, "engineer_hw_lead"))
+    head = user(conn, "head_syn", "head_recruiter")
+    new = profiles.edit(conn, prof["id"], {"keywords": ["Altium", "схемотехника", "kicad"]}, rec, NOW)
+    profiles.approve(conn, new["id"], head, NOW + timedelta(hours=1))
+    rid = synonyms.rollback(conn, new["id"], cid, head, NOW + timedelta(hours=2))
+    assert state(conn) == {"altium": ["P-CAD"]}
+    after = db.val(conn, "SELECT after FROM agent_change WHERE id = %s", (rid,))
+    assert after["synonyms"] == {"altium": ["P-CAD"]}

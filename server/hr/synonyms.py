@@ -264,9 +264,16 @@ def rollback(conn: psycopg.Connection, profile_id: int, change_id: int, user_id:
     if last_change_id(conn, code) != change_id:
         raise NotLatest("откатить можно только последнюю правку синонимов")
     before = load(conn, code)
-    after = {k: list(v) for k, v in sorted((ch["before"].get("synonyms") or {}).items()) if v}
-    cur = one(conn, """SELECT id, title FROM role_profile WHERE code = %s AND is_active AND approved_at IS NOT NULL
+    cur = one(conn, """SELECT id, title, keywords FROM role_profile
+                       WHERE code = %s AND is_active AND approved_at IS NOT NULL
                        ORDER BY approved_at DESC, id DESC LIMIT 1""", (code,))
+    # Термин, ставший ключом действующей версии, не возвращается — save такой отклоняет (S2)
+    keys = {norm(k) for k in (cur["keywords"] if cur else None) or [] if k and k.strip()}
+    after = {}
+    for k, v in sorted((ch["before"].get("synonyms") or {}).items()):
+        terms = [t for t in v or [] if norm(t) not in keys]
+        if terms:
+            after[k] = terms
     return _write(conn, code, before, after, user_id, now, profile_id=cur["id"] if cur else profile_id,
                   rollback_of=change_id, note=f"откат правки синонимов № {change_id}")
 
