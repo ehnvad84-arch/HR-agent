@@ -4,7 +4,7 @@ import { plural } from "../format.js";
 
 export const HEADER_NOTE = "Действуют сразу, без утверждения. Каждая правка — в журнале, её можно откатить.";
 export const READONLY_NOTE = "Синонимы правит рекрутер";
-export const NO_KEYS_TIP = "Сначала добавьте ключевые слова и сохраните версию";
+export const NO_KEYS_TIP = "Сначала добавьте ключевые слова и утвердите версию профиля";
 export const THINKING_TEXT = "Модель думает до минуты. Вписывать свои синонимы можно и сейчас.";
 export const EMPTY_SUGGEST = "Модель ничего не предложила — впишите синонимы сами";
 export const SAVED_TEXT = "Синонимы сохранены. Профиль пересчитывается в фоне";

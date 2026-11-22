@@ -114,7 +114,7 @@ def _syn_errors(fn):
         raise HTTPException(404, {"error": "not_found", "message": "Профиль не найден"}) from None
     except synonyms.NoKeywords:
         raise HTTPException(422, {"error": "no_keywords",
-                                  "message": "Сначала добавьте ключевые слова и сохраните версию"}) from None
+                                  "message": "Сначала добавьте ключевые слова и утвердите версию профиля"}) from None
     except synonyms.Invalid as e:
         raise HTTPException(422, {"error": "validation", "message": f"Проверьте: {e}"}) from None
     except synonyms.Stale as e:

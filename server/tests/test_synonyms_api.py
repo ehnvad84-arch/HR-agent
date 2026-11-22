@@ -136,7 +136,9 @@ def test_s04_suggest_errors_have_scenario_texts(conn, setup, model, monkeypatch)
         "error": "llm_daily_limit", "message": "Предел запросов к модели на сегодня исчерпан"}
     db.run(conn, "UPDATE role_profile SET keywords = '{}' WHERE id = %s", (o["eng"]["id"],))
     r = rec.post(url(o["eng"]["id"], "/suggest"), headers=h)
-    assert r.status_code == 422 and r.json()["error"] == "no_keywords"
+    # синонимы — у утверждённой версии: «сохраните» вводило в заблуждение (ревью, находка 10)
+    assert r.status_code == 422 and r.json() == {
+        "error": "no_keywords", "message": "Сначала добавьте ключевые слова и утвердите версию профиля"}
     assert rec.put(url(o["eng"]["id"]), json={"items": [], "base_change_id": None}, headers=h).status_code == 422, \
         "вписать вручную можно и без модели — ошибка только от проверки"
 

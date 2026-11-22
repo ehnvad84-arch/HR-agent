@@ -97,7 +97,7 @@ test("состояния карточки: загрузка, ошибка, не�
   const noKeys = panelState({ view: { ...VIEW, items: [], history: [] }, draft: draftFromView({ ...VIEW, items: [], history: [] }) });
   assert.equal(noKeys.suggest.inactive, true);
   assert.equal(noKeys.suggest.tip, NO_KEYS_TIP);
-  assert.equal(NO_KEYS_TIP, "Сначала добавьте ключевые слова и сохраните версию");
+  assert.equal(NO_KEYS_TIP, "Сначала добавьте ключевые слова и утвердите версию профиля");
   assert.equal(noKeys.historyTitle, "История синонимов (0)");
 });
 
