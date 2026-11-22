@@ -36,6 +36,7 @@ class Config:
     embed_base_url: str = field(default_factory=lambda: _env("EMBED_BASE_URL"))
     embed_api_key: str = field(default_factory=lambda: _env("EMBED_API_KEY"))
     embed_model: str = field(default_factory=lambda: _env("EMBED_MODEL"))
+    embed_timeout_s: int = field(default_factory=lambda: _int("EMBED_TIMEOUT_S", 60))
 
     hh_client_id: str = field(default_factory=lambda: _env("HH_CLIENT_ID"))
     hh_client_secret: str = field(default_factory=lambda: _env("HH_CLIENT_SECRET"))

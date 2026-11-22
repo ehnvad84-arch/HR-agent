@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from .. import auth, jobs, llm, pipeline, profiles, scope, synonyms
+from .. import auth, jobs, llm, pipeline, profiles, scope, search, synonyms
 from ..clock import Clock
 from ..db import ConnFactory, val
 from ..deps import get_clock, get_conn_factory, get_llm_http
@@ -71,6 +71,7 @@ def edit(profile_id: int, us: Editor, conn_factory: Conn, clock: Now, changes: A
 
 
 def _rescore(conn_factory: ConnFactory, profile_id: int) -> None:
+    search.refresh_profile(conn_factory, profile_id)
     jobs.run("rescore_profile", lambda cf, **_: pipeline.rescore_profile(cf, profile_id), conn_factory,
              locks=(f"profile:{profile_id}",))
 

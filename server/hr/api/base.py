@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import auth, scope, search, views
+from .. import auth, embed, scope, search, views
 from ..db import ConnFactory, one, setting
 from ..deps import get_conn_factory
 
@@ -71,12 +70,13 @@ def semantic(user: Reader, conn_factory: Conn, q: str = ""):
     if not q.strip():
         raise HTTPException(422, {"error": "validation", "message": "Пустой запрос"})
     try:
+        vec = embed.tracked(conn_factory, [q])[0]   # отказ службы — в ops.service_health (S8)
         with conn_factory() as conn:
-            found = search.similar(conn, q, limit=30)
+            found = search.similar(conn, q, limit=30, vec=vec)
             if not user[1].all:
                 found = [r for r in found if scope.person_ok(conn, user[1], r["person_id"])]
             info = views.cards(conn, [r["person_id"] for r in found])
-    except (httpx.HTTPError, ValueError):
+    except embed.ERRORS:
         raise HTTPException(503, {"error": "embed", "message": "Поиск по смыслу сейчас недоступен"}) from None
     for r in found:
         r.update(views._card(info.get(r["person_id"])))

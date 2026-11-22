@@ -283,11 +283,12 @@ def prune(conn: psycopg.Connection, role_code: str, keywords: list[str], version
 
 def rescore(conn_factory: ConnFactory, profile_id: int) -> None:
     """Фоновый пересчёт после сохранения и отката: действующая версия профиля, затем «мой балл».
-    Вектор профиля пересчитывается отдельно (embed, T10)."""
-    from . import jobs, pipeline, tweaks  # pipeline и tweaks тянут скоринг; синонимы нужны скорингу (T7)
+    Сначала вектор профиля: в его тексте синонимы (T10)."""
+    from . import jobs, pipeline, search, tweaks  # pipeline и tweaks тянут скоринг; синонимы нужны скорингу (T7)
 
     with conn_factory() as conn:
         pid = current(conn, profile_id)["id"]
+    search.refresh_profile(conn_factory, pid)
     jobs.run("rescore_profile", lambda cf, **_: pipeline.rescore_profile(cf, pid), conn_factory,
              locks=(f"profile:{pid}",))
     jobs.run("user_rescore", lambda cf, **_: tweaks.user_rescore(cf), conn_factory)
