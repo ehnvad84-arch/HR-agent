@@ -7,6 +7,7 @@ import { absoluteDay, plural } from "../format.js";
 import { chip, personHref } from "../people.js";
 import { hashFor } from "../router.js";
 import { confirmSheet, emptyCard, errorCard, errorLine, field, loadingLine, mountAsync, sheet, toast } from "../ui.js";
+import { synonymsCard } from "./synonyms-ui.js";
 import { loadResumesButton } from "../hh-load.js";
 import { isCabinet } from "../nav-model.js";
 import { openImportSheet } from "../import-sheet.js";
@@ -476,6 +477,7 @@ function editorScreen(box, ctx, id) {
           h("div.wsum", sum, form0.usingDefaultWeights
             ? h("p.hint", { style: "margin:2px 0 0" }, "Веса в профиле не заданы: показаны стандартные для подразделения. Если их не менять, они не отправляются.") : null),
           row(keywords.root, weightInputs.keywords),
+          synonymsCard({ api, signal, pid }),
           row(donors.root, weightInputs.donor_company),
           row(h("div.field", h("label", { for: geoId }, "География"), geo), weightInputs.geo),
           row(h("div.two", min.root, max.root), weightInputs.salary)),

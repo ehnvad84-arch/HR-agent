@@ -3,7 +3,7 @@
 import { h, mount, uid } from "./dom.js";
 import { splitChips } from "./screens/profiles-model.js";
 
-export function chipsInput({ label, values = [], placeholder = "", hint = "", disabled = false }) {
+export function chipsInput({ label, values = [], placeholder = "", hint = "", disabled = false, isNew = null }) {
   const id = uid("chips");
   const hintId = `${id}-hint`;
   let items = [...values];
@@ -13,7 +13,9 @@ export function chipsInput({ label, values = [], placeholder = "", hint = "", di
   const box = h("div.chipbox", { onClick: () => input.focus() }, list, input);
 
   const draw = () => {
-    mount(list, items.map((item) => h("span.chip.removable", { role: "listitem" }, item,
+    // isNew(item) — «предложено моделью, ещё не сохранено»: синяя чипса и слово «новое» для экранного диктора
+    mount(list, items.map((item) => h("span.chip.removable", { role: "listitem", class: isNew && isNew(item) ? "sugg" : null }, item,
+      isNew && isNew(item) ? h("span.sr-only", " (новое)") : null,
       disabled ? null : h("button", { type: "button", "data-tip": "chips-remove", "aria-label": `Убрать «${item}»`, onClick: (event) => { event.stopPropagation(); remove(item); } }, "×"))));
     listeners.forEach((fn) => fn(items));
   };
@@ -50,5 +52,9 @@ export function chipsInput({ label, values = [], placeholder = "", hint = "", di
     root: h("div.field", h("label", { for: id }, label), box, hint ? h("div.hint", { id: hintId, style: "margin-top:5px" }, hint) : h("span", { id: hintId })),
     get values() { add(input.value); return [...items]; },
     onChange(fn) { listeners.push(fn); },
+    /** Добавить слова снаружи (предложение модели): те же правила, что у ввода. */
+    add,
+    /** Перерисовать чипсы (изменился isNew). */
+    redraw: draw,
   };
 }

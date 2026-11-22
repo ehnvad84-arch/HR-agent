@@ -658,3 +658,19 @@ table.access td .chip{display:inline-block;line-height:1.35}
 .alsub{flex:1 1 auto;min-width:0;color:var(--ink2)}
 .tw{display:inline-flex;align-items:center;gap:4px}
 @media (max-width:720px){.bellpanel{position:fixed;left:12px;right:12px;top:72px;width:auto}}
+
+/* --------------------------------- «Синонимы ключей» (semantic-search S1–S4) --------------------------------- */
+.synrow{display:grid;grid-template-columns:minmax(110px,200px) minmax(0,1fr);gap:6px 18px;align-items:start;padding:8px 0;border-top:.5px solid var(--sep)}
+.synrow:first-child{border-top:0}
+.synrow .field{display:contents}
+.synrow .field > label{padding-top:9px;font-weight:600;overflow-wrap:anywhere}
+.synrow .field > span:not(.chiplist){display:none}
+.synrow .chipbox input:disabled{display:none}
+.synrow .nosyn[hidden]{display:none}
+.chip.sugg,.chip.removable.sugg{background:var(--blue-tint);color:var(--blue-ink)}
+.syncard .btns[hidden],.syncard button[hidden]{display:none}
+@media (max-width:720px){
+  .synrow{grid-template-columns:1fr;gap:6px}
+  .synrow .field > label{padding-top:0}
+  .syncard .btns .b{flex:1 1 100%}
+}
