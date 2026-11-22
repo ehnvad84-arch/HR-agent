@@ -346,3 +346,54 @@ def test_full_resume_fetched_when_only_skills_missing(conn, conn_factory, clock)
     fake = FakeHH()
     run(conn_factory, fake, clock)
     assert fake.full_fetches == ["/resumes/a1b2c3d4e5"]
+
+
+# ------------------------------------------------------------------ S6: синонимы в запросе hh и сдвиг обхода
+
+def test_s06_without_synonyms_params_unchanged(conn):
+    prof = {"title": "Ведущий инженер", "keywords": ["Altium", "схемотехника", "печатные платы", "ЭМС", "SMD",
+                                                    "BGA", "FPGA"], "geo": "krasnodar"}
+    want = {"text": 'Ведущий инженер OR Altium OR схемотехника OR "печатные платы" OR ЭМС OR SMD OR BGA',
+            "per_page": 50, "order_by": "relevance", "area": "53"}
+    assert hh.search_params(conn, prof) == want
+    assert hh.search_params(conn, {**prof, "synonyms": {}}) == want
+
+
+def test_s06_synonyms_round_robin_quoted(conn):
+    prof = {"title": "Инженер", "keywords": ["Altium", "Схемотехника"],
+            "synonyms": {"altium": ["P-CAD", "OrCAD"], "схемотехника": ["разработка схем"]}}
+    assert hh.search_params(conn, prof)["text"] == \
+        'Инженер OR Altium OR Схемотехника OR P-CAD OR "разработка схем" OR OrCAD'
+
+
+def test_s06_terms_capped_by_setting(conn):
+    keys = [f"k{i}" for i in range(6)]
+    prof = {"title": "Инженер", "keywords": keys, "synonyms": {k: [f"{k}s{j}" for j in range(10)] for k in keys}}
+    terms = hh.search_params(conn, prof)["text"].split(" OR ")
+    assert len(terms) == 20 and terms[:7] == ["Инженер", *keys]
+    assert terms[7:13] == [f"{k}s0" for k in keys], "сначала первый синоним каждого ключа"
+    db.run(conn, "UPDATE settings SET value = '9' WHERE key = 'hh_query_max_terms'")
+    assert hh.search_params(conn, prof)["text"].split(" OR ") == ["Инженер", *keys, "k0s0", "k1s0"]
+
+
+def test_s06_synonyms_of_keys_beyond_first_six_ignored(conn):
+    keys = [f"k{i}" for i in range(7)]
+    prof = {"title": "Инженер", "keywords": keys, "synonyms": {"k6": ["лишний"]}}
+    assert "лишний" not in hh.search_params(conn, prof)["text"]
+
+
+def test_s06_crawl_starts_from_day_of_year_profile(conn, conn_factory, clock):
+    for code, title in [("a_role", "Роль А"), ("b_role", "Роль Б"), ("c_role", "Роль В")]:
+        profile(conn, code=code, title=title, keywords=["Altium"])
+    fake = FakeHH(items=[])
+
+    def order():
+        return [r["params"]["text"].split(" OR ")[0]
+                for r in db.rows(conn, "SELECT params FROM crawl_queue ORDER BY id")]
+
+    run(conn_factory, fake, clock)   # 26.10 по Москве — 299-й день, 299 % 3 = 2
+    assert order() == ["Роль В", "Роль А", "Роль Б"]
+    db.run(conn, "DELETE FROM crawl_queue")
+    clock.advance(days=1)            # 300 % 3 = 0
+    run(conn_factory, fake, clock)
+    assert order() == ["Роль А", "Роль Б", "Роль В"]

@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import httpx
 
-from . import hh, jobs, photos, pipeline
+from . import hh, jobs, photos, pipeline, quota
 from .clock import SYSTEM, Clock
 from .config import get_config
 from .db import ConnFactory, j, one, rows, run, setting, val
@@ -94,7 +94,8 @@ def collect_hh(conn_factory: ConnFactory, *, http: httpx.Client | None = None, c
             len(profiles) * per_profile + full_cap
         budget = PageBudget(max_pages, stats)
         params = {p["id"]: hh.search_params(conn, p) for p in profiles}
-    targets = profiles
+    shift = quota.day_of(clock.now()).timetuple().tm_yday % len(profiles) if profiles else 0
+    targets = profiles[shift:] + profiles[:shift]   # S11: первые должности не забирают весь дневной предел
     if profile_id is not None:
         targets = [p for p in profiles if p["id"] == profile_id]
         if not targets:

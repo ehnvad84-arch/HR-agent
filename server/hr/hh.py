@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 import httpx
 import psycopg
 
-from . import crypto
+from . import crypto, scoring
 from .clock import Clock
 from .config import get_config
 from .db import ConnFactory, one, run, setting
@@ -205,10 +205,13 @@ class Api:
 
 
 def search_params(conn: psycopg.Connection, profile: dict) -> dict:
+    """Запрос поиска: название и первые 6 ключей, затем синонимы этих ключей по кругу (первый у каждого ключа,
+    потом второй…) — всего терминов вместе с названием не больше hh_query_max_terms (S6)."""
     kws = [k for k in (profile.get("keywords") or [])[:6] if k]
+    terms = kws + _synonym_terms(conn, kws, profile.get("synonyms") or {})
     text = profile["title"]
-    if kws:
-        text += " OR " + " OR ".join(f'"{k}"' if " " in k else k for k in kws)
+    if terms:
+        text += " OR " + " OR ".join(f'"{k}"' if " " in k else k for k in terms)
     params: dict = {"text": text, "per_page": 50, "order_by": "relevance"}
     geo = profile.get("geo") or "krasnodar"
     if geo == "remote_ru":
@@ -219,6 +222,17 @@ def search_params(conn: psycopg.Connection, profile: dict) -> dict:
             params["relocation"] = "living_or_relocation"
     return params
 
+
+
+def _synonym_terms(conn: psycopg.Connection, kws: list[str], synonyms: dict) -> list[str]:
+    lists = [list(synonyms.get(scoring.norm_keyword(k)) or []) for k in kws]
+    if not any(lists):
+        return []
+    room = int(setting(conn, "hh_query_max_terms", 20)) - 1 - len(kws)
+    out: list[str] = []
+    for i in range(max(map(len, lists))):
+        out += [lst[i] for lst in lists if i < len(lst)]
+    return out[:max(room, 0)]
 
 def selftest(conn_factory: ConnFactory, http: httpx.Client, now: datetime,
              limiter: RateLimiter | None = None) -> dict:
