@@ -121,3 +121,29 @@ def test_cli_setting_set_refuses_unknown(conn, cli, argv, problem):
     code, out, err = cli(*argv)
     assert code == 1 and problem in out + err
     assert db.setting(conn, "llm_assist_enabled") == before
+
+
+@pytest.mark.parametrize("key, raw", [
+    ("llm_assist_enabled", "False"), ("llm_assist_enabled", "1"), ("llm_assist_enabled", "да"),
+    ("llm_calls_per_day", "много"), ("llm_calls_per_day", "true"), ("llm_calls_per_day", '"500"'),
+    ("embed_night_until", "6:30"), ("embed_night_until", "25:00"), ("embed_night_until", "06:30 утра"),
+    ("embed_night_until", "630"),
+])
+def test_cli_setting_set_refuses_wrong_type(conn, cli, key, raw):
+    """Ревью, находка 3: «False» молча выключал модель (is True), неверное время роняло ночную задачу."""
+    user(conn, "admin", "head_recruiter")
+    before = db.setting(conn, key)
+    changes = db.val(conn, "SELECT count(*) FROM agent_change")
+    code, out, err = cli("setting", "set", key, raw, "--by", "admin")
+    assert code == 1 and "Настройка не изменена" in err
+    assert db.setting(conn, key) == before and db.val(conn, "SELECT count(*) FROM agent_change") == changes
+
+
+@pytest.mark.parametrize("key, raw, value", [
+    ("llm_assist_enabled", "true", True), ("llm_calls_per_day", "450", 450), ("semantic_sim_floor", "0.5", 0.5),
+    ("embed_night_until", '"05:15"', "05:15"), ("digest_day", "monday", "monday"),
+])
+def test_cli_setting_set_accepts_same_type(conn, cli, key, raw, value):
+    user(conn, "admin", "head_recruiter")
+    assert cli("setting", "set", key, raw, "--by", "admin")[0] == 0
+    assert db.setting(conn, key) == value
