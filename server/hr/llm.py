@@ -1,7 +1,8 @@
 """Языковая модель через OpenAI-совместимый интерфейс (AD-5, раздел 6 ТЗ).
 
-Единственная точка интеграции — complete(messages). Текст ответа модели в
-исключения и логи не попадает (security.md).
+Единственная точка интеграции — complete(messages); модули пакета зовут её только через
+guarded_complete: флаг назначения, затем суточный предел, затем вызов (S12, тест-замок
+test_llm_guard). Текст ответа модели в исключения и логи не попадает (security.md).
 """
 from __future__ import annotations
 
@@ -14,14 +15,52 @@ from typing import Any
 
 import httpx
 
-from . import gigachat
+from . import gigachat, quota
 from .config import get_config
+from .db import ConnFactory, setting
 
 PROMPTS = Path(__file__).parent / "prompts"
 
 
 class LLMUnavailable(RuntimeError):
     pass
+
+
+class LLMDisabled(LLMUnavailable):
+    """Назначение выключено флагом llm_assist_enabled — работа по шаблону (AD-2)."""
+
+
+class LLMDailyLimit(LLMUnavailable):
+    """Суточный предел вызовов модели исчерпан."""
+
+
+SYNONYMS = "synonyms"
+# синонимы — свой предел, чтобы утренние объяснения не закрыли кнопку «Предложить» (S12)
+_QUOTA = {SYNONYMS: ("llm_synonyms", "llm_synonyms_per_day", 100)}
+_QUOTA_OTHER = ("llm_call", "llm_calls_per_day", 500)
+
+
+def assist_enabled(conn) -> bool:
+    """Объяснения, черновики и разбор замечаний моделью (флаг llm_assist_enabled, по умолчанию включён)."""
+    return setting(conn, "llm_assist_enabled", True) is True
+
+
+def guarded_complete(conn_factory: ConnFactory, purpose: str, messages: list[dict], **kw: Any) -> Any:
+    """Вызов модели модулями пакета: флаг назначения → quota.take → complete.
+
+    Ошибки — LLMDisabled, LLMDailyLimit (обе — LLMUnavailable, вызывающий уходит на шаблон).
+    Единица предела списывается до вызова и не возвращается при отказе модели.
+    """
+    if not get_config().llm_enabled:
+        raise LLMUnavailable("модель не настроена: LLM_BASE_URL и LLM_MODEL пусты")
+    key, cap_key, cap_default = _QUOTA.get(purpose, _QUOTA_OTHER)
+    with conn_factory() as conn:
+        if purpose != SYNONYMS and not assist_enabled(conn):
+            raise LLMDisabled("объяснения моделью выключены")
+        cap = int(setting(conn, cap_key, cap_default))
+    if not quota.take(conn_factory, key, cap):
+        raise LLMDailyLimit("суточный предел вызовов модели исчерпан")
+    return complete(messages, **kw)
 
 
 @cache

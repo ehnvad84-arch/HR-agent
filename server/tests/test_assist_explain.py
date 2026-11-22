@@ -111,3 +111,11 @@ def test_unknown_pair_404(conn, llm_env, api, pair):
     pid, _ = pair
     r = explain(api, pid, 999999, FakeLLM())
     assert r.status_code == 404
+
+
+def test_s12_flag_off_dossier_explanation_by_template(conn, llm_env, api, pair):
+    pid, rp = pair
+    db.run(conn, "UPDATE settings SET value = 'false' WHERE key = 'llm_assist_enabled'")
+    fake = FakeLLM()
+    r = explain(api, pid, rp, fake)
+    assert r.status_code == 200 and r.json()["by"] == "template" and fake.requests == []

@@ -98,15 +98,18 @@ def draft(conn_factory: ConnFactory, candidate_id: int, kind: str, user_id: int,
                            "employers": p.employers[:4], "skills": p.skills[:20]} if p else {}}
         first = _first_name(conn, c["person_id"])
         key = assist.cache_key("draft", version, data)
-        hit = one(conn, "SELECT reply FROM ops.llm_cache WHERE key = %s", (key,)) if get_config().llm_enabled else None
+        use_model = get_config().llm_enabled and llm.assist_enabled(conn)
+        hit = one(conn, "SELECT reply FROM ops.llm_cache WHERE key = %s", (key,)) if use_model else None
         pause = float(setting(conn, "llm_pause_minutes", 60))
-        capped = get_config().llm_enabled and not hit and assist._over_hourly_cap(conn)
+        capped = use_model and not hit and assist._over_hourly_cap(conn)
     text, by = (hit["reply"]["text"], "model") if hit else (None, "template")
-    if text is None and get_config().llm_enabled and not capped:
+    if text is None and use_model and not capped:
         try:
-            reply = llm.complete([{"role": "system", "content": system},
-                                  {"role": "user", "content": json.dumps(data, ensure_ascii=False, default=str)}],
-                                 http=http, pause_minutes=pause)
+            reply = llm.guarded_complete(conn_factory, "draft",
+                                         [{"role": "system", "content": system},
+                                          {"role": "user",
+                                           "content": json.dumps(data, ensure_ascii=False, default=str)}],
+                                         http=http, pause_minutes=pause)
             text = validate(reply)
             if text:
                 by = "model"

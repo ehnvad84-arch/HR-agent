@@ -7,8 +7,8 @@
 <!-- Перезаписывается в конце каждой сессии и итерации. Здесь всё, что нужно следующей сессии с чистым контекстом. -->
 
 - Этап: 2 — разработка
-- Последнее сделанное: T2 — `hr/quota.py` `take` и `hr.cli setting set … --by` (2026-11-22)
-- Следующий шаг: первая задача `[ ]` в plan.md (T3)
+- Последнее сделанное: T3 — `llm.guarded_complete`, все вызовы модели через неё, тест-замок (2026-11-22)
+- Следующий шаг: первая задача `[ ]` в plan.md (T4)
 - Важно знать:
   - Тесты: `cd server && DATABASE_URL=postgresql://postgres@127.0.0.1:55432/ruware_hr_main_test qa-test .venv/bin/pytest -q -p no:warnings`; линтер `.venv/bin/ruff check .`. База — `~/.local/pg16` (данные `~/.local/pg16-data`), порт 55432, поднимается `pg_ctl` вручную (службы ruware на VPS выключены и не включаются). Сводка «N passed» видна с `-o addopts=""`.
   - Ожидаемо красный до T17: `tests/test_release.py::test_s10_changelog_matches_version` — новая миграция 010 должна быть названа в разделе CHANGELOG, совпадающем с VERSION; раздел v1.2.0 и VERSION — задача T17 (release.sh). Остальные тесты зелёные.
@@ -16,6 +16,7 @@
   - Тяжёлые команды — только с префиксом `qa-test` (песочница VPS).
   - Модель, hh и bge-m3 — только заглушки в тестах; резюме на сервере разработки не собираем.
   - `quota.take(conn_factory, key, cap, now=…)` — сутки по Москве (`quota.day_of`); правка настройки человеком — `release.setting_set` (agent_change kind `threshold`, `applied_by`).
+  - Модель из `server/hr/` — только `llm.guarded_complete(conn_factory, purpose, messages, **kw)`; purpose `synonyms` — свой предел `llm_synonyms` и мимо флага, остальное — `llm_call` и флаг `llm_assist_enabled` (`llm.assist_enabled(conn)`). `LLMDisabled` и `LLMDailyLimit` — подклассы `LLMUnavailable`. Прямой `llm.complete` ловит `tests/test_llm_guard.py::test_s12_lock_llm_complete_only_from_llm_py`.
   - `setup_hh_oauth.py` в корне — чужой неотслеживаемый файл: не трогать, не коммитить.
 
 ## Журнал
@@ -26,3 +27,5 @@
   Доказательство: `pytest` — `1 failed, 508 passed` (упал только test_s10_changelog_matches_version, ожидаемо); `ruff check .` — `All checks passed!`; `compat_check.sh v1.1.0` — `502 passed, 4 deselected … Совместимость: тесты v1.1.0 зелёные на миграциях HEAD`.
 - 2026-11-22 · T2 · `server/hr/quota.py`: `take` — атомарный `INSERT … ON CONFLICT DO UPDATE … WHERE used < cap RETURNING`, своя транзакция, `cap <= 0` → false, сутки по Москве (`day_of`, TZ из `views.py`); `hr.cli setting set <key> <value> --by <login>` → `release.setting_set`: значение JSON или строка как есть, `agent_change` kind `threshold` с `before/after.setting` и `applied_by`; неизвестная настройка или логин — выход 1 без правки. Тесты `tests/test_quota.py` (10): предел, `cap` 0 и −5, смена московских суток, 10 параллельных транзакций на предел 3 → ровно 3, CLI пишет `agent_change`, `ops.change_default` правку из CLI не перетирает. · коммит — этот (`T2: …`) · отклонения: (1) функция правки настройки положена в `hr/release.py` (рядом с `notices` о сохранённых настройках) — в плане модуль не назван; (2) допущение: настройку новым ключом CLI не создаёт (защита от опечаток), пользователь — только активный.
   Доказательство: `pytest` — `1 failed, 518 passed` (упал только test_s10_changelog_matches_version, ожидаемо до T17); `ruff check .` — `All checks passed!`.
+- 2026-11-22 · T3 · `server/hr/llm.py`: `guarded_complete` — модель не настроена → `LLMUnavailable` без списания; флаг `llm_assist_enabled` (кроме `synonyms`) → `LLMDisabled`; `quota.take` (`llm_synonyms`/`llm_synonyms_per_day` либо `llm_call`/`llm_calls_per_day`) → `LLMDailyLimit`; затем `complete`. Переведены `explain.explain_pending` (флаг выключен — сразу выход с пометкой «объяснения моделью выключены»; предел или флаг посреди прогона — остановка, остальные пары с шаблоном), `assist.explain_pair`, `actions.draft`, `learning.post`, `learning.build_digest`; флаг проверяется до кэша, чтобы при выключенном флаге всё было по шаблону. Тесты: `tests/test_llm_guard.py` (7, в т. ч. тест-замок по AST модулей `server/hr/`) и по тесту «флаг выключен — шаблон без вызова заглушки» в `test_explain`, `test_assist_explain`, `test_actions`, `test_feedback`, `test_digest`, плюс остановка фоновых объяснений на пределе. · коммит — этот (`T3: …`) · отклонения: (1) `LLMDisabled` и `LLMDailyLimit` сделаны подклассами `LLMUnavailable` — прежние обработчики уходят на шаблон без правок; (2) проверка «модель не настроена» стоит до флага и предела, чтобы не тратить единицу предела впустую — в спеке порядок «флаг → предел → complete» без этой проверки; (3) при выключенном флаге кэш объяснений и черновиков не отдаётся — допущение по S12 «всё, кроме синонимов, на шаблон».
+  Доказательство: `pytest` — `1 failed, 531 passed` (упал только test_s10_changelog_matches_version, ожидаемо до T17); `ruff check .` — `All checks passed!`.

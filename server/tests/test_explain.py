@@ -130,3 +130,24 @@ def test_stale_explanation_not_written_if_score_changed(conn, conn_factory, cloc
 
     explain.explain_pending(conn_factory, http=httpx.Client(transport=httpx.MockTransport(changing)))
     assert match(conn, pid)["model"] == "template"
+
+
+def test_s12_flag_off_explanations_by_template_without_call(conn, conn_factory, clock, llm_env):
+    pid = setup_person(conn, clock)
+    db.run(conn, "UPDATE settings SET value = 'false' WHERE key = 'llm_assist_enabled'")
+    fake = FakeLLM()
+    stats = explain.explain_pending(conn_factory, http=fake.client())
+    assert fake.bodies == [] and match(conn, pid)["model"] == "template"
+    assert stats.note == "объяснения моделью выключены"
+
+
+def test_s12_daily_limit_stops_background_explanations(conn, conn_factory, clock, llm_env):
+    from hr import quota
+    from hr.clock import SYSTEM
+    pid = setup_person(conn, clock)
+    db.run(conn, "INSERT INTO ops.daily_quota (day, key, used) VALUES (%s, 'llm_call', 500)",
+           (quota.day_of(SYSTEM.now()),))
+    fake = FakeLLM()
+    stats = explain.explain_pending(conn_factory, http=fake.client())
+    assert fake.bodies == [] and match(conn, pid)["model"] == "template"
+    assert "предел" in stats.note

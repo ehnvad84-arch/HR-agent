@@ -119,3 +119,12 @@ def test_decide_needs_permission(conn, conn_factory, clock, api, no_model):
     pid = c.get("/api/digest/current").json()["proposals"][0]["id"]
     assert c.post(f"/api/digest/{pid}/decide", json={"decision": "accepted"}, headers=h).status_code == 403
 
+
+
+def test_s12_flag_off_digest_by_template(conn, conn_factory, clock, with_model):
+    db.run(conn, "UPDATE settings SET value = 'false' WHERE key = 'llm_assist_enabled'")
+    uid = boss(conn)
+    write(conn_factory, uid, clock, SIMILAR)
+    fake = FakeLLM({})
+    st = learning.build_digest(conn_factory, clock.now(), http=fake.client())
+    assert st.new == 1 and fake.requests == []

@@ -151,3 +151,11 @@ def test_get_action_unknown_and_forbidden(conn, api, cand):
     aid = made.json()["action_id"]
     manager, _, _ = api("hiring_manager")
     assert manager.get(f"/api/action/{aid}").status_code == 403
+
+
+def test_s12_flag_off_draft_by_template(conn, api, cand, with_llm):
+    db.run(conn, "UPDATE settings SET value = 'false' WHERE key = 'llm_assist_enabled'")
+    cid, vid = cand
+    c, h, _ = api()
+    r = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "first_message"}, headers=h)
+    assert r.json()["by"] == "template" and with_llm.requests == []
