@@ -103,6 +103,18 @@ def test_s09_contacts_not_sent_to_model(bge):
     assert "123-45-67" not in sent and "ivan@example.ru" not in sent and "Altium" in sent
 
 
+@pytest.mark.parametrize("contact", ["@ivan_petrov", "t.me/ivan_petrov", "vk.com/id123456", "VK.ru/ivan.petrov",
+                                     "skype: ivan.petrov", "Skype:ivan.petrov", "github.com/ivan-petrov"])
+def test_s09_handles_and_links_without_scheme_not_sent(bge, contact):
+    """Ревью, находка 4: @ник, t.me/…, vk.com/… без схемы и skype: уходили в службу векторов."""
+    embed.vectors([f"Инженер-электроник, Altium, P-CAD. Связь: {contact}. Опыт 7 лет, ООО Ромашка."])
+    sent = json.dumps(bge.bodies, ensure_ascii=False)
+    for secret in ("ivan_petrov", "id123456", "ivan.petrov", "ivan-petrov"):
+        assert secret not in sent, contact
+    for kept in ("Altium", "P-CAD", "Опыт 7 лет", "ООО Ромашка"):
+        assert kept in sent
+
+
 def test_s09_profile_vector_only_on_text_change(conn, conn_factory, bge, clock):
     pr = profile(conn, nice_to_have=["опыт ЭМС-испытаний"])
     assert search.embed_profile(conn_factory, pr["id"], now=clock.now()) is True

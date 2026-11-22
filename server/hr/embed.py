@@ -46,11 +46,18 @@ def client() -> httpx.Client:
     return httpx.Client(timeout=get_config().embed_timeout_s)
 
 
+# сверх learning.strip_contacts: ник, ссылка без схемы, skype (ревью, находка 4); текст для hash-v1 не меняется
+_HANDLE = re.compile(r"(?<![\w.@])@[A-Za-z][\w.]{3,}")
+_BARE_LINK = re.compile(r"(?<![\w@.])(?:[\w-]+\.)+(?:ru|com|me|org|net|io|su|рф|by|kz|ua|dev|info)/\S*", re.I)
+_SKYPE = re.compile(r"\bskype\s*:\s*\S+", re.I)
+
+
 def _clean(text: str) -> str:
     """Контакты в службу векторов не уходят (S9); импорт здесь — learning сам зависит от embed."""
     from .learning import strip_contacts
 
-    return strip_contacts(text)[:8000]
+    text = _SKYPE.sub("[skype]", strip_contacts(text))
+    return _HANDLE.sub("[ник]", _BARE_LINK.sub("[ссылка]", text))[:8000]
 
 
 def api_vectors(texts: list[str], http: httpx.Client | None = None) -> list[list[float]]:
