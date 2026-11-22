@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 import psycopg
 
 from . import embed, pipeline, scoring
 from .clock import SYSTEM, Clock
-from .db import ConnFactory, one, rows, run
+from .db import ConnFactory, one, rows, run, setting
 from .jobs import JobStats
+
+MSK = ZoneInfo("Europe/Moscow")
 
 
 def similar(conn: psycopg.Connection, query: str, limit: int = 20, vec: list[float] | None = None) -> list[dict]:
@@ -27,33 +30,113 @@ def similar(conn: psycopg.Connection, query: str, limit: int = 20, vec: list[flo
                 {"v": vec, "m": embed.method(), "limit": limit})
 
 
+def pending_people(conn: psycopg.Connection, model: str, only_stale: bool = True) -> list[int]:
+    """Люди к пересчёту: сначала без вектора текущего способа, потом устаревшие (человек изменился позже
+    вектора). only_stale=False — все люди."""
+    return [r["id"] for r in rows(conn, """
+        SELECT p.id FROM person p LEFT JOIN person_embedding e ON e.person_id = p.id
+        WHERE NOT %(stale)s OR e.person_id IS NULL OR e.embed_model <> %(m)s
+           OR e.updated_at < p.last_event_at
+        ORDER BY (e.person_id IS NOT NULL AND e.embed_model = %(m)s), p.id""",
+                                  {"stale": only_stale, "m": model})]
+
+
+def _batch(conn_factory: ConnFactory, ids: list[int], model: str, http: httpx.Client | None,
+           now: datetime) -> None:
+    """Пачка: векторы (служба — вне транзакции), затем в одной транзакции запись и пересчёт балла её людей.
+    Пересчёт — rescore_person: событий и сигналов не создаёт, «мой балл» пересчитывает. Отказ — embed.ERRORS."""
+    with conn_factory() as conn:
+        texts = [pipeline.person_text(pipeline.person_data(conn, pid)) for pid in ids]
+    vecs = embed.tracked(conn_factory, texts, http=http, now=now)
+    with conn_factory() as conn:
+        profiles = pipeline.current_profiles(conn)
+        for pid, vec in zip(ids, vecs, strict=True):
+            pipeline.write_embedding(conn, pid, vec, model, now)
+            pipeline.rescore_person(conn, pid, profiles)
+
+
 def reembed(conn_factory: ConnFactory, *, http: httpx.Client | None = None, only_stale: bool = False,
-            clock: Clock | None = None, **_) -> JobStats:
-    """Пересчёт векторов текущим способом. only_stale — только отсутствующие, другого способа или
-    устаревшие (человек изменился позже вектора). Провайдер вызывается вне транзакции, пачками по
-    embed_batch_size; пачка — своя транзакция."""
+            clock: Clock | None = None, max_batches: int | None = None, **_) -> JobStats:
+    """Пересчёт векторов текущим способом пачками по embed_batch_size; пачка — своя транзакция с пересчётом
+    балла. only_stale — только отсутствующие, другого способа или устаревшие. max_batches — предел пачек
+    (задача score берёт одну, чтобы утром не занять процессор; остальное — reembed_night)."""
     stats = JobStats()
     model = embed.method()
     now = (clock or SYSTEM).now()
     with conn_factory() as conn:
-        todo = rows(conn, """
-            SELECT p.id FROM person p LEFT JOIN person_embedding e ON e.person_id = p.id
-            WHERE NOT %(stale)s OR e.person_id IS NULL OR e.embed_model <> %(m)s
-               OR e.updated_at < p.last_event_at
-            ORDER BY p.id""", {"stale": only_stale, "m": model})
-        texts = [(r["id"], pipeline.person_text(pipeline.person_data(conn, r["id"]))) for r in todo]
+        todo = pending_people(conn, model, only_stale)
         size = embed.batch_size(conn)
-    for i in range(0, len(texts), size):
-        part = texts[i:i + size]
+    for n, i in enumerate(range(0, len(todo), size)):
+        if max_batches is not None and n >= max_batches:
+            break
+        part = todo[i:i + size]
         stats.seen += len(part)
         try:
-            vecs = embed.tracked(conn_factory, [t for _, t in part], http=http, now=now)
+            _batch(conn_factory, part, model, http, now)
         except embed.ERRORS:
             stats.errors += len(part)
             continue
-        with conn_factory() as conn:
-            for (pid, _), vec in zip(part, vecs, strict=True):
-                pipeline.write_embedding(conn, pid, vec, model, now)
+        stats.changed += len(part)
+    return stats
+
+
+NIGHT_FAILS = 3   # отказов подряд — пересчёт до следующей ночи (S10)
+
+
+def night_deadline(conn: psycopg.Connection, now: datetime) -> datetime:
+    """Ближайшее embed_night_until («06:30» по Москве) после now."""
+    hh, mm = (int(x) for x in str(setting(conn, "embed_night_until", "06:30")).split(":"))
+    local = now.astimezone(MSK)
+    end = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    return end if end > local else end + timedelta(days=1)
+
+
+def reembed_night(conn_factory: ConnFactory, *, http: httpx.Client | None = None, clock: Clock | None = None,
+                  **_) -> JobStats:
+    """Задача reembed_night (S10): векторы профилей → люди без вектора текущего способа → устаревшие.
+    Пачка — своя транзакция с пересчётом балла; остановка в embed_night_until или после трёх отказов подряд.
+    Прерванный пересчёт продолжается следующей ночью: список берётся заново по состоянию базы."""
+    clock = clock or SYSTEM
+    stats = JobStats()
+    model = embed.method()
+    with conn_factory() as conn:
+        end = night_deadline(conn, clock.now())
+        profile_ids = [p["id"] for p in pipeline.current_profiles(conn)]
+    fails = 0
+
+    def stop() -> bool:
+        if fails >= NIGHT_FAILS:
+            stats.note = f"служба векторов не отвечает: {NIGHT_FAILS} отказа подряд — продолжим следующей ночью"
+            return True
+        if clock.now() >= end:
+            stats.note = f"остановлен в {end:%H:%M} по Москве — продолжим следующей ночью"
+            return True
+        return False
+
+    for rp_id in profile_ids:
+        if stop():
+            return stats
+        try:
+            embed_profile(conn_factory, rp_id, http=http, now=clock.now())
+            fails = 0
+        except embed.ERRORS:
+            fails += 1
+            stats.errors += 1
+    with conn_factory() as conn:
+        todo = pending_people(conn, model)
+        size = embed.batch_size(conn)
+    for i in range(0, len(todo), size):
+        if stop():
+            return stats
+        part = todo[i:i + size]
+        stats.seen += len(part)
+        try:
+            _batch(conn_factory, part, model, http, clock.now())
+            fails = 0
+        except embed.ERRORS:
+            fails += 1
+            stats.errors += len(part)
+            continue
         stats.changed += len(part)
     return stats
 

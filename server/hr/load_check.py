@@ -24,7 +24,9 @@ MSK = ZoneInfo("Europe/Moscow")
 LOADS = {"collect_hh": "Загрузка резюме hh", "collect_hh_daily": "Загрузка резюме hh в 18:00",
          "collect_trudvsem": "Загрузка «Работы России»", "photos": "Загрузка фото"}
 # расписание (install_autostart.sh): задача, дни недели (0 — понедельник) или None — каждый день, час:минута МСК
-SCHEDULE = {"collect_hh_daily": (None, 18, 0), "collect_trudvsem": ({1}, 1, 0)}
+SCHEDULE = {"collect_hh_daily": (None, 18, 0), "collect_trudvsem": ({1}, 1, 0), "reembed_night": (None, 2, 30)}
+# названия в тревоге «не началась по расписанию»; итог прогона пишется только загрузкам (LOADS)
+TITLES = {**LOADS, "reembed_night": "Ночной пересчёт векторов"}
 HR_ROLES = ["recruiter", "head_recruiter"]
 
 
@@ -62,7 +64,7 @@ def judge(conn: psycopg.Connection, job: str, res: JobResult) -> tuple[str, str]
 def notify(conn: psycopg.Connection, job: str, severity: str, text: str, now: datetime, run_id: int | None = None,
            send_mail: bool = True) -> int:
     """Сообщение каждому действующему HR; тревога с той же причиной не чаще load_alarm_repeat_hours."""
-    title = f"{LOADS.get(job, job)}: " + ("прошла" if severity == "ok" else "не прошла — требуется разбирательство")
+    title = f"{TITLES.get(job, job)}: " + ("прошла" if severity == "ok" else "не прошла — требуется разбирательство")
     if severity == "alarm":
         hours = float(setting(conn, "load_alarm_repeat_hours", 6))
         if one(conn, """SELECT 1 FROM notification WHERE kind = 'load_alarm' AND body->>'job' = %s
