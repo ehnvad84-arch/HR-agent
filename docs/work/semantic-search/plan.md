@@ -10,7 +10,7 @@
 Порядок: данные → пределы и модель → синонимы → векторы и балл → интерфейс → документы и выпуск. Проверка — на
 вымышленных данных и заглушках модели, hh и bge-m3; резюме на сервере разработки не собираем.
 
-- [ ] T1 — миграция `010_semantic_search.sql`: `role_synonym`, `ops.profile_embedding`, `ops.daily_quota`, `ops.service_health`, право `profile.synonyms`, настройки через `ops.change_default` · сценарий: S2, S11, S12 · проверка: auto · исполнитель: main
+- [x] T1 — миграция `010_semantic_search.sql`: `role_synonym`, `ops.profile_embedding`, `ops.daily_quota`, `ops.service_health`, право `profile.synonyms`, настройки через `ops.change_default` · сценарий: S2, S11, S12 · проверка: auto · исполнитель: main
   Готово, когда: `test_migrate` и линтер DDL (`test_release.py`) зелёные; `compat_check.sh` — v1.1.0 работает на новой базе; выдача права `profile.synonyms` записана в `agent_change`
 - [ ] T2 — `hr/quota.py` `take` (атомарно, сутки по Москве) и `hr.cli setting set … --by` с записью в `agent_change` · сценарий: S11, S12 · проверка: auto · исполнитель: main
   Готово, когда: тесты: предел не превышается при двух параллельных `take`; `cap <= 0` → false; смена суток обнуляет; правка через CLI не перетирается `ops.change_default`
