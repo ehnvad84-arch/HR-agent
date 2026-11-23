@@ -96,6 +96,22 @@ def test_stalled_rows_carry_open_stages(conn, clock, api):
                     "report_row": "selected", "stage": "Отобранные резюме"}]
 
 
+def test_stalled_by_open_stage_when_refused_elsewhere(conn, clock, api):
+    """«Зависли» — по открытому этапу пары: отказ в одной вакансии не прячет человека, стоящего на этапе в другой."""
+    prof = profile(conn)
+    cid = candidate(conn, person(conn, clock), status="new", silent_days=0)
+    a, b = (db.val(conn, """INSERT INTO vacancy (role_profile_id, title, headcount, state, opened_at)
+                            VALUES (%s, %s, 1, 'open', current_date) RETURNING id""", (prof["id"], t)) for t in "AB")
+    c, _, uid = api()
+    for vid in (a, b):
+        stages.enter(conn, cid, vid, uid, clock.now())
+    stages.mark(conn, cid, b, 1, "passed", uid, clock.now())                    # написали в B
+    stages.mark(conn, cid, a, 1, "refused", uid, clock.now(), reason="conditions")
+    db.run(conn, "UPDATE candidate SET last_contact_at = now() - interval '6 days' WHERE id = %s", (cid,))
+    [row] = [r for r in c.get("/api/today").json()["stalled"] if r["candidate_id"] == cid]
+    assert [(s["vacancy_id"], s["report_row"]) for s in row["stages"]] == [(b, "contact")]
+
+
 def test_s36_meetings_today_and_tomorrow(conn, clock, api):
     cid = candidate(conn, person(conn, clock), silent_days=0)
     for delta in (timedelta(hours=2), timedelta(days=1, hours=1), timedelta(days=3)):

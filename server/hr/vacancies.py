@@ -37,9 +37,8 @@ def listing(conn: psycopg.Connection, only: frozenset[int] | None = None) -> dic
                (current_date - v.opened_at) AS open_days, v.recruiter_id, v.hiring_manager_id,
                (SELECT full_name FROM app_user WHERE id = v.recruiter_id) AS recruiter,
                (SELECT full_name FROM app_user WHERE id = v.hiring_manager_id) AS hiring_manager,
-               (SELECT count(*) FROM ops.candidate_vacancy cv JOIN candidate c ON c.id = cv.candidate_id
-                WHERE cv.vacancy_id = v.id AND c.status NOT IN ('hired', 'rejected_by_us', 'rejected_by_candidate',
-                                                                'refused_contact', 'no_show')) AS in_work,
+               (SELECT count(*) FROM ops.candidate_stage cs                -- статус один на человека, этап — на пару
+                WHERE cs.vacancy_id = v.id AND cs.outcome IS NULL AND cs.cancelled_at IS NULL) AS in_work,
                coalesce(ss.state = 'proposed', false) AS stages_pending,
                coalesce(ss.state = 'declined', false) AS stages_declined
         FROM vacancy v JOIN role_profile rp ON rp.id = v.role_profile_id

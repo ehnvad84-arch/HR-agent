@@ -216,3 +216,18 @@ def test_s14_reopen_cancelled_without_closed_at_no_gap(conn, vac):
     db.run(conn, "UPDATE vacancy SET state = 'cancelled' WHERE id = %s", (vid,))
     vacancies.reopen(conn, vid, rec, at(5))
     assert pauses(conn, vid) == []
+
+
+def test_in_work_counts_open_stages_of_pair(conn, prof, boss):
+    """«В работе» по вакансии — люди с открытым этапом в ней: отказ в другой вакансии счёт не обнуляет."""
+    rec = user(conn, "rec", "recruiter")
+    now = datetime(2026, 11, 24, 9, 0, tzinfo=UTC)
+    a = vacancies.create(conn, prof["id"], "A", rec, hiring_manager_id=boss)
+    b = vacancies.create(conn, prof["id"], "B", rec, hiring_manager_id=boss)
+    cid = db.val(conn, "INSERT INTO candidate (fio, retention_until) VALUES ('Вымышленный', current_date + 100) "
+                       "RETURNING id")
+    stages.enter(conn, cid, a, rec, now)
+    stages.enter(conn, cid, b, rec, now)
+    stages.mark(conn, cid, a, 1, "refused", rec, now, reason="conditions")     # статус — отказ, но в B он на этапе
+    got = {v["title"]: v["in_work"] for v in vacancies.listing(conn)["open"]}
+    assert got == {"A": 0, "B": 1}
