@@ -154,3 +154,32 @@ test("semantic-search: правила о синонимах, близости п
   }
   assert.ok(CAN.some((t) => /по смыслу/.test(t)));
 });
+
+test("funnel-report: права воронки — утверждает наборы и отменяет любую отметку только руководитель ОП, руководители — доска только для чтения", () => {
+  const rows = rightsTable().rows;
+  const approve = rows.find((r) => r.perm === "stage.approve");
+  assert.ok(approve, "строка о праве stage.approve");
+  assert.deepEqual(approve.cells.map((c) => c.yes), [false, true, false, false]);
+  assert.ok(ROLE_PERMS.head_recruiter.includes("stage.approve"));
+  for (const role of ["recruiter", "hiring_manager", "director"]) assert.equal(ROLE_PERMS[role].includes("stage.approve"), false, role);
+  const mark = rows.find((r) => r.title.startsWith("Итог этапа"));
+  assert.deepEqual(mark.cells.map((c) => c.yes), [true, true, false, false]);
+  assert.match(mark.cells[2].text, /только для чтения/);
+  const report = rows.find((r) => r.title.startsWith("Отчёт воронки"));
+  assert.deepEqual(report.cells.map((c) => c.yes), [true, true, false, false]);
+  assert.match(report.cells[0].text, /только свой/);
+  assert.match(report.cells[1].text, /весь отдел/);
+  assert.ok(myRights(can("stage.approve")).some((t) => /наборы этапов/.test(t)));
+  assert.equal(myRights(can("base.read", "profile.edit")).some((t) => /этап/.test(t)), false);
+});
+
+test("funnel-report: правила воронки — этапы и 8 строк, утверждение набора, причины, отмена в тот же день, пауза, видимость отчётов", () => {
+  const text = RULES.join(" ");
+  for (const part of ["8 строк", "Отобранные резюме", "Пришедшие в 1 день", "утверждает руководитель отдела персонала", "отозвать",
+    "нет в наборе", "назад и через этап нельзя", "100 знаков", "Отказ от оффера", "в тот же день по Москве", "Причина отмены обязательна",
+    "дни паузы", "новых людей брать нельзя", "только свой отчёт", "сравнение рекрутеров", "без модели", "v1.3.0"]) {
+    assert.ok(text.includes(part), part);
+  }
+  assert.ok(CAN.some((t) => /воронку вакансии, рекрутера и отдела/.test(t)));
+  assert.ok(CANNOT.some((t) => /этапы и итоги воронки/.test(t)));
+});
