@@ -3,6 +3,10 @@
 import { plural } from "../format.js";
 import { reportDate } from "./funnel-report-model.js";
 
+/** Пределы длины, как в API этапов (`hr/api/stages.py`): названия и подписи этапов, комментарии. */
+export const TITLE_MAX = 80;
+export const COMMENT_MAX = 2000;
+
 export const PENDING_NOTE = "Новый набор ждёт утверждения у руководителя ОП. Пока вакансия идёт по действующему.";
 
 /** Строки отчёта — как в ops.funnel_row (spec S1); порядок задаёт набор. */

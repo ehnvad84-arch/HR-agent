@@ -9,7 +9,7 @@ import { approvalLine, diffSets } from "./stage-approvals-model.js";
 import {
   NOT_IN_SET, addItem, addOptions, groupDraft, isChanged, moveItem, movePlace, proposalPayload, rebaseDraft, removeItem, removedRows,
 } from "./stage-editor-model.js";
-import { PENDING_NOTE, declinedNote, groupItems, isStandardSet, setHeading } from "./stages-model.js";
+import { COMMENT_MAX, PENDING_NOTE, TITLE_MAX, declinedNote, groupItems, isStandardSet, setHeading } from "./stages-model.js";
 
 const SENT_TOAST = "Набор отправлен на утверждение";
 const WITHDRAWN_TOAST = "Набор отозван";
@@ -44,7 +44,7 @@ function editor({ api, signal, vacancyId, current, library, start, onSent }) {
   const removedBox = h("p.hint", { style: "margin:8px 6px 0" });
   const status = errorLine();
   const noteId = uid("why");
-  const note = h("textarea", { id: noteId, rows: 2, name: "why" }, start.note || "");
+  const note = h("textarea", { id: noteId, rows: 2, name: "why", maxlength: COMMENT_MAX }, start.note || "");
   const send = h("button.b.fill", { type: "button", disabled: true, "data-tip": "stage-send" }, "Отправить на утверждение");
   const options = addOptions(library);
   const pickSelect = h("select", { id: uid("add"), "aria-label": "Этап из справочника" },
@@ -77,7 +77,7 @@ function editor({ api, signal, vacancyId, current, library, start, onSent }) {
 
   function itemRow(i) {
     const hintId = uid("rm");
-    const labelInput = h("input", { type: "text", value: i.label, style: "padding:6px 10px;font-size:13.5px", placeholder: "Подпись вместо названия (необязательно)", "aria-label": `Подпись этапа «${i.stageTitle}»`,
+    const labelInput = h("input", { type: "text", value: i.label, maxlength: TITLE_MAX, style: "padding:6px 10px;font-size:13.5px", placeholder: "Подпись вместо названия (необязательно)", "aria-label": `Подпись этапа «${i.stageTitle}»`,
       onInput: (event) => {
         const item = draft.find((d) => d.key === i.key);
         if (item) item.label = event.currentTarget.value;

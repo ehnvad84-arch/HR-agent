@@ -4,6 +4,7 @@ import { h } from "../dom.js";
 import { chip } from "../people.js";
 import { confirmSheet, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
 import { libraryGroups, newStageForm } from "./stage-approvals-model.js";
+import { TITLE_MAX } from "./stages-model.js";
 
 const NEW_HINT = "Каждый этап считается в одной из 8 строк отчёта. Стандартные этапы не меняются.";
 const DUPLICATE = "Такой этап уже есть в справочнике";
@@ -11,7 +12,7 @@ const DUPLICATE = "Такой этап уже есть в справочнике
 /** Окно «Новый этап»: название и строка отчёта. Ошибка сервера — под кнопкой. Promise<{saved, title}>. */
 function newStageSheet({ api, signal, rows }) {
   const win = sheet({ title: "Новый этап", width: "480px" });
-  const name = field({ label: "Название", name: "stage_title", required: true });
+  const name = field({ label: "Название", name: "stage_title", required: true, maxlength: TITLE_MAX });
   const rowId = `row-${Math.random().toString(36).slice(2)}`;
   const select = h("select", { id: rowId, required: true, "aria-describedby": `${rowId}-hint` },
     h("option", { value: "" }, "Выберите строку…"), rows.map((r) => h("option", { value: r.code }, r.title)));

@@ -51,3 +51,27 @@ test("S4: отклонённый набор — автор решения, да�
     "Набор отклонён 24.11.2026, Смирнова Е.: «Лишнее собеседование»");
   assert.equal(declinedNote({ decided_by_name: null, decided_at: "2026-11-24T10:00:00+03:00", decision_comment: "" }), "Набор отклонён 24.11.2026");
 });
+
+test("пределы длины полей окон этапов — как в API: названия и подписи 80, комментарии 2000", async () => {
+  const { TITLE_MAX, COMMENT_MAX } = await import("../../web/js/screens/stages-model.js");
+  const { readFileSync } = await import("node:fs");
+  const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+  const api = read("../../hr/api/stages.py");
+  assert.equal(TITLE_MAX, Number(api.match(/^Title = .*max_length=(\d+)/m)[1]));
+  assert.equal(COMMENT_MAX, Number(api.match(/^Comment = .*max_length=(\d+)/m)[1]));
+  assert.match(read("../../web/js/ui.js"), /const common = \{[^}]*\bmaxlength\b/, "field() передаёт maxlength полю");
+  const fields = [
+    ["../../web/js/screens/stages-library.js", 'name: "stage_title"', "TITLE_MAX"],
+    ["../../web/js/screens/stages-view.js", '"aria-label": `Подпись этапа', "TITLE_MAX"],
+    ["../../web/js/screens/stages-view.js", 'name: "why"', "COMMENT_MAX"],
+    ["../../web/js/screens/stage-approvals.js", 'name: "decline_comment"', "COMMENT_MAX"],
+    ["../../web/js/screens/outcome-sheet.js", 'name: "comment"', "COMMENT_MAX"],
+    ["../../web/js/screens/outcome-sheet.js", 'name: "cancel_comment"', "COMMENT_MAX"],
+    ["../../web/js/screens/today.js", 'kind: "textarea", name: "comment"', "COMMENT_MAX"],
+  ];
+  for (const [file, marker, max] of fields) {
+    const line = read(file).split("\n").find((l) => l.includes(marker));
+    assert.ok(line, `${file}: нет поля ${marker}`);
+    assert.ok(line.includes(`maxlength: ${max}`), `${file}: у поля ${marker} нет maxlength: ${max}`);
+  }
+});

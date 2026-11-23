@@ -6,7 +6,7 @@ import { h } from "../dom.js";
 import { chip } from "../people.js";
 import { confirmSheet, errorLine, field, sheet, toast } from "../ui.js";
 import { APPROVE_HINT, DECLINE_HINT, approvalLine, decisionToast, diffSets, zoneTitle } from "./stage-approvals-model.js";
-import { groupItems } from "./stages-model.js";
+import { COMMENT_MAX, groupItems } from "./stages-model.js";
 
 /** Вакансии с ждущими наборами и их наборы: GET /api/vacancies, затем stage-sets каждой. */
 export async function loadPending(api, signal) {
@@ -30,7 +30,7 @@ export async function approveSet({ api, signal, set, vacancyTitle }) {
 /** Окно «Отклонить набор»: комментарий обязателен; ошибка — под кнопкой, текст остаётся. Promise<boolean>. */
 export function declineSet({ api, signal, set, vacancyTitle }) {
   const win = sheet({ title: `Отклонить набор этапов: ${vacancyTitle}`, hint: DECLINE_HINT, width: "480px" });
-  const reason = field({ label: "Комментарий", kind: "textarea", name: "decline_comment", required: true, tip: "reason" });
+  const reason = field({ label: "Комментарий", kind: "textarea", name: "decline_comment", required: true, tip: "reason", maxlength: COMMENT_MAX });
   const status = errorLine();
   const save = h("button.b.danger", { type: "submit", disabled: true }, "Отклонить");
   const form = h("form", { novalidate: true }, reason.root, status.el,

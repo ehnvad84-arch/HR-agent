@@ -5,6 +5,7 @@ import { h, uid } from "../dom.js";
 import { personName } from "../people.js";
 import { errorLine, field, sheet } from "../ui.js";
 import { buildMark, OTHER_MIN, otherCounter, outcomeForm, reasonGroups } from "./outcome-model.js";
+import { COMMENT_MAX } from "./stages-model.js";
 
 /**
  * Окно «Итог этапа». stages — колонки доски; reasons и min — GET /api/stages → reasons и other_min; preselect — «passed» при перетаскивании.
@@ -38,7 +39,7 @@ export function outcomeSheet({ api, signal, vacancyId, person, slot, stages, rea
   const reasonBox = h("div.field", { hidden: true }, h("label", { for: reasonId }, "Причина"), reasonSelect);
 
   const counterId = uid("counter");
-  const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", describedBy: counterId });
+  const comment = field({ label: "Комментарий", kind: "textarea", name: "comment", describedBy: counterId, maxlength: COMMENT_MAX });
   const counter = h("span.counter.bad", { id: counterId }, otherCounter("", limit));
   counter.hidden = true;
   comment.root.hidden = true;
@@ -110,7 +111,7 @@ export function undoSheet({ api, signal, vacancyId, person }) {
   const name = personName(person);
   const win = sheet({ title: `Отменить последнюю отметку: ${name}`, width: "460px",
     hint: "Человек вернётся на этап, с которого ушёл, без итога; отчёт пересчитается. Отмена пишется в журнал с причиной." });
-  const reason = field({ label: "Причина отмены", kind: "textarea", name: "cancel_comment", required: true });
+  const reason = field({ label: "Причина отмены", kind: "textarea", name: "cancel_comment", required: true, maxlength: COMMENT_MAX });
   const status = errorLine();
   const save = h("button.b.fill", { type: "submit", disabled: true }, "Отменить отметку");
   reason.input.addEventListener("input", () => { save.disabled = !reason.input.value.trim(); });

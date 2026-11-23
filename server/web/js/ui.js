@@ -116,11 +116,11 @@ export function errorLine() {
  * Поле с видимой подписью: {root, input, error(text)}. kind: "text" | "password" | "textarea".
  * Ошибка проверки (422) показывается у поля и связана с ним через aria-describedby.
  */
-export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint, describedBy, tip } = {}) {
+export function field({ label, kind = "text", name, value = "", autocomplete, required = false, placeholder, hint, describedBy, tip, maxlength } = {}) {
   const id = uid(name || "field");
   const errId = `${id}-err`;
   // describedBy — id других подсказок поля (например счётчика знаков): читаются вместе с текстом ошибки
-  const common = { id, name, autocomplete, required, placeholder, "aria-describedby": [describedBy, errId].filter(Boolean).join(" "),
+  const common = { id, name, autocomplete, required, placeholder, maxlength, "aria-describedby": [describedBy, errId].filter(Boolean).join(" "),
     "aria-invalid": false, "data-tip": tip };
   const input = kind === "textarea"
     ? h("textarea", { ...common }, value)

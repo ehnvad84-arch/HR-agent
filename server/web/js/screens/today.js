@@ -20,6 +20,7 @@ import { buildStalledClose, closeTargets, normalizeToday, reserveOption } from "
 import {
   EMPTY_SIGNALS, EMPTY_VACANCIES, NO_HANDOFFS, customerLine, hrLine, managerBadge, matchingLabel, normalizeManagerToday, vacancyMeta, zoneTitles,
 } from "./manager-model.js";
+import { COMMENT_MAX } from "./stages-model.js";
 
 const nameLine = (person) => h("div.namewrap", face(person, { small: true }),
   h("div.t1", h("a", { href: personHref(person.person_id) }, personName(person))));
@@ -159,7 +160,7 @@ async function closeSheet(row, card, env) {
   const target = h("select", { id: targetId }, targets.map((t) => h("option", { value: t.value }, t.label)));
   const reasonId = uid("reason");
   const reason = h("select", { id: reasonId });
-  const comment = field({ label: "Комментарий (необязательно)", kind: "textarea", name: "comment" });
+  const comment = field({ label: "Комментарий (необязательно)", kind: "textarea", name: "comment", maxlength: COMMENT_MAX });
   const counter = h("span.counter.bad", { hidden: true }, otherCounter("", min));
   const status = errorLine();
   const save = h("button.b.danger", { type: "submit" }, "Закрыть кандидатство");
