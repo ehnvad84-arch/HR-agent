@@ -418,8 +418,9 @@ def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int
          scheduled_at: datetime | None = None) -> dict:
     """S6–S9: исход открытого этапа пары. «Прошёл» — на следующий этап действующего набора (назад и через этап —
     409 stale), на последнем — «вышел» (hired) и offer_close, когда вышедших не меньше ставок: закрывает вакансию
-    рекрутер прежним close. «Не прошёл» / «Отказался» — с причиной. На закрытой вакансии «прошёл» нельзя, отказ
-    с причиной — можно; на паузе отмечать можно."""
+    рекрутер прежним close. «Не прошёл» / «Отказался» — с причиной; ещё не прошедшая встреча этого этапа (interview_id
+    отметок того же slot) — result 'cancelled'. На закрытой вакансии «прошёл» нельзя, отказ с причиной — можно;
+    на паузе отмечать можно."""
     if outcome not in OUTCOMES:
         raise Invalid("исход этапа")
     if scheduled_at and outcome != "passed":
@@ -441,7 +442,12 @@ def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int
         (outcome, r["code"] if r else None, comment, user_id, now, cur["id"]))
     st = current_set(conn, vacancy_id)
     title = _stage_title(conn, cur["stage_id"], st["id"] if st else None, slot)
-    if r:
+    if r:   # встреча этого этапа, ещё не прошедшая, уходит из «Сегодня и завтра»; отмена отказа её не возвращает
+        run(conn, """UPDATE interview SET result = 'cancelled'
+                     WHERE result IS NULL AND scheduled_at > %s AND id IN (
+                         SELECT interview_id FROM ops.candidate_stage
+                         WHERE candidate_id = %s AND vacancy_id = %s AND slot = %s AND interview_id IS NOT NULL)""",
+            (now, candidate_id, vacancy_id, slot))
         why = r["title"] + (f": {comment}" if comment else "")
         to = "rejected_by_us" if outcome == "failed" else REFUSED_STATUS.get(r["code"], "rejected_by_candidate")
         _status(conn, candidate_id, to, user_id, now, f"этап «{title}»: {why}", reject_reason=why)

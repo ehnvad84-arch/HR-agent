@@ -689,6 +689,51 @@ def test_s16_undo_passed_cancels_meeting_set_by_this_mark(conn, vid, people):
     assert audit(conn, cid)[0]["detail"]["interview"] is not None
 
 
+def meetings_of(conn, cid):
+    return db.rows(conn, "SELECT scheduled_at, result FROM interview WHERE candidate_id = %s ORDER BY id", (cid,))
+
+
+@pytest.mark.parametrize("outcome,reason", [("failed", "skills"), ("refused", "no_show")])
+def test_s7_refusal_cancels_upcoming_meeting_of_this_stage(conn, vid, people, outcome, reason):
+    """Отказ на этапе, к которому назначена ещё не прошедшая встреча, снимает её из «Сегодня и завтра»;
+    отмена отказа встречу не возвращает."""
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    stages.mark(conn, cid, vid, 2, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=5))   # на slot 3
+    stages.mark(conn, cid, vid, 3, outcome, people["rec"], NOW, reason=reason)
+    assert meetings_of(conn, cid) == [{"scheduled_at": NOW + timedelta(hours=5), "result": "cancelled"}]
+    assert [m for m in views.today(conn, NOW)["meetings"] if m["candidate_id"] == cid] == []
+    stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    assert open_mark(conn, cid, vid)["slot"] == 3
+    assert meetings_of(conn, cid)[0]["result"] == "cancelled", "отмена отказа встречу не возвращает"
+
+
+def test_s7_refusal_cancels_meeting_set_by_earlier_mark_of_reopened_stage(conn, vid, people):
+    """Встреча назначена прежней отметкой: «прошёл» дальше отменили, этап открыт заново копией — отказ на нём
+    всё равно снимает встречу."""
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    stages.mark(conn, cid, vid, 2, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=5))   # на slot 3
+    stages.mark(conn, cid, vid, 3, "passed", people["rec"], NOW)
+    stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)                       # снова на slot 3
+    assert meetings_of(conn, cid)[0]["result"] is None
+    stages.mark(conn, cid, vid, 3, "refused", people["rec"], NOW, reason="no_show")
+    assert meetings_of(conn, cid)[0]["result"] == "cancelled"
+
+
+def test_s7_refusal_keeps_past_meeting_and_other_stages(conn, vid, people):
+    """Встреча уже прошла — отказ её не трогает; встреча другого этапа тоже остаётся."""
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=1))   # на slot 2
+    stages.mark(conn, cid, vid, 2, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=2))   # на slot 3
+    later = NOW + timedelta(hours=3)                                                   # обе встречи уже были
+    stages.mark(conn, cid, vid, 3, "failed", people["rec"], later, reason="skills")
+    assert [m["result"] for m in meetings_of(conn, cid)] == [None, None]
+
+
 @pytest.mark.parametrize("variant", [str, str.upper], ids=["same", "other_case"])
 def test_s1_parallel_add_same_title_any_case_one_wins(variant):
     """Два одновременных «добавить этап» с одним названием (в любом регистре): второй — 409 duplicate, не 500 и
