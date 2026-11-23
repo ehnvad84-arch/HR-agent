@@ -91,7 +91,8 @@ def _agent_picks(conn, vacancy_id: int, now: datetime) -> list[dict]:
 def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
     """Доска вакансии (funnel-report): колонки — этапы действующего набора по slot, люди — открытые отметки;
     у человека — последняя отметка пары (кто и когда: «Отменить последнюю отметку»), заметки — комментарии
-    отметок. Ниже — «Отобраны агентом» (в отчёт не входят). Чтение ничего не пишет: у вакансии без набора
+    отметок. left — выбывшие (отказ, «вышел») с последней отметкой: её тоже отменяют (S16). Ниже — «Отобраны
+    агентом» (в отчёт не входят). Чтение ничего не пишет: у вакансии без набора
     (заведена v1.2.0 и закрыта до выпуска) показываются 8 стандартных этапов."""
     v = one(conn, "SELECT id, title, state, opened_at, headcount FROM vacancy WHERE id = %s", (vacancy_id,))
     if not v:
@@ -107,10 +108,19 @@ def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
         ORDER BY cs.entered_at, cs.id""", (vacancy_id,))
     last = {m.pop("candidate_id"): m for m in rows(conn, """
         SELECT DISTINCT ON (cs.candidate_id) cs.candidate_id, cs.decided_by AS by, u.full_name AS by_name,
-               cs.decided_at AS at, cs.outcome, cs.slot
-        FROM ops.candidate_stage cs LEFT JOIN app_user u ON u.id = cs.decided_by
+               cs.decided_at AS at, cs.outcome, cs.slot, s.title AS stage
+        FROM ops.candidate_stage cs JOIN ops.stage s ON s.id = cs.stage_id
+        LEFT JOIN app_user u ON u.id = cs.decided_by
         WHERE cs.vacancy_id = %s AND cs.cancelled_at IS NULL AND cs.outcome IS NOT NULL
         ORDER BY cs.candidate_id, cs.decided_at DESC, cs.id DESC""", (vacancy_id,))}
+    # S16: выбывшие — пары без открытого этапа (отказ, «вышел»); их последнюю отметку тоже можно отменить
+    open_ids = {p["candidate_id"] for p in people}
+    left = rows(conn, "SELECT id AS candidate_id, person_id, status::text AS status FROM candidate WHERE id = ANY(%s)",
+                ([cid for cid in last if cid not in open_ids],))
+    for p in left:
+        p["last_mark"] = last[p["candidate_id"]]
+        p["stage"] = titles.get(p["last_mark"]["slot"]) or p["last_mark"]["stage"]
+    left.sort(key=lambda p: (p["last_mark"]["at"], p["candidate_id"]), reverse=True)
     notes: dict[int, list] = {}
     for n in rows(conn, """SELECT cs.candidate_id, cs.comment, cs.decided_at AS changed_at, cs.outcome, cs.slot,
                                   s.title AS stage, u.full_name AS author
@@ -121,7 +131,10 @@ def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
                            ORDER BY cs.decided_at DESC, cs.id DESC""", (vacancy_id,)):
         n["stage"] = titles.get(n["slot"]) or n["stage"]
         notes.setdefault(n.pop("candidate_id"), []).append(n)
-    info = cards(conn, [p["person_id"] for p in people])
+    info = cards(conn, [p["person_id"] for p in people + left])
+    for p in left:
+        card = info.get(p["person_id"]) or {}
+        p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")))
     columns = []
     for item in items:
         here = [p for p in people if p["slot"] == item["slot"]]
@@ -140,4 +153,4 @@ def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
                                             WHERE x.candidate_id = o.candidate_id AND x.vacancy_id = o.vacancy_id
                                               AND x.outcome IS NULL AND x.cancelled_at IS NULL)""", (vacancy_id,))
     return {"vacancy": v, "set": {"id": st["id"], "version": st["version"]} if st else None, "stages": columns,
-            "agent": _agent_picks(conn, vacancy_id, now), "closed": closed}
+            "agent": _agent_picks(conn, vacancy_id, now), "closed": closed, "left": left}

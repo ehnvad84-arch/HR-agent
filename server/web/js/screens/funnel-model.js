@@ -68,6 +68,25 @@ export function lastMarkText(last, now = new Date()) {
   return ["Последняя отметка: " + (OUTCOME_WORD[last.outcome] || String(last.outcome ?? "")), last.by_name, when].filter(Boolean).join(" · ");
 }
 
+const LEFT_WORD = { passed: "вышел на работу", failed: "не прошёл", refused: "отказался" };
+
+/**
+ * Блок «Выбыли (N)» под доской (S16): люди без открытого этапа — отказ или «вышел»; их последнюю отметку отменяют
+ * по тем же правилам, что на доске. left — GET /api/vacancy/{id}/funnel → left; пусто — null (блока нет).
+ */
+export function leftBlock(left, { userId, canApprove, canMove, now = new Date() }) {
+  if (!left || !left.length) return null;
+  return {
+    title: `Выбыли (${left.length})`,
+    rows: left.map((person) => {
+      const last = person.last_mark || null;
+      const word = last ? (LEFT_WORD[last.outcome] || String(last.outcome ?? "")) : "";
+      return { person, text: [word, person.stage ? `этап «${person.stage}»` : ""].filter(Boolean).join(" · "),
+        undo: Boolean(canMove) && canUndo({ last, userId, canApprove, now }) };
+    }),
+  };
+}
+
 export const undoToast = (name, stageTitle) =>
   `Отметка отменена: ${name}${stageTitle ? ` — снова на этапе «${stageTitle}»` : ""}`;
 

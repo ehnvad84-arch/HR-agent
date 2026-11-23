@@ -8,7 +8,7 @@ import { chip, face, personHref, personName } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
 import {
-  VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, stageSummary, undoToast, viewOf,
+  VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, leftBlock, stageSummary, undoToast, viewOf,
 } from "./funnel-model.js";
 import { hintText, periodText } from "./funnel-report-model.js";
 import { render as renderHome } from "./funnel-home.js";
@@ -226,6 +226,20 @@ export function render(box, ctx) {
       })));
   }
 
+  /** «Выбыли (N)»: отказ и «вышел» ушли с доски, но их последнюю отметку можно отменить (S16). */
+  function leftEl(funnel) {
+    const block = leftBlock(funnel.left, { userId, canApprove, canMove });
+    if (!block) return null;
+    return h("details.agentblock", h("summary", block.title),
+      h("div.cards", block.rows.map((row) => h("div.mini", { style: "cursor:default" },
+        h("a.open", { href: personHref(row.person.person_id), title: "Открыть досье" },
+          h("div.namewrap", face(row.person, { small: true }), h("b", personName(row.person))),
+          h("span", row.text)),
+        row.person.last_mark ? h("span.lastmark", lastMarkText(row.person.last_mark)) : null,
+        row.undo ? h("div.btns.tight", h("button.b.sm", { type: "button", "aria-label": `Отменить последнюю отметку: ${personName(row.person)}`,
+          onClick: () => openUndo(funnel, row.person) }, "Отменить последнюю отметку")) : null))));
+  }
+
   function noticeEl(funnel) {
     if (!notice) return null;
     const { text, undo, close } = notice;
@@ -244,7 +258,7 @@ export function render(box, ctx) {
       h("div", funnel.stages.map((s) => stageEl(funnel, s, total))),
       total === 0 ? h("p.hint", { style: "margin:10px 6px" },
         "В воронке пока никого: «Взять в работу» на «Сегодня», в «Досье» или в блоке «Отобраны агентом» ставит человека на этап «Отобранные резюме».") : null,
-      funnel.closed ? h("p.hint", { style: "margin:10px 6px" }, `Завершили путь по вакансии: ${funnel.closed} чел. (вышли на работу, отказ). В этапах они не показываются.`) : null,
+      leftEl(funnel),
       h("p.hint", { style: "margin:10px 6px" },
         "Этапы идут сверху вниз, ширина полосы — доля людей на этапе. «Итог этапа» записывает, прошёл человек этап, не прошёл или отказался: "
         + "назад и через этап перевести нельзя, карточку можно перетащить только на следующий этап. Ошибочную отметку отменяет её автор в тот же день "

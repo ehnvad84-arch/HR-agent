@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  canDropOn, canUndo, dayText, funnelTotals, isLastStage, lastMarkText, localIso, moscowDay, nextStage, personNote,
+  canDropOn, canUndo, dayText, funnelTotals, isLastStage, lastMarkText, leftBlock, localIso, moscowDay, nextStage, personNote,
   pickVacancy, stageIndex, stageSummary, undoToast, VIEWS, viewOf,
 } from "../../web/js/screens/funnel-model.js";
 
@@ -70,6 +70,23 @@ test("S16: подпись последней отметки — исход, кт
     /^Последняя отметка: прошёл · Иванова А. · (сегодня|вчера), \d{2}:\d{2}$/);   // «сегодня» или «вчера» — по часовому поясу машины
   assert.equal(lastMarkText({ by_name: null, at: "2026-11-20T09:05:00+03:00", outcome: "failed" }, now).startsWith("Последняя отметка: не прошёл"), true);
   assert.equal(lastMarkText(null, now), "");
+});
+
+test("S16: выбывшие с доски — блок «Выбыли (N)», исход и этап, отмена по тем же правилам", () => {
+  const now = new Date("2026-11-24T12:00:00+03:00");
+  const left = [
+    person(11, { stage: "Первичный контакт", last_mark: { by: 7, at: "2026-11-24T09:00:00+03:00", outcome: "refused", slot: 2, by_name: "Иванова А." } }),
+    person(12, { stage: "Пришедшие в 1 день", last_mark: { by: 7, at: "2026-11-23T09:00:00+03:00", outcome: "passed", slot: 8, by_name: "Иванова А." } }),
+  ];
+  const own = leftBlock(left, { userId: 7, canApprove: false, canMove: true, now });
+  assert.equal(own.title, "Выбыли (2)");
+  assert.deepEqual(own.rows.map((r) => [r.person.candidate_id, r.text, r.undo]),
+    [[11, "отказался · этап «Первичный контакт»", true], [12, "вышел на работу · этап «Пришедшие в 1 день»", false]]);   // вчерашняя — не своя
+  const head = leftBlock(left, { userId: 99, canApprove: true, canMove: true, now });
+  assert.deepEqual(head.rows.map((r) => r.undo), [true, true]);   // руководитель ОП — всегда
+  assert.deepEqual(leftBlock(left, { userId: 7, canApprove: true, canMove: false, now }).rows.map((r) => r.undo), [false, false]);   // без права отмечать — только чтение
+  assert.equal(leftBlock([], { userId: 7, canApprove: true, canMove: true, now }), null);
+  assert.equal(leftBlock(undefined, { userId: 7, canApprove: true, canMove: true, now }), null);
 });
 
 test("S16: после отмены — уведомление с названием этапа", () => {

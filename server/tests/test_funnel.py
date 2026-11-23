@@ -119,6 +119,33 @@ def test_s24_board_columns_by_slot_with_last_mark(conn, api, clock):
     assert c.get("/api/vacancy/999999/funnel").status_code == 404
 
 
+def test_s16_board_lists_left_people_with_last_mark(conn, api, clock):
+    """S16: отказ и «вышел» уводят человека с доски — он в блоке «Выбыли» с последней отметкой, её можно отменить."""
+    prof = profile(conn)
+    c, h, uid = api("recruiter")
+    vid = new_vacancy(conn, prof, uid)
+    cands = [db.val(conn, """INSERT INTO candidate (fio, retention_until)
+                             VALUES ('Вымышленный В. В.', current_date + 100) RETURNING id""") for _ in range(3)]
+    refused, hired, still = cands
+    for cid in cands:
+        stages.enter(conn, cid, vid, uid, clock.now())
+    stages.mark(conn, refused, vid, 1, "refused", uid, clock.now(), reason="conditions")
+    for slot in range(1, 9):
+        stages.mark(conn, hired, vid, slot, "passed", uid, clock.now())
+    f = c.get(f"/api/vacancy/{vid}/funnel").json()
+    left = {p["candidate_id"]: p for p in f["left"]}
+    assert set(left) == {refused, hired} and f["closed"] == 2
+    assert left[refused]["last_mark"]["outcome"] == "refused" and left[refused]["last_mark"]["by"] == uid
+    assert left[refused]["stage"] == "Отобранные резюме" and "name" in left[refused]
+    assert left[hired]["last_mark"]["outcome"] == "passed" and left[hired]["stage"] == "Пришедшие в 1 день"
+    assert still in [p["candidate_id"] for s in f["stages"] for p in s["people"]]
+    r = c.post(f"/api/vacancy/{vid}/candidate/{refused}/undo", json={"comment": "ошиблась кандидатом"}, headers=h)
+    assert r.status_code == 200
+    f = c.get(f"/api/vacancy/{vid}/funnel").json()
+    assert [p["candidate_id"] for p in f["left"]] == [hired]
+    assert refused in [p["candidate_id"] for p in f["stages"][0]["people"]]
+
+
 def test_board_without_set_shows_standard_stages(conn, api):
     prof = profile(conn)
     vid = db.val(conn, "INSERT INTO vacancy (role_profile_id, title) VALUES (%s, 'В') RETURNING id",   # как v1.2.0
