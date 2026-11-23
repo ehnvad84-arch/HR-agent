@@ -16,6 +16,7 @@ import { render as renderLogs } from "./logs.js";
 import { render as renderPerson } from "./person.js";
 import { render as renderProfiles } from "./profiles.js";
 import { render as renderSchema } from "./schema.js";
+import { render as renderStages } from "./stages-library.js";
 import { render as renderToday } from "./today.js";
 import { render as renderVacancies } from "./vacancies.js";
 
@@ -29,5 +30,6 @@ export const SCREENS = {
   logs: { title: "Журнал и отчёт", perm: "report.read", render: renderLogs },
   access: { title: "Доступ", perm: "invite.issue", render: renderAccess },   // специалисту — только «Выдать код» (права внутри экрана)
   funnel: { title: "Воронка", perm: "base.read", render: renderFunnel },
+  stages: { title: "Справочник этапов", perm: "base.read", render: renderStages },   // без вкладки: #/funnel/stages, подсвечена «Воронка»
   arch: { title: "Схема", perm: "base.read", render: renderSchema },
 };

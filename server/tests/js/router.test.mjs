@@ -26,6 +26,16 @@ test("воронка вакансии", () => {
   assert.deepEqual(parseHash("#/vacancy/7/funnel"), { name: "funnel", params: { id: "7" }, query: {} });
 });
 
+test("справочник этапов — #/funnel/stages (T13), отдельно от воронки вакансии и без вакансии", () => {
+  assert.deepEqual(parseHash("#/funnel/stages"), { name: "stages", params: {}, query: {} });
+  assert.equal(hashFor("stages"), "#/funnel/stages");
+  assert.deepEqual(parseHash("#/funnel"), { name: "funnel", params: {}, query: {} });
+  assert.equal(parseHash("#/funnel/other"), null);
+  assert.equal(parseHash("#/funnel/stages/1"), null);
+  assert.equal(SCREENS.stages.perm, "base.read");
+  assert.equal(TAB_ORDER.includes("stages"), false, "вкладки у справочника нет — подсвечена «Воронка»");
+});
+
 test("запрос в хэше: фильтры базы", () => {
   const r = parseHash("#/base?vacancy=3&q=%D0%B0+%D0%B1");
   assert.equal(r.name, "base");
@@ -54,7 +64,7 @@ test("hashFor и parseHash обратимы", () => {
 });
 
 test("у каждой вкладки есть экран с названием, правом и render()", () => {
-  assert.deepEqual(Object.keys(SCREENS).sort(), [...TAB_ORDER, "access", "person"].sort());   // «Доступ» — по праву; досье — экран без вкладки
+  assert.deepEqual(Object.keys(SCREENS).sort(), [...TAB_ORDER, "access", "person", "stages"].sort());   // «Доступ» — по праву; досье и справочник этапов — экраны без вкладки
   for (const [name, screen] of Object.entries(SCREENS)) {
     assert.ok(screen.title, name);
     assert.ok(screen.perm, name);

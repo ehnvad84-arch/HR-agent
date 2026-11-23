@@ -11,9 +11,11 @@ import {
   VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, pickVacancy, stageSummary, undoToast, viewOf,
 } from "./funnel-model.js";
 import { hintText, periodText } from "./funnel-report-model.js";
+import { render as renderHome } from "./funnel-home.js";
 import { renderPage as renderManagerPage } from "./manager-vacancies.js";
 import { markToast, closePrompt } from "./outcome-model.js";
 import { outcomeSheet, undoSheet } from "./outcome-sheet.js";
+import { pendingBadge } from "./stage-approvals-model.js";
 import { stagesTab } from "./stages-view.js";
 import { closeVacancy, togglePause } from "./vacancy-actions.js";
 import { closedText, openText, pauseLabel, stageChips } from "./vacancies-model.js";
@@ -43,6 +45,7 @@ export function render(box, ctx) {
   const { api, signal, session } = ctx;
   const id = ctx.params.id;
   if (id && !/^\d+$/.test(id)) return mount(box, notFound());
+  if (!id && ctx.session.can("stage.approve")) return renderHome(box, ctx);   // руководитель ОП: «Ждут утверждения» и вакансии (T13)
   const canMove = session.can("person.take");
   const canEdit = session.can("vacancy.edit");
   const canApprove = session.can("stage.approve");
@@ -53,6 +56,7 @@ export function render(box, ctx) {
   let dragged = null;
   let notice = null;   // {text, undo: person|null, close: bool}: итог последнего действия на доске
   let reasonsPromise = null;
+  const carry = { items: null };   // отозванный набор: рекрутер может поправить его и предложить снова (S3)
   const status = errorLine();
 
   const loadFunnel = async () => {
@@ -86,6 +90,7 @@ export function render(box, ctx) {
   const refresh = async () => {
     try {
       lists = await api.get("/api/vacancies", { signal });
+      if (canApprove) ctx.setBadge("funnel", pendingBadge(lists));   // решение по набору меняет счётчик на вкладке
       const funnel = await loadFunnel();
       if (signal.aborted) return;
       mount(box, funnel ? screen(funnel) : notFound());
@@ -262,7 +267,7 @@ export function render(box, ctx) {
   ];
 
   /** Содержимое вкладки; Promise-загрузка и разметка. preloaded — уже загруженная доска. */
-  function panelFor(name, funnel) {
+  function panelFor(name, funnel, vacancy) {
     if (name === "report") {
       return { load: async () => {
         try {
@@ -276,7 +281,12 @@ export function render(box, ctx) {
         : emptyCard("Отчёт этой вакансии видит ответственный рекрутер и руководитель отдела персонала")) };
     }
     if (name === "stages") {
-      return { load: () => api.get(`/api/vacancy/${encodeURIComponent(vacancyId)}/stage-sets`, { signal }), render: stagesTab };
+      const stageEnv = { api, signal, vacancy, canEdit, canApprove, carry, refresh };
+      return { load: async () => {
+        const [sets, library] = await Promise.all([api.get(`/api/vacancy/${encodeURIComponent(vacancyId)}/stage-sets`, { signal }),
+          api.get("/api/stages", { signal })]);
+        return { sets, library };
+      }, render: (data) => stagesTab(data, stageEnv) };
     }
     return { load: async () => funnel || loadFunnel(), render: (data) => (data ? board(data) : notFound()) };
   }
@@ -307,7 +317,7 @@ export function render(box, ctx) {
       }
       if (focus) tabs.get(name).focus();
       window.history.replaceState(null, "", hashFor("funnel", { id: vacancy.id }, name === "candidates" ? {} : { view: name }));   // адрес показывает вкладку
-      const content = panelFor(name, name === "candidates" ? preloaded : null);
+      const content = panelFor(name, name === "candidates" ? preloaded : null, vacancy);
       preloaded = null;
       mountAsync(panel, content.load, content.render, { signal });
     };

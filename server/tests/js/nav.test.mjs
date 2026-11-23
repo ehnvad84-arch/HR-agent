@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { SCREENS } from "../../web/js/screens/index.js";
 import {
-  NO_ACCESS_TEXT, NO_UNIT_TEXT, ROLE_TITLES, activeTab, hasFullBase, headerLine, isCabinet, navFor, noUnit,
+  NO_ACCESS_TEXT, NO_UNIT_TEXT, ROLE_TITLES, activeTab, hasFullBase, headerLine, isCabinet, navFor, noUnit, remembersObject,
 } from "../../web/js/nav-model.js";
 
 const user = (role, extra = {}) => ({ id: 1, login: "x", full_name: "Иванов И. И.", role, ...extra });
@@ -63,6 +63,8 @@ test("досье и воронка у руководителя — без вкл
   assert.equal(activeTab("person", staff), "base");
   assert.equal(activeTab("funnel", staff), "funnel");
   assert.equal(activeTab("access", staff), null);   // вкладки нет
+  assert.equal(activeTab("stages", staff), "funnel");   // справочник этапов — внутри «Воронки»
+  assert.equal(activeTab("stages", cabinet), null);
 });
 
 test("шапка: подразделение руководителя и «Вся компания» у директора", () => {
@@ -108,4 +110,11 @@ test("кабинет — руководитель подразделения и 
   assert.equal(isCabinet(user("recruiter")), false);
   assert.equal(isCabinet(user("head_recruiter")), false);
   assert.equal(isCabinet(null), false);
+});
+
+test("T13: вкладка «Воронка» у руководителя ОП открывает свою страницу, а не последнюю вакансию; у остальных — как раньше", () => {
+  assert.equal(remembersObject("funnel", can("stage.approve")), false);
+  assert.equal(remembersObject("funnel", can("vacancy.edit")), true);
+  assert.equal(remembersObject("person", can("stage.approve")), true);
+  assert.equal(remembersObject("base", can("stage.approve")), false);
 });
