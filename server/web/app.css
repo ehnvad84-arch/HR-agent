@@ -707,3 +707,19 @@ table.funnel .fexp:hover{text-decoration:underline}
 .sheet .optrow{display:flex;gap:10px;align-items:flex-start}
 .sheet .optrow input{width:auto;margin-top:3px}
 .sheet .optrow label{font-size:14.5px;color:var(--ink);margin:0;cursor:pointer}
+/* funnel-report T14: отчёт рекрутера и отдела на «Воронке» */
+.filters2{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.filters2 .field{min-width:150px}
+.filters2 .btns{align-self:flex-end}
+.vlist{display:grid;gap:8px}
+details.vblock{background:var(--card);border-radius:14px;padding:4px 14px}
+details.vblock>summary{padding:10px 0;font-weight:600}
+details.vblock .vbody{padding:0 0 12px}
+details.vblock .vbody .tablewrap{margin:8px 0}
+table.compare td.n,table.compare tfoot th{vertical-align:top}
+table.compare .pct{display:block}
+table.compare .of{display:block;font-size:12px;color:var(--muted)}
+table.compare td.out{color:var(--muted)}
+table.compare tfoot th{text-align:left;font-weight:700;position:sticky;left:0;background:var(--card)}
+table.compare tfoot td.total{font-weight:700}
+@media (max-width:720px){.filters2{flex-direction:column;align-items:stretch}.filters2 .field{min-width:0}}

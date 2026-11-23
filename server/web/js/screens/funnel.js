@@ -8,10 +8,11 @@ import { chip, face, personHref, personName } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
 import {
-  VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, pickVacancy, stageSummary, undoToast, viewOf,
+  VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, stageSummary, undoToast, viewOf,
 } from "./funnel-model.js";
 import { hintText, periodText } from "./funnel-report-model.js";
 import { render as renderHome } from "./funnel-home.js";
+import { render as renderOverview } from "./funnel-overview.js";
 import { renderPage as renderManagerPage } from "./manager-vacancies.js";
 import { markToast, closePrompt } from "./outcome-model.js";
 import { outcomeSheet, undoSheet } from "./outcome-sheet.js";
@@ -45,12 +46,12 @@ export function render(box, ctx) {
   const { api, signal, session } = ctx;
   const id = ctx.params.id;
   if (id && !/^\d+$/.test(id)) return mount(box, notFound());
-  if (!id && ctx.session.can("stage.approve")) return renderHome(box, ctx);   // руководитель ОП: «Ждут утверждения» и вакансии (T13)
+  if (!id) return ctx.session.can("stage.approve") ? renderHome(box, ctx) : renderOverview(box, ctx);   // без вакансии — отчёт за год (T14); у руководителя ОП ещё «Ждут утверждения» (T13)
   const canMove = session.can("person.take");
   const canEdit = session.can("vacancy.edit");
   const canApprove = session.can("stage.approve");
   const userId = session.user && session.user.id;
-  let vacancyId = id;
+  const vacancyId = id;
   let view = viewOf(ctx.query);
   let lists = { open: [], closed: [] };
   let dragged = null;
@@ -69,13 +70,6 @@ export function render(box, ctx) {
   };
   const load = async () => {
     lists = await api.get("/api/vacancies", { signal });
-    if (!vacancyId) {
-      const first = pickVacancy(lists.open);
-      if (!first) return { none: true };
-      vacancyId = String(first.id);
-      ctx.go("funnel", { id: vacancyId }, {}, { replace: true });   // адрес показывает, какая вакансия открыта; экран перерисуется
-      return { redirect: true };
-    }
     return { funnel: await loadFunnel() };
   };
   /** Причины исхода — из справочника (GET /api/stages), один раз за экран. */
@@ -351,10 +345,6 @@ export function render(box, ctx) {
   }
 
   return mountAsync(box, load, (data) => {
-    if (data.redirect) return null;
-    if (data.none) {
-      return emptyCard("Открытых вакансий нет", h("a.link", { href: "#/vacancies" }, "Перейти к «Вакансиям»"));
-    }
     return data.funnel ? screen(data.funnel) : notFound();
   }, { signal });
 }

@@ -112,9 +112,9 @@ test("кабинет — руководитель подразделения и 
   assert.equal(isCabinet(null), false);
 });
 
-test("T13: вкладка «Воронка» у руководителя ОП открывает свою страницу, а не последнюю вакансию; у остальных — как раньше", () => {
+test("T14: вкладка «Воронка» всегда открывает отчёт (без вакансии), «Досье» помнит человека", () => {
   assert.equal(remembersObject("funnel", can("stage.approve")), false);
-  assert.equal(remembersObject("funnel", can("vacancy.edit")), true);
+  assert.equal(remembersObject("funnel", can("vacancy.edit")), false);   // отчёт рекрутера — не последняя вакансия: к вакансии ведёт «Открыть»
   assert.equal(remembersObject("person", can("stage.approve")), true);
   assert.equal(remembersObject("base", can("stage.approve")), false);
 });

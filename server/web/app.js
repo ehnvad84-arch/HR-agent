@@ -33,7 +33,7 @@ function buildNav() {
   nav = navFor(session.user, (permission) => session.can(permission));
   tabs = buildTabs($("#tabs"), { ...titles, ...nav.titles }, {
     order: nav.tabs,
-    onSelect: (name) => router && router.go(name, (remembersObject(name, (p) => session.can(p)) && lastParams[name]) || {}),
+    onSelect: (name) => router && router.go(name, (remembersObject(name) && lastParams[name]) || {}),
   });
   const line = headerLine(session.user, session.scope);
   el.unit.textContent = line;
