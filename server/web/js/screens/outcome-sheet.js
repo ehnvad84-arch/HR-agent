@@ -7,14 +7,14 @@ import { errorLine, field, sheet } from "../ui.js";
 import { buildMark, OTHER_MIN, otherCounter, outcomeForm, reasonGroups } from "./outcome-model.js";
 
 /**
- * Окно «Итог этапа». stages — колонки доски; reasons — GET /api/stages → reasons; preselect — «passed» при перетаскивании.
+ * Окно «Итог этапа». stages — колонки доски; reasons и min — GET /api/stages → reasons и other_min; preselect — «passed» при перетаскивании.
  * Возвращает Promise<{saved, outcome, name, nextTitle, offerClose}>.
  */
-export function outcomeSheet({ api, signal, vacancyId, person, slot, stages, reasons, hiringManager = "", preselect = "" }) {
+export function outcomeSheet({ api, signal, vacancyId, person, slot, stages, reasons, min = OTHER_MIN, hiringManager = "", preselect = "" }) {
   const form = outcomeForm({ stages, slot, hiringManager });
   const name = personName(person);
   const win = sheet({ title: `Итог этапа: ${name}`, width: "480px" });
-  let limit = OTHER_MIN;
+  let limit = min;
 
   const lead = h("div.t2", { style: "margin:0 0 10px" }, [form.stage ? form.stage.title : "", form.resolution].filter(Boolean).join(" · "));
 

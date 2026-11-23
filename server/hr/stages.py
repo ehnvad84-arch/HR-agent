@@ -63,7 +63,7 @@ def _people(n: int) -> str:
 # ------------------------------------------------------------------ библиотека (S1)
 
 def library(conn: psycopg.Connection) -> dict:
-    """Строки отчёта, этапы (в скольких действующих наборах вакансий) и причины исхода."""
+    """Строки отчёта, этапы (в скольких действующих наборах вакансий), причины исхода и порог комментария «Другое»."""
     return {
         "rows": rows(conn, "SELECT code, ord, title FROM ops.funnel_row ORDER BY ord"),
         "stages": rows(conn, """
@@ -76,6 +76,7 @@ def library(conn: psycopg.Connection) -> dict:
             ORDER BY r.ord, NOT s.is_standard, s.title"""),
         "reasons": rows(conn, """SELECT code, title, outcome, only_row, needs_comment FROM ops.fail_reason
                                  ORDER BY ord"""),
+        "other_min": int(setting(conn, "stage_fail_other_min", 100)),   # порог «Другое» — окну, как в _reason
     }
 
 

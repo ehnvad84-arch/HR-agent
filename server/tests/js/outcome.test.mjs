@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  OTHER_MIN, buildMark, closePrompt, markToast, meetingNext, otherCounter, outcomeForm, reasonGroups,
+  OTHER_MIN, buildMark, closePrompt, markToast, meetingNext, otherCounter, otherMin, outcomeForm, reasonGroups,
 } from "../../web/js/screens/outcome-model.js";
 
 const STAGES = [
@@ -127,4 +127,12 @@ test("S7: счётчик «Другое» — «0 из 100 знаков», по 
   assert.equal(otherCounter(""), "0 из 100 знаков");
   assert.equal(otherCounter("  привет  "), "6 из 100 знаков");
   assert.equal(otherCounter("а".repeat(120), 150), "120 из 150 знаков");
+});
+
+test("S7: порог «Другое» — из справочника сервера (settings.stage_fail_other_min), без него — по умолчанию", () => {
+  assert.equal(otherMin({ other_min: 150, reasons: [] }), 150);
+  assert.equal(otherMin({ other_min: 0 }), 0);
+  assert.equal(otherMin({ reasons: [] }), OTHER_MIN);
+  assert.equal(otherMin({ other_min: "много" }), OTHER_MIN);
+  assert.equal(otherMin(null), OTHER_MIN);
 });

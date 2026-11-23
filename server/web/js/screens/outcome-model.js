@@ -4,8 +4,14 @@ import { countChars } from "../decisions-model.js";
 import { plural } from "../format.js";
 import { localIso, nextStage } from "./funnel-model.js";
 
-/** Порог комментария «Другое» по умолчанию (settings.stage_fail_other_min); сервер строже — его число берётся из ошибки 422. */
+/** Порог комментария «Другое», пока справочник не загружен; рабочий — otherMin(GET /api/stages) из settings.stage_fail_other_min. */
 export const OTHER_MIN = 100;
+
+/** Порог «Другое» из справочника сервера (GET /api/stages → other_min); нет числа — по умолчанию. */
+export function otherMin(library) {
+  const value = library ? library.other_min : undefined;
+  return Number.isInteger(value) && value >= 0 ? value : OTHER_MIN;
+}
 
 /** Строки отчёта, после которых человека ждёт встреча: спрашиваем дату и время (необязательно). */
 const MEETING_ROWS = new Set(["screening", "interview", "meeting"]);

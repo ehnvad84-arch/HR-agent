@@ -68,6 +68,14 @@ def test_s1_library_read_and_head_adds_stage(conn, api):
     assert bad.status_code == 422 and bad.json()["error"] == "validation"
 
 
+def test_s7_other_min_in_library_from_settings(conn, api):
+    """Порог комментария «Другое» окна берут из справочника: настройку поменяли — окно и сервер не расходятся."""
+    r, _, _ = api("recruiter")
+    assert r.get("/api/stages").json()["other_min"] == 100
+    db.run(conn, "UPDATE settings SET value = '150' WHERE key = 'stage_fail_other_min'")
+    assert r.get("/api/stages").json()["other_min"] == 150
+
+
 def test_s1_retire_stage(conn, api):
     head, hh, _ = api("head_recruiter")
     extra = sid(conn, "Тестовое задание")

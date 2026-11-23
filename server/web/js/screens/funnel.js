@@ -14,7 +14,7 @@ import { hintText, periodText } from "./funnel-report-model.js";
 import { render as renderHome } from "./funnel-home.js";
 import { render as renderOverview } from "./funnel-overview.js";
 import { renderPage as renderManagerPage } from "./manager-vacancies.js";
-import { markToast, closePrompt } from "./outcome-model.js";
+import { markToast, closePrompt, otherMin } from "./outcome-model.js";
 import { outcomeSheet, undoSheet } from "./outcome-sheet.js";
 import { pendingBadge } from "./stage-approvals-model.js";
 import { stagesTab } from "./stages-view.js";
@@ -72,10 +72,11 @@ export function render(box, ctx) {
     lists = await api.get("/api/vacancies", { signal });
     return { funnel: await loadFunnel() };
   };
-  /** Причины исхода — из справочника (GET /api/stages), один раз за экран. */
+  /** Причины исхода и порог «Другое» — из справочника (GET /api/stages), один раз за экран. */
   const reasons = () => {
     if (!reasonsPromise) {
-      reasonsPromise = api.get("/api/stages", { signal }).then((lib) => lib.reasons || []).catch((error) => { reasonsPromise = null; throw error; });
+      reasonsPromise = api.get("/api/stages", { signal }).then((lib) => ({ list: lib.reasons || [], min: otherMin(lib) }))
+        .catch((error) => { reasonsPromise = null; throw error; });
     }
     return reasonsPromise;
   };
@@ -99,16 +100,16 @@ export function render(box, ctx) {
   const openOutcome = async (funnel, person, slot, preselect) => {
     status.clear();
     notice = null;
-    let list;
+    let lib;
     try {
-      list = await reasons();
+      lib = await reasons();
     } catch (error) {
       if (error && error.name === "AbortError") return;
       status.show(error);
       return;
     }
     const item = [...lists.open, ...lists.closed].find((v) => v.id === funnel.vacancy.id);
-    const result = await outcomeSheet({ api, signal, vacancyId: funnel.vacancy.id, person, slot, stages: funnel.stages, reasons: list,
+    const result = await outcomeSheet({ api, signal, vacancyId: funnel.vacancy.id, person, slot, stages: funnel.stages, reasons: lib.list, min: lib.min,
       hiringManager: item && item.hiring_manager ? item.hiring_manager : "", preselect });
     if (!result.saved) return;
     const name = personName(person);

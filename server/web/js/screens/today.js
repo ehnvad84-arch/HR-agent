@@ -15,7 +15,7 @@ import { isCabinet } from "../nav-model.js";
 import { chip, face, myScoreChip, personHref, personName, scoreBadge, summaryBlock } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
-import { OTHER_MIN, otherCounter, reasonGroups } from "./outcome-model.js";
+import { otherCounter, otherMin, reasonGroups } from "./outcome-model.js";
 import { buildStalledClose, closeTargets, normalizeToday, reserveOption } from "./today-model.js";
 import {
   EMPTY_SIGNALS, EMPTY_VACANCIES, NO_HANDOFFS, customerLine, hrLine, managerBadge, matchingLabel, normalizeManagerToday, vacancyMeta, zoneTitles,
@@ -153,13 +153,14 @@ async function closeSheet(row, card, env) {
     card.status.show(error);
     return;
   }
+  const min = otherMin(library);   // порог «Другое» — как у сервера (settings)
   const win = sheet({ title: "Закрыть: отказ кандидата", hint: "Отметьте причину — она сохранится в истории кандидата и попадёт в отчёт воронки.", width: "480px" });
   const targetId = uid("target");
   const target = h("select", { id: targetId }, targets.map((t) => h("option", { value: t.value }, t.label)));
   const reasonId = uid("reason");
   const reason = h("select", { id: reasonId });
   const comment = field({ label: "Комментарий (необязательно)", kind: "textarea", name: "comment" });
-  const counter = h("span.counter.bad", { hidden: true }, otherCounter("", OTHER_MIN));
+  const counter = h("span.counter.bad", { hidden: true }, otherCounter("", min));
   const status = errorLine();
   const save = h("button.b.danger", { type: "submit" }, "Закрыть кандидатство");
   const picked = () => targets.find((t) => t.value === target.value) || null;
@@ -173,9 +174,9 @@ async function closeSheet(row, card, env) {
   const sync = () => {
     const other = reason.value === "other";
     counter.hidden = !other;
-    counter.textContent = otherCounter(comment.input.value, OTHER_MIN);
-    counter.classList.toggle("bad", countChars(comment.input.value) < OTHER_MIN);
-    comment.root.querySelector("label").textContent = other ? `Комментарий (обязательно, от ${OTHER_MIN} знаков)` : "Комментарий (необязательно)";
+    counter.textContent = otherCounter(comment.input.value, min);
+    counter.classList.toggle("bad", countChars(comment.input.value) < min);
+    comment.root.querySelector("label").textContent = other ? `Комментарий (обязательно, от ${min} знаков)` : "Комментарий (необязательно)";
   };
   target.addEventListener("change", () => { fill(); sync(); });
   reason.addEventListener("change", sync);
@@ -189,7 +190,7 @@ async function closeSheet(row, card, env) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     status.clear();
-    const built = buildStalledClose({ target: picked(), reason: reason.value, comment: comment.input.value });
+    const built = buildStalledClose({ target: picked(), reason: reason.value, comment: comment.input.value, min });
     if (!built.ok) { status.show(built.error); return; }
     save.disabled = true;
     try {
