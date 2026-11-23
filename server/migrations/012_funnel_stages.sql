@@ -131,6 +131,82 @@ CREATE TABLE IF NOT EXISTS ops.vacancy_pause (
     EXCLUDE USING btree (vacancy_id WITH =) WHERE (to_date IS NULL)
 );
 
+-- ------------------------------------------------------------- перенос (S15)
+
+-- Учёт с чистого листа: вакансиям open|on_hold без набора — утверждённый v1 из 8 стандартных этапов; открытым парам
+-- кандидат×вакансия без отметок — отметка carried на этапе строки по статусу кандидата. Кандидат в нескольких
+-- вакансиях: статус — в вакансию с последней связью, в остальные открытые — «Отобранные резюме». Строки нет в наборе —
+-- ближайший этап до неё. new, reserve и закрытые статусы не переносятся. Повтор ничего не меняет.
+-- Вызывают эта миграция и python -m hr.cli funnel-carry (возврат на v1.3.0 после отката).
+CREATE OR REPLACE FUNCTION ops.funnel_carry() RETURNS TABLE (sets integer, marks integer)
+LANGUAGE plpgsql AS $$
+DECLARE
+    n_sets  integer;
+    n_marks integer;
+BEGIN
+    WITH todo AS (
+        SELECT v.id FROM vacancy v
+        WHERE v.state IN ('open', 'on_hold')
+          AND NOT EXISTS (SELECT 1 FROM ops.stage_set ss WHERE ss.vacancy_id = v.id)
+        ORDER BY v.id
+    ), new_set AS (
+        INSERT INTO ops.stage_set (vacancy_id, version, state, note, decided_at)
+        SELECT id, 1, 'approved', 'стандартный набор при переходе на v1.3.0', now() FROM todo
+        RETURNING id
+    ), new_item AS (
+        INSERT INTO ops.stage_set_item (set_id, pos, slot, stage_id)
+        SELECT ns.id, r.ord, r.ord, st.id
+        FROM new_set ns CROSS JOIN ops.funnel_row r
+        JOIN ops.stage st ON st.report_row = r.code AND st.is_standard
+        RETURNING 1
+    )                                                    -- изменяющие CTE выполняются целиком и без ссылки на них
+    SELECT count(*) INTO n_sets FROM new_set;
+
+    WITH status_row (status, code) AS (VALUES
+        ('picked_by_agent', 'selected'), ('first_message_sent', 'contact'), ('replied', 'contact'),
+        ('phone_interview', 'screening'), ('manager_interview', 'meeting'), ('test_task', 'meeting'),
+        ('security_check', 'security'), ('offer', 'offer')
+    ), latest AS (
+        SELECT DISTINCT ON (candidate_id) candidate_id, vacancy_id
+        FROM ops.candidate_vacancy ORDER BY candidate_id, added_at DESC, vacancy_id DESC
+    ), pair AS (
+        SELECT cv.candidate_id, cv.vacancy_id,
+               CASE WHEN l.vacancy_id = cv.vacancy_id THEN sr.code ELSE 'selected' END AS want
+        FROM ops.candidate_vacancy cv
+        JOIN candidate c ON c.id = cv.candidate_id
+        JOIN status_row sr ON sr.status = c.status::text
+        JOIN vacancy v ON v.id = cv.vacancy_id AND v.state IN ('open', 'on_hold')
+        JOIN latest l ON l.candidate_id = cv.candidate_id
+        WHERE NOT EXISTS (SELECT 1 FROM ops.candidate_stage cs
+                          WHERE cs.candidate_id = cv.candidate_id AND cs.vacancy_id = cv.vacancy_id
+                            AND cs.cancelled_at IS NULL)
+    ), cur_set AS (
+        SELECT DISTINCT ON (vacancy_id) vacancy_id, id
+        FROM ops.stage_set WHERE state = 'approved' ORDER BY vacancy_id, version DESC
+    ), target AS (
+        SELECT DISTINCT ON (p.candidate_id, p.vacancy_id)
+               p.candidate_id, p.vacancy_id, i.slot, i.stage_id, st.report_row
+        FROM pair p
+        JOIN cur_set s ON s.vacancy_id = p.vacancy_id
+        JOIN ops.stage_set_item i ON i.set_id = s.id
+        JOIN ops.stage st ON st.id = i.stage_id
+        JOIN ops.funnel_row have ON have.code = st.report_row
+        JOIN ops.funnel_row want ON want.code = p.want
+        WHERE have.ord <= want.ord
+        ORDER BY p.candidate_id, p.vacancy_id, have.ord DESC, i.pos
+    ), new_mark AS (
+        INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row, carried)
+        SELECT candidate_id, vacancy_id, slot, stage_id, report_row, true FROM target
+        RETURNING 1
+    )
+    SELECT count(*) INTO n_marks FROM new_mark;
+
+    RETURN QUERY SELECT n_sets, n_marks;
+END;
+$$;
+
+SELECT ops.funnel_carry();
+
 -- ------------------------------------------------------------- права
 
 -- Утверждать наборы этапов и править библиотеку — руководитель ОП (решение 23.11)

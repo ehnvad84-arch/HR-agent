@@ -56,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
     ss.add_argument("value", help="JSON: false, 300, \"06:30\"; не JSON — строка как есть")
     ss.add_argument("--by", required=True, help="логин того, кто меняет")
     sub.add_parser("reembed", help="пересчитать векторы поиска по смыслу текущим способом")
+    sub.add_parser("funnel-carry", help="перенести открытых кандидатов на этапы вакансий (после возврата на v1.3.0;"
+                                        " повтор ничего не меняет)")
     from .tasks import TASKS
     run_p = sub.add_parser("run", help="запустить фоновую задачу вручную")
     run_p.add_argument("task", choices=sorted(TASKS))
@@ -174,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "reembed":
         from . import search
         print(f"пересчитано векторов: {search.reembed(db.tx).changed}")
+    elif args.cmd == "funnel-carry":
+        with db.tx() as conn:
+            r = db.one(conn, "SELECT * FROM ops.funnel_carry()")
+        print(f"перенесено: наборов этапов: {r['sets']}, отметок: {r['marks']}")
     return 0
 
 
