@@ -2,6 +2,8 @@
 
 Закрытие — с комментарием не короче decision_comment_min (проверку дублирует СУБД, схема:527);
 keep_sourcing не трогается: наблюдение по должности продолжается (пункт 24).
+Пауза (funnel-report S14): дни паузы и время закрытия до «Открыть заново» — в ops.vacancy_pause, в срок ведения
+не входят; день — по Москве.
 """
 from __future__ import annotations
 
@@ -11,6 +13,8 @@ import psycopg
 
 from . import stages
 from .db import j, one, rows, run, setting, val
+
+MSK = stages.MSK
 
 
 class Conflict(RuntimeError):
@@ -121,13 +125,46 @@ def close(conn: psycopg.Connection, vacancy_id: int, comment: str, user_id: int,
         raise Conflict("вакансия уже закрыта")
     run(conn, """UPDATE vacancy SET state = 'closed', close_comment = %s, closed_by = %s, closed_at = %s
                  WHERE id = %s""", (comment.strip(), user_id, now.date(), vacancy_id))
+    run(conn, """UPDATE ops.vacancy_pause SET to_date = GREATEST(from_date, %s)
+                 WHERE vacancy_id = %s AND to_date IS NULL""", (now.date(), vacancy_id))   # S14: пауза — до закрытия
     return "closed"
+
+
+def _audit(conn, user_id: int, vacancy_id: int, detail: dict, now: datetime) -> None:
+    run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
+                 VALUES (%s, 'edit', 'vacancy', %s, %s, %s)""", (user_id, vacancy_id, j(detail), now))
+
+
+def pause(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetime, comment: str | None = None) -> str:
+    """S14: «Поставить на паузу» — только открытую; новых людей вакансия не берёт, итоги этапов отмечать можно."""
+    if _vacancy(conn, vacancy_id)["state"] != "open":
+        raise Conflict("на паузу ставится только открытая вакансия")
+    run(conn, "UPDATE vacancy SET state = 'on_hold' WHERE id = %s", (vacancy_id,))
+    run(conn, """INSERT INTO ops.vacancy_pause (vacancy_id, from_date, kind, by, comment)
+                 VALUES (%s, %s, 'pause', %s, %s)""",
+        (vacancy_id, now.astimezone(MSK).date(), user_id, (comment or "").strip() or None))
+    _audit(conn, user_id, vacancy_id, {"pause": True}, now)
+    return "on_hold"
+
+
+def resume(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetime) -> str:
+    """S14: «Снять с паузы» — пауза закрывается сегодняшним днём по Москве."""
+    if _vacancy(conn, vacancy_id)["state"] != "on_hold":
+        raise Conflict("вакансия не на паузе")
+    run(conn, "UPDATE vacancy SET state = 'open' WHERE id = %s", (vacancy_id,))
+    run(conn, """UPDATE ops.vacancy_pause SET to_date = GREATEST(from_date, %s)
+                 WHERE vacancy_id = %s AND to_date IS NULL""", (now.astimezone(MSK).date(), vacancy_id))
+    _audit(conn, user_id, vacancy_id, {"resume": True}, now)
+    return "open"
 
 
 def reopen(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetime) -> str:
     if _vacancy(conn, vacancy_id)["state"] in ("open", "on_hold"):
         raise Conflict("вакансия уже открыта")
+    # S14: время закрытия в срок ведения не входит — пауза closed_gap от даты закрытия до сегодня
+    run(conn, """INSERT INTO ops.vacancy_pause (vacancy_id, from_date, to_date, kind, by)
+                 SELECT id, closed_at, GREATEST(closed_at, %s), 'closed_gap', %s FROM vacancy
+                 WHERE id = %s AND closed_at IS NOT NULL""", (now.astimezone(MSK).date(), user_id, vacancy_id))
     run(conn, "UPDATE vacancy SET state = 'open', closed_at = NULL, closed_by = NULL WHERE id = %s", (vacancy_id,))
-    run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
-                 VALUES (%s, 'edit', 'vacancy', %s, %s, %s)""", (user_id, vacancy_id, j({"reopen": True}), now))
+    _audit(conn, user_id, vacancy_id, {"reopen": True}, now)
     return "open"
