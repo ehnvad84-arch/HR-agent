@@ -16,7 +16,7 @@ import { chip, face, myScoreChip, personHref, personName, scoreBadge, summaryBlo
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
 import { OTHER_MIN, otherCounter, reasonGroups } from "./outcome-model.js";
-import { buildStalledClose, closeTargets, normalizeToday } from "./today-model.js";
+import { buildStalledClose, closeTargets, normalizeToday, reserveOption } from "./today-model.js";
 import {
   EMPTY_SIGNALS, EMPTY_VACANCIES, NO_HANDOFFS, customerLine, hrLine, managerBadge, matchingLabel, normalizeManagerToday, vacancyMeta, zoneTitles,
 } from "./manager-model.js";
@@ -219,11 +219,13 @@ function stalledCard(row, env) {
       toast("Черновик напоминания в очереди");
       if (!(await env.refresh())) card.busy(false);
     }));
-  const card = actionCard(({ btns, status }) => [nameLine(row), h("div.t2", silentText(row.status, row.days_silent)), btns, status], [
+  const reserve = reserveOption(row);
+  const card = actionCard(({ btns, status }) => [nameLine(row), h("div.t2", silentText(row.status, row.days_silent)), btns,
+    reserve.hint ? h("p.hint", { style: "margin:6px 0 0" }, reserve.hint) : null, status], [
     remind,
-    actBtn("", "В резерв", () => perform(card,
+    reserve.show ? actBtn("", "В резерв", () => perform(card,
       () => env.api.post(`/api/candidate/${id}/status`, { to_status: "reserve" }, { signal: env.signal }),
-      () => { card.finish("Перенесён в резерв"); toast("Перенесён в резерв"); })),
+      () => { card.finish("Перенесён в резерв"); toast("Перенесён в резерв"); })) : null,
     actBtn("danger", "Закрыть", () => closeSheet(row, card, env)),
   ]);
   if (env.followUpQueued.has(row.candidate_id)) {   // второй черновик подряд не нужен

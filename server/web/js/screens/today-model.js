@@ -29,6 +29,15 @@ export function closeTargets(row) {
   }));
 }
 
+/**
+ * «В резерв» у зависшего: сервер переводит в резерв только человека без открытого этапа (иначе 409 use_stages).
+ * С открытым этапом кнопки нет — подсказка ведёт к «Закрыть».
+ */
+export function reserveOption(row) {
+  return closeTargets(row).length ? { show: false, hint: "В резерв — после итога этапа: сначала «Закрыть» и отметьте причину" }
+    : { show: true, hint: "" };
+}
+
 /** Поля окна → вакансия и тело POST …/mark: «Отказался» с причиной (по умолчанию «Не вышел на связь» подбирает окно). */
 export function buildStalledClose({ target, reason, comment = "", min }) {
   if (!target) return { ok: false, error: "У человека нет открытого этапа" };

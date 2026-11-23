@@ -105,7 +105,7 @@ test("S11: передачи руководителей — на бейдже в�
 
 // ------------------------------------------------------------------ funnel-report T12: «Закрыть» зависшего — через итог этапа
 
-import { buildStalledClose, closeTargets } from "../../web/js/screens/today-model.js";
+import { buildStalledClose, closeTargets, reserveOption } from "../../web/js/screens/today-model.js";
 
 const STALLED = { candidate_id: 5, stages: [
   { vacancy_id: 3, vacancy_title: "Инженер-электронщик", slot: 4, report_row: "interview", stage: "Интервью" },
@@ -125,4 +125,11 @@ test("S7: «Закрыть» — отказ кандидата с причино
   assert.equal(buildStalledClose({ target: targets[0], reason: "", comment: "" }).error, "Выберите причину");
   assert.equal(buildStalledClose({ target: targets[0], reason: "other", comment: "коротко" }).ok, false);
   assert.equal(buildStalledClose({ target: null, reason: "no_contact" }).error, "У человека нет открытого этапа");
+});
+
+test("«В резерв» у зависшего — только без открытого этапа; с этапом — подсказка «сначала „Закрыть“»", () => {
+  assert.deepEqual(reserveOption(STALLED), { show: false,
+    hint: "В резерв — после итога этапа: сначала «Закрыть» и отметьте причину" });
+  assert.deepEqual(reserveOption({ candidate_id: 5, stages: [] }), { show: true, hint: "" });
+  assert.deepEqual(reserveOption({ candidate_id: 5 }), { show: true, hint: "" });
 });
