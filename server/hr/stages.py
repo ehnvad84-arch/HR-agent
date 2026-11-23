@@ -473,7 +473,8 @@ def undo(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: 
          comment: str) -> dict:
     """S16: отмена последней по decided_at отметки пары. Свою — в тот же день по Москве; чужую и позже — только
     с правом stage.approve (руководитель ОП). Отметка и открытая после неё помечаются отменёнными (не удаляются),
-    этап снова открыт копией с прежним входом, статус пересчитан, отмена — в audit_log."""
+    этап снова открыт копией с прежним входом (этап убран из набора — первый непройденный той же строки, строки нет —
+    409 stage_removed), статус пересчитан, отмена — в audit_log."""
     comment = (comment or "").strip()
     v = one(conn, "SELECT id, state FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
     if not v or not val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
@@ -496,23 +497,41 @@ def undo(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: 
         raise Forbidden("undo_expired", "Отменить может руководитель ОП")
     opened = _open(conn, candidate_id, vacancy_id)
     ids = [last["id"]] + ([opened["id"]] if opened else [])
+    st = current_set(conn, vacancy_id)
+    title = _stage_title(conn, last["stage_id"], st["id"] if st else None, last["slot"])
+    back = _undo_target(conn, candidate_id, vacancy_id, last, ids, st, title)
     run(conn, """UPDATE ops.candidate_stage SET cancelled_by = %s, cancelled_at = %s, cancel_comment = %s
                  WHERE id = ANY(%s)""", (user_id, now, comment, ids))
     run(conn, """INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row, entered_by,
                                                   entered_at, carried)
                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-        (candidate_id, vacancy_id, last["slot"], last["stage_id"], last["report_row"], last["entered_by"],
+        (candidate_id, vacancy_id, back["slot"], back["stage_id"], back["report_row"], last["entered_by"],
          last["entered_at"], last["carried"]))
-    st = current_set(conn, vacancy_id)
-    title = _stage_title(conn, last["stage_id"], st["id"] if st else None, last["slot"])
     _status(conn, candidate_id, ROW_STATUS[last["report_row"]], user_id, now,
             f"отменена отметка этапа «{title}»: {comment}")
     run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
                  VALUES (%s, 'edit', 'candidate_stage', %s, %s, %s)""",
         (user_id, last["id"], j({"undo": True, "candidate_id": candidate_id, "vacancy_id": vacancy_id,
                                  "slot": last["slot"], "outcome": last["outcome"], "cancelled": ids,
-                                 "comment": comment}), now))
-    return {"slot": last["slot"]}
+                                 "reopened": back["slot"], "comment": comment}), now))
+    return {"slot": back["slot"]}
+
+
+def _undo_target(conn, candidate_id: int, vacancy_id: int, last: dict, cancelled: list[int], st: dict | None,
+                 title: str) -> dict:
+    """Куда вернуть человека при отмене: на этап отметки, а если его убрали из набора после неё — на первый ещё не
+    пройденный этап той же строки отчёта. Иначе человек встал бы на этап вне доски, и «прошёл» отвечал бы stale."""
+    if not st or any(i["slot"] == last["slot"] for i in st["items"]):
+        return last
+    done = {m["slot"] for m in rows(conn, """SELECT slot FROM ops.candidate_stage WHERE candidate_id = %s
+                                            AND vacancy_id = %s AND cancelled_at IS NULL AND NOT id = ANY(%s)""",
+                                    (candidate_id, vacancy_id, cancelled))}
+    same = [i for i in st["items"] if i["report_row"] == last["report_row"] and i["slot"] not in done]
+    if not same:
+        row = val(conn, "SELECT title FROM ops.funnel_row WHERE code = %s", (last["report_row"],))
+        raise Conflict("stage_removed", f"этап «{title}» убран из набора вакансии, другого этапа строки «{row}» в "
+                       "наборе нет — отменить отметку нельзя")
+    return same[0]
 
 
 def _journal(conn, before: dict | None, after: dict | None, user_id: int, now: datetime, note: str) -> None:

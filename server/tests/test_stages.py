@@ -629,3 +629,40 @@ def test_s16_carried_mark_keeps_carried_after_undo(conn, vid, people):
     stages.mark(conn, cid, vid, 3, "passed", people["rec"], NOW)
     stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
     assert [(m["slot"], m["carried"]) for m in marks(conn, cid, vid) if m["cancelled_at"] is None] == [(3, True)]
+
+
+def _set_without(conn, vacancy_id, slot, replace_with=None):
+    """Действующий набор без этапа slot (на нём никого) — вместо него этап replace_with той же строки."""
+    items = []
+    for i in items_of(conn, vacancy_id):
+        if i["slot"] != slot:
+            items.append(i)
+        elif replace_with:
+            items.append({"stage_id": sid(conn, replace_with), "label": None})
+    return items
+
+
+def test_s16_undo_after_stage_removed_opens_same_row(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 5)                       # прошёл «Собеседование» (slot 5), стоит на slot 6
+    s = stages.propose(conn, vid, _set_without(conn, vid, 5, "Собеседование с руководителем"), None, people["rec"],
+                       NOW)
+    stages.approve(conn, s["id"], people["head"], NOW)
+    new_slot = next(i["slot"] for i in stages.current_set(conn, vid)["items"] if i["report_row"] == "meeting")
+    assert stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO) == {"slot": new_slot}
+    assert open_mark(conn, cid, vid) == {"slot": new_slot, "report_row": "meeting", "entered_by": people["rec"]}
+    assert status(conn, cid) == "manager_interview"
+    assert stages.mark(conn, cid, vid, new_slot, "passed", people["rec"], NOW)["next_slot"] == 6   # снова по набору
+
+
+def test_s16_undo_after_row_removed_is_stage_removed(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 5)
+    stages.approve(conn, stages.propose(conn, vid, _set_without(conn, vid, 5), None, people["rec"], NOW)["id"],
+                   people["head"], NOW)
+    with pytest.raises(stages.Conflict) as e:
+        stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    assert e.value.code == "stage_removed" and "убран из набора" in str(e.value)
+    assert open_mark(conn, cid, vid)["slot"] == 6 and audit(conn, cid) == []         # ничего не изменилось
