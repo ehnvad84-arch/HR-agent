@@ -9,6 +9,7 @@ from datetime import datetime
 
 import psycopg
 
+from . import stages
 from .db import j, one, rows, run, setting, val
 
 
@@ -84,7 +85,7 @@ def _role_of(conn, user_id: int | None) -> str | None:
 def create(conn: psycopg.Connection, role_profile_id: int, title: str, user_id: int, headcount: int = 1,
            target_date=None, recruiter_id: int | None = None, hiring_manager_id: int | None = None) -> int:
     """S12: ответственный HR (по умолчанию — заводящий) и руководитель-заказчик (по умолчанию — руководитель
-    подразделения должности) обязательны."""
+    подразделения должности) обязательны. Набор этапов — стандартный (funnel-report S2)."""
     if not val(conn, "SELECT 1 FROM role_profile WHERE id = %s AND approved_at IS NOT NULL AND is_active",
                (role_profile_id,)):
         raise Invalid("профиль не утверждён")
@@ -97,10 +98,12 @@ def create(conn: psycopg.Connection, role_profile_id: int, title: str, user_id: 
         hiring_manager_id = (default_manager(conn, role_profile_id) or {}).get("hiring_manager_id")
     if _role_of(conn, hiring_manager_id) not in MANAGER_ROLES:
         raise Invalid("руководитель-заказчик: выберите руководителя подразделения")
-    return val(conn, """INSERT INTO vacancy (role_profile_id, title, headcount, target_date, recruiter_id,
-                                             hiring_manager_id, origin)
-                        VALUES (%s, %s, %s, %s, %s, %s, 'recruiter') RETURNING id""",
-               (role_profile_id, title.strip(), headcount, target_date, recruiter_id, hiring_manager_id))
+    vid = val(conn, """INSERT INTO vacancy (role_profile_id, title, headcount, target_date, recruiter_id,
+                                            hiring_manager_id, origin)
+                       VALUES (%s, %s, %s, %s, %s, %s, 'recruiter') RETURNING id""",
+              (role_profile_id, title.strip(), headcount, target_date, recruiter_id, hiring_manager_id))
+    stages.ensure_set(conn, vid)                    # funnel-report S2: 8 стандартных этапов, работать можно сразу
+    return vid
 
 
 def _vacancy(conn, vacancy_id: int) -> dict:

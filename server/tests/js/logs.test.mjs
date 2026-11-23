@@ -10,9 +10,10 @@ import {
 const NOW = new Date(2026, 9, 29, 15, 0);
 const local = (d, h, m) => new Date(2026, 9, d, h, m).toISOString();   // время в часовом поясе, где идёт проверка
 
-test("виды изменений — семь, по-русски, как в отчёте сервера", () => {
-  assert.deepEqual(KINDS.map(([code]) => code), ["threshold", "weight", "profile", "template", "source", "permission", "synonyms"]);
-  assert.deepEqual(KINDS.map(([, label]) => label), ["Пороги", "Веса", "Профили должностей", "Шаблоны", "Источники и пределы", "Права", "Синонимы"]);
+test("виды изменений — восемь, по-русски, как в отчёте сервера", () => {
+  assert.deepEqual(KINDS.map(([code]) => code), ["threshold", "weight", "profile", "template", "source", "permission", "synonyms", "stages"]);
+  assert.deepEqual(KINDS.map(([, label]) => label), ["Пороги", "Веса", "Профили должностей", "Шаблоны", "Источники и пределы", "Права", "Синонимы", "Этапы вакансий"]);
+  assert.equal(kindLabel("stages"), "Этапы вакансий");
   assert.equal(kindLabel("source"), "Источники и пределы");
   assert.equal(kindLabel("synonyms"), "Синонимы");
   assert.equal(kindLabel("неведомое"), "неведомое");

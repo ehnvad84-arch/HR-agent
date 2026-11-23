@@ -6,7 +6,7 @@ import { FEATURES, GEO_OPTIONS, conditionLines, roleTitle, stateInfo } from "./p
 
 /** Виды изменений — как KIND_TITLE в hr/reports.py. */
 export const KINDS = [["threshold", "Пороги"], ["weight", "Веса"], ["profile", "Профили должностей"], ["template", "Шаблоны"],
-  ["source", "Источники и пределы"], ["permission", "Права"], ["synonyms", "Синонимы"]];
+  ["source", "Источники и пределы"], ["permission", "Права"], ["synonyms", "Синонимы"], ["stages", "Этапы вакансий"]];
 export const kindLabel = (kind) => (KINDS.find(([code]) => code === kind) || [kind, String(kind ?? "")])[1];
 
 export const DEFAULT_DAYS = 30;
