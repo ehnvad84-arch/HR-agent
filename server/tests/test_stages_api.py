@@ -447,3 +447,28 @@ def test_movement_and_report_routes_locked():
             "/api/vacancy/{vacancy_id}/resume", "/api/vacancy/{vacancy_id}/funnel-report",
             "/api/funnel/recruiter/{user_id}", "/api/funnel/department"} <= paths
     assert not [r for r in auth.routes_without_permission(app) if "funnel" in r or "candidate/" in r]
+
+
+def test_text_lengths_limited_422(conn, api, prof, boss):
+    """Названия этапов и подписи — до 80 знаков, комментарии — до 2000: длиннее — 422 validation."""
+    head, hh, _ = api("head_recruiter")
+    vid = new_vacancy(head, hh, prof, boss)
+    sets = head.get(f"/api/vacancy/{vid}/stage-sets").json()
+    long80, long2000 = "э" * 81, "к" * 2001
+    with_label = items(sets) + [{"stage_id": sid(conn, "Тестовое задание"), "label": long80}]
+    with_label.sort(key=lambda i: i.get("slot") or 4.5)
+    calls = [
+        ("/api/stages", {"title": long80, "report_row": "meeting"}),
+        (f"/api/vacancy/{vid}/stage-sets", {"items": with_label}),
+        (f"/api/vacancy/{vid}/stage-sets", {"items": items(sets), "note": long2000}),
+        ("/api/stage-sets/1/decline", {"comment": long2000}),
+        (f"/api/vacancy/{vid}/candidate/1/mark", {"slot": 1, "outcome": "failed", "reason": "skills",
+                                                  "comment": long2000}),
+        (f"/api/vacancy/{vid}/candidate/1/undo", {"comment": long2000}),
+        (f"/api/vacancy/{vid}/pause", {"comment": long2000}),
+    ]
+    for url, body in calls:
+        r = head.post(url, json=body, headers=hh)
+        assert r.status_code == 422 and r.json()["error"] == "validation", (url, r.status_code)
+    ok = head.post("/api/stages", json={"title": "э" * 80, "report_row": "meeting"}, headers=hh)
+    assert ok.status_code == 200, "80 знаков — можно"

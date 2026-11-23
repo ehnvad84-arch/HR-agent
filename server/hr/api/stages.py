@@ -13,7 +13,7 @@ from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 from .. import auth, funnel_report, scope, stages, vacancies
 from ..clock import Clock
@@ -30,6 +30,9 @@ Approver = Annotated[tuple[auth.User, scope.Scope], Depends(auth.require_scoped(
 Taker = Annotated[auth.User, Depends(auth.require("person.take"))]
 VacancyEditor = Annotated[auth.User, Depends(auth.require("vacancy.edit"))]
 NOT_FOUND = HTTPException(404, {"error": "not_found", "message": "Не найдено"})
+# длина текстов: название этапа и подпись — строка в отчёте и на доске, комментарий — абзац; длиннее — 422
+Title = Annotated[str, StringConstraints(max_length=80)]
+Comment = Annotated[str, StringConstraints(max_length=2000)]
 
 
 def _cap(text: str) -> str:
@@ -58,7 +61,7 @@ def library(us: Reader, conn_factory: Conn):
 
 
 class StageIn(BaseModel):
-    title: str
+    title: Title
     report_row: str
 
 
@@ -95,12 +98,12 @@ def vacancy_sets(vacancy_id: int, us: Reader, conn_factory: Conn):
 class SetItemIn(BaseModel):
     slot: int | None = None
     stage_id: int
-    label: str | None = None
+    label: Title | None = None
 
 
 class SetIn(BaseModel):
     items: list[SetItemIn]
-    note: str | None = None
+    note: Comment | None = None
 
 
 @router.post("/api/vacancy/{vacancy_id}/stage-sets")
@@ -137,7 +140,7 @@ def approve(set_id: int, us: Approver, conn_factory: Conn, clock: Now):
 
 
 class DeclineIn(BaseModel):
-    comment: str
+    comment: Comment
 
 
 @router.post("/api/stage-sets/{set_id}/decline")
@@ -152,7 +155,7 @@ class MarkIn(BaseModel):
     slot: int
     outcome: str
     reason: str | None = None
-    comment: str | None = None
+    comment: Comment | None = None
     scheduled_at: datetime | None = None
 
 
@@ -166,7 +169,7 @@ def mark(vacancy_id: int, candidate_id: int, body: MarkIn, user: Taker, conn_fac
 
 
 class UndoIn(BaseModel):
-    comment: str
+    comment: Comment
 
 
 @router.post("/api/vacancy/{vacancy_id}/candidate/{candidate_id}/undo")
@@ -180,7 +183,7 @@ def undo(vacancy_id: int, candidate_id: int, body: UndoIn, user: Taker, conn_fac
 # ------------------------------------------------------------------ пауза вакансии (S14)
 
 class PauseIn(BaseModel):
-    comment: str | None = None
+    comment: Comment | None = None
 
 
 @router.post("/api/vacancy/{vacancy_id}/pause")
