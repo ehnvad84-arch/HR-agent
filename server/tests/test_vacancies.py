@@ -218,6 +218,40 @@ def test_s14_reopen_cancelled_without_closed_at_no_gap(conn, vac):
     assert pauses(conn, vid) == []
 
 
+def _v120_close(conn, vid, when):
+    """Как close v1.2.0 после отката: про паузы не знает — строка паузы остаётся открытой."""
+    db.run(conn, """UPDATE vacancy SET state = 'closed', close_comment = %s, closed_at = %s WHERE id = %s""",
+           (LONG, when.date(), vid))
+
+
+def test_s14_rollback_hanging_pause_closed_on_reopen(conn, vac):
+    """Откат: v1.2.0 закрыла вакансию на паузе. «Открыть заново» в v1.3.0 закрывает паузу датой закрытия —
+    дни не считаются дважды (пауза и closed_gap), новая пауза не падает на EXCLUDE."""
+    vid, rec = vac["id"], vac["rec"]
+    vacancies.pause(conn, vid, rec, at(2))
+    _v120_close(conn, vid, at(6))
+    assert vacancies.reopen(conn, vid, rec, at(11)) == "open"
+    assert [(p["kind"], p["from_date"], p["to_date"]) for p in pauses(conn, vid)] == [
+        ("pause", date(2026, 11, 5), date(2026, 11, 9)), ("closed_gap", date(2026, 11, 9), date(2026, 11, 14))]
+    assert vacancies.pause(conn, vid, rec, at(12)) == "on_hold"
+    assert vacancies.resume(conn, vid, rec, at(13)) == "open"
+
+
+def test_s14_rollback_hanging_pause_closed_on_new_pause(conn, vac):
+    """Откат: v1.2.0 закрыла вакансию на паузе и открыла заново. Новая пауза в v1.3.0 закрывает висящую датой этого
+    открытия и не падает 500."""
+    vid, rec = vac["id"], vac["rec"]
+    vacancies.pause(conn, vid, rec, at(2))
+    _v120_close(conn, vid, at(6))
+    db.run(conn, "UPDATE vacancy SET state = 'open', closed_at = NULL, closed_by = NULL WHERE id = %s", (vid,))
+    db.run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
+                    VALUES (%s, 'edit', 'vacancy', %s, '{"reopen": true}', %s)""", (rec, vid, at(8)))
+    assert vacancies.pause(conn, vid, rec, at(12)) == "on_hold"
+    assert [(p["kind"], p["from_date"], p["to_date"]) for p in pauses(conn, vid)] == [
+        ("pause", date(2026, 11, 5), date(2026, 11, 11)), ("pause", date(2026, 11, 15), None)]
+    assert vacancies.resume(conn, vid, rec, at(13)) == "open"
+
+
 def test_in_work_counts_open_stages_of_pair(conn, prof, boss):
     """«В работе» по вакансии — люди с открытым этапом в ней: отказ в другой вакансии счёт не обнуляет."""
     rec = user(conn, "rec", "recruiter")

@@ -138,10 +138,29 @@ def _audit(conn, user_id: int, vacancy_id: int, detail: dict, now: datetime) -> 
                  VALUES (%s, 'edit', 'vacancy', %s, %s, %s)""", (user_id, vacancy_id, j(detail), now))
 
 
+def _settle_pause(conn, v: dict) -> None:
+    """Открытая пауза бывает только у вакансии на паузе. Иначе это след отката на v1.2.0: она закрыла вакансию на
+    паузе, про паузу не зная. Такая пауза кончается датой закрытия, а если v1.2.0 уже открыла вакансию заново —
+    датой этого открытия (audit_log); не нашли — днём начала. Без этого дни считаются дважды (пауза и closed_gap
+    до сегодня), а новая пауза падает на EXCLUDE."""
+    if v["state"] == "on_hold":
+        return
+    run(conn, """UPDATE ops.vacancy_pause p
+                 SET to_date = GREATEST(p.from_date, coalesce(
+                     (SELECT closed_at FROM vacancy WHERE id = p.vacancy_id),
+                     (SELECT max((a.at AT TIME ZONE 'Europe/Moscow')::date) FROM audit_log a
+                      WHERE a.object_type = 'vacancy' AND a.object_id = p.vacancy_id AND a.detail ? 'reopen'
+                        AND (a.at AT TIME ZONE 'Europe/Moscow')::date >= p.from_date),
+                     p.from_date))
+                 WHERE p.vacancy_id = %s AND p.to_date IS NULL""", (v["id"],))
+
+
 def pause(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetime, comment: str | None = None) -> str:
     """S14: «Поставить на паузу» — только открытую; новых людей вакансия не берёт, итоги этапов отмечать можно."""
-    if _vacancy(conn, vacancy_id)["state"] != "open":
+    v = _vacancy(conn, vacancy_id)
+    if v["state"] != "open":
         raise Conflict("на паузу ставится только открытая вакансия")
+    _settle_pause(conn, v)
     run(conn, "UPDATE vacancy SET state = 'on_hold' WHERE id = %s", (vacancy_id,))
     run(conn, """INSERT INTO ops.vacancy_pause (vacancy_id, from_date, kind, by, comment)
                  VALUES (%s, %s, 'pause', %s, %s)""",
@@ -162,8 +181,10 @@ def resume(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetim
 
 
 def reopen(conn: psycopg.Connection, vacancy_id: int, user_id: int, now: datetime) -> str:
-    if _vacancy(conn, vacancy_id)["state"] in ("open", "on_hold"):
+    v = _vacancy(conn, vacancy_id)
+    if v["state"] in ("open", "on_hold"):
         raise Conflict("вакансия уже открыта")
+    _settle_pause(conn, v)
     # S14: время закрытия в срок ведения не входит — пауза closed_gap от даты закрытия до сегодня
     run(conn, """INSERT INTO ops.vacancy_pause (vacancy_id, from_date, to_date, kind, by)
                  SELECT id, closed_at, GREATEST(closed_at, %s), 'closed_gap', %s FROM vacancy
