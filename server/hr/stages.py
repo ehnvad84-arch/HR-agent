@@ -87,6 +87,9 @@ def add_stage(conn: psycopg.Connection, title: str, report_row: str, user_id: in
     row = one(conn, "SELECT code, title FROM ops.funnel_row WHERE code = %s", (report_row,))
     if not row:
         raise Invalid("строка отчёта")
+    # уникальность без учёта регистра есть только здесь (в СУБД — с учётом): добавления идут по одному, до фиксации
+    # первого второй ждёт и затем видит его название — 409, а не дубль в другом регистре или 500 на UNIQUE
+    run(conn, "SELECT pg_advisory_xact_lock(hashtext('ops.stage.title'))")
     if val(conn, "SELECT 1 FROM ops.stage WHERE lower(title) = lower(%s)", (title,)):
         raise Conflict("duplicate", f"этап «{title}» уже есть в справочнике")
     sid = val(conn, """INSERT INTO ops.stage (title, report_row, created_by, created_at) VALUES (%s, %s, %s, %s)

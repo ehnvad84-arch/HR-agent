@@ -1,10 +1,16 @@
 """T3 funnel-report: библиотека этапов, стандартный набор вакансии, наборы с утверждением (S1–S5)."""
-from datetime import UTC, datetime
+import threading
+import time
+import uuid
+from datetime import UTC, datetime, timedelta
 
+import psycopg
 import pytest
+from conftest import DSN
 from factories import profile, user
+from psycopg.rows import dict_row
 
-from hr import db, reports, stages, vacancies
+from hr import db, reports, stages, vacancies, views
 
 NOW = datetime(2026, 11, 24, 9, 0, tzinfo=UTC)
 ROWS = ["selected", "contact", "screening", "interview", "meeting", "security", "offer", "first_day"]
@@ -670,9 +676,6 @@ def test_s16_undo_after_row_removed_is_stage_removed(conn, vid, people):
 
 def test_s16_undo_passed_cancels_meeting_set_by_this_mark(conn, vid, people):
     """Отмена «прошёл» снимает встречу, назначенную этой отметкой; встреча прежнего этапа остаётся."""
-    from datetime import timedelta
-
-    from hr import views
     cid = candidate(conn)
     stages.enter(conn, cid, vid, people["rec"], NOW)
     stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
@@ -684,3 +687,47 @@ def test_s16_undo_passed_cancels_meeting_set_by_this_mark(conn, vid, people):
     assert [m["scheduled_at"] for m in left] == [NOW + timedelta(hours=3)], "встреча отменённой отметки снята"
     assert db.val(conn, "SELECT count(*) FROM interview WHERE candidate_id = %s", (cid,)) == 2, "не удаляется"
     assert audit(conn, cid)[0]["detail"]["interview"] is not None
+
+
+@pytest.mark.parametrize("variant", [str, str.upper], ids=["same", "other_case"])
+def test_s1_parallel_add_same_title_any_case_one_wins(variant):
+    """Два одновременных «добавить этап» с одним названием (в любом регистре): второй — 409 duplicate, не 500 и
+    не дубль. Настоящие транзакции: первая держит вставку, вторая ждёт её фиксации."""
+    title = f"Звонок директору {uuid.uuid4().hex[:8]}"
+    first = psycopg.connect(DSN, row_factory=dict_row)
+    out: dict = {}
+
+    def second():
+        with psycopg.connect(DSN, row_factory=dict_row) as c:
+            out["pid"] = c.info.backend_pid
+            try:
+                with c.transaction():
+                    stages.add_stage(c, variant(title), "meeting", None, NOW)
+                out["result"] = "added"
+            except stages.Conflict as e:
+                out["result"] = e.code
+            except psycopg.Error as e:
+                out["result"] = type(e).__name__
+
+    try:
+        stages.add_stage(first, title, "meeting", None, NOW)               # не зафиксировано
+        t = threading.Thread(target=second)
+        t.start()
+        with psycopg.connect(DSN, autocommit=True) as watch:              # ждём, пока второй упрётся в блокировку
+            for _ in range(100):
+                if "result" in out or (out.get("pid") and watch.execute(
+                        "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s",
+                        (out["pid"],)).fetchone() == ("Lock",)):
+                    break
+                time.sleep(0.05)
+        first.commit()
+        t.join(10)
+        assert out.get("result") == "duplicate"
+        with psycopg.connect(DSN) as c:
+            assert c.execute("SELECT count(*) FROM ops.stage WHERE lower(title) = lower(%s)",
+                             (title,)).fetchone()[0] == 1
+    finally:
+        first.close()
+        with psycopg.connect(DSN, autocommit=True) as c:
+            c.execute("DELETE FROM agent_change WHERE kind = 'stages' AND lower(after->>'title') = lower(%s)", (title,))
+            c.execute("DELETE FROM ops.stage WHERE lower(title) = lower(%s)", (title,))
