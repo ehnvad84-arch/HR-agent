@@ -39,8 +39,12 @@ def listing(conn: psycopg.Connection, only: frozenset[int] | None = None) -> dic
                (SELECT full_name FROM app_user WHERE id = v.hiring_manager_id) AS hiring_manager,
                (SELECT count(*) FROM ops.candidate_vacancy cv JOIN candidate c ON c.id = cv.candidate_id
                 WHERE cv.vacancy_id = v.id AND c.status NOT IN ('hired', 'rejected_by_us', 'rejected_by_candidate',
-                                                                'refused_contact', 'no_show')) AS in_work
+                                                                'refused_contact', 'no_show')) AS in_work,
+               coalesce(ss.state = 'proposed', false) AS stages_pending,
+               coalesce(ss.state = 'declined', false) AS stages_declined
         FROM vacancy v JOIN role_profile rp ON rp.id = v.role_profile_id
+        LEFT JOIN LATERAL (SELECT state FROM ops.stage_set WHERE vacancy_id = v.id
+                           ORDER BY version DESC LIMIT 1) ss ON true
         WHERE %s::bigint[] IS NULL OR v.id = ANY(%s)
         ORDER BY v.opened_at DESC, v.id DESC""", (list(only) if only is not None else None,) * 2)
     return {"open": [v for v in items if v["state"] in ("open", "on_hold")],
