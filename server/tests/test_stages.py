@@ -281,6 +281,229 @@ def test_s5_people_counted_only_open_and_not_cancelled(conn, vid, people):
     assert res["version"] == 2
 
 
+# ------------------------------------------------------------------ движение кандидата (T4: S6–S10)
+
+OTHER_100 = "Кандидат попросил отложить выход на два месяца из-за переезда семьи, ждать вакансия не может, " \
+            "решили завершить сейчас."
+
+
+def candidate(conn):
+    return db.val(conn, """INSERT INTO candidate (fio, retention_until) VALUES ('Вымышленный В. В.', current_date + 100)
+                           RETURNING id""")
+
+
+def open_mark(conn, cid, vacancy_id):
+    return db.one(conn, """SELECT slot, report_row, entered_by FROM ops.candidate_stage
+                           WHERE candidate_id = %s AND vacancy_id = %s AND outcome IS NULL AND cancelled_at IS NULL""",
+                  (cid, vacancy_id))
+
+
+def status(conn, cid):
+    return db.val(conn, "SELECT status::text FROM candidate WHERE id = %s", (cid,))
+
+
+def history(conn, cid):
+    return [r["to_status"] for r in db.rows(conn, """SELECT to_status::text FROM status_history
+                                                     WHERE candidate_id = %s ORDER BY id""", (cid,))]
+
+
+def walk(conn, cid, vacancy_id, user_id, steps):
+    """steps раз «прошёл» с текущего этапа; возвращает последний ответ mark."""
+    res = None
+    for _ in range(steps):
+        res = stages.mark(conn, cid, vacancy_id, open_mark(conn, cid, vacancy_id)["slot"], "passed", user_id, NOW)
+    return res
+
+
+def test_s10_taken_candidate_enters_first_stage(conn, vid, people):
+    cid = candidate(conn)
+    assert stages.enter(conn, cid, vid, people["rec"], NOW) == 1
+    assert open_mark(conn, cid, vid) == {"slot": 1, "report_row": "selected", "entered_by": people["rec"]}
+    assert db.val(conn, "SELECT 1 FROM ops.candidate_vacancy WHERE candidate_id = %s AND vacancy_id = %s",
+                  (cid, vid))
+    assert status(conn, cid) == "picked_by_agent" and history(conn, cid) == ["picked_by_agent"]
+    assert stages.enter(conn, cid, vid, people["rec"], NOW) == 1                # повтор ничего не меняет
+    assert db.val(conn, "SELECT count(*) FROM ops.candidate_stage WHERE candidate_id = %s", (cid,)) == 1
+    assert history(conn, cid) == ["picked_by_agent"]
+
+
+def test_s10_enter_vacancy_without_set_gets_v1(conn, people):
+    prof = profile(conn)
+    v = db.val(conn, """INSERT INTO vacancy (role_profile_id, title, recruiter_id) VALUES (%s, 'Из v1.2.0', %s)
+                        RETURNING id""", (prof["id"], people["rec"]))
+    cid = candidate(conn)
+    assert stages.enter(conn, cid, v, people["rec"], NOW) == 1
+    assert [i["report_row"] for i in stages.current_set(conn, v)["items"]] == ROWS
+
+
+def test_s10_enter_needs_open_vacancy(conn, vid, people):
+    for state in ("on_hold", "closed"):
+        db.run(conn, "UPDATE vacancy SET state = %s, close_comment = repeat('з', 200) WHERE id = %s", (state, vid))
+        with pytest.raises(stages.Conflict) as e:
+            stages.enter(conn, candidate(conn), vid, people["rec"], NOW)
+        assert e.value.code == "vacancy_not_open"
+    with pytest.raises(stages.NotFound):
+        stages.enter(conn, candidate(conn), 999999, people["rec"], NOW)
+
+
+def test_s6_passed_moves_to_next_stage_of_set(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    res = stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    assert res == {"next_slot": 2, "offer_close": False}
+    assert open_mark(conn, cid, vid)["report_row"] == "contact"
+    done = db.one(conn, """SELECT outcome, reason, decided_by, decided_at FROM ops.candidate_stage
+                           WHERE candidate_id = %s AND slot = 1""", (cid,))
+    assert done == {"outcome": "passed", "reason": None, "decided_by": people["rec"], "decided_at": NOW}
+    assert status(conn, cid) == "first_message_sent"
+
+
+def test_s6_no_back_and_no_skip(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    with pytest.raises(stages.Conflict) as e:                                 # через этап
+        stages.mark(conn, cid, vid, 3, "passed", people["rec"], NOW)
+    assert e.value.code == "stale"
+    walk(conn, cid, vid, people["rec"], 2)
+    with pytest.raises(stages.Conflict) as e:                                 # назад
+        stages.mark(conn, cid, vid, 1, "failed", people["rec"], NOW, reason="skills")
+    assert e.value.code == "stale"
+    assert open_mark(conn, cid, vid)["slot"] == 3
+    with pytest.raises(stages.NotFound):                                      # не в воронке вакансии
+        stages.mark(conn, candidate(conn), vid, 1, "passed", people["rec"], NOW)
+    with pytest.raises(stages.Invalid):
+        stages.mark(conn, cid, vid, 3, "moved", people["rec"], NOW)
+
+
+def test_s6_next_stage_follows_approved_set(conn, vid, people):
+    items = items_of(conn, vid)
+    test_task = {"stage_id": sid(conn, "Тестовое задание")}
+    res = stages.propose(conn, vid, items[:4] + [test_task] + items[4:], None, people["rec"], NOW)
+    stages.approve(conn, res["id"], people["head"], NOW)
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 4)
+    mark = db.one(conn, """SELECT s.title, cs.report_row FROM ops.candidate_stage cs
+                           JOIN ops.stage s ON s.id = cs.stage_id
+                           WHERE cs.candidate_id = %s AND cs.outcome IS NULL""", (cid,))
+    assert mark == {"title": "Тестовое задание", "report_row": "interview"}
+    walk(conn, cid, vid, people["rec"], 1)
+    assert open_mark(conn, cid, vid)["report_row"] == "meeting"
+
+
+def test_s7_reason_of_own_outcome_and_row(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 1)                                    # «Первичный контакт»
+    for outcome, reason in (("failed", None), ("refused", None), ("failed", "no_contact"), ("refused", "skills"),
+                            ("refused", "offer_declined"), ("failed", "unknown")):
+        with pytest.raises(stages.Invalid):
+            stages.mark(conn, cid, vid, 2, outcome, people["rec"], NOW, reason=reason)
+    assert open_mark(conn, cid, vid)["slot"] == 2
+    stages.mark(conn, cid, vid, 2, "refused", people["rec"], NOW, reason="no_contact")
+    assert open_mark(conn, cid, vid) is None
+    assert status(conn, cid) == "refused_contact"
+    with pytest.raises(stages.Conflict) as e:                                 # исход пишется один раз
+        stages.mark(conn, cid, vid, 2, "passed", people["rec"], NOW)
+    assert e.value.code == "stale"
+
+
+def test_s7_offer_declined_only_on_offer(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 6)
+    assert open_mark(conn, cid, vid)["report_row"] == "offer"
+    res = stages.mark(conn, cid, vid, 7, "refused", people["rec"], NOW, reason="offer_declined")
+    assert res == {"next_slot": None, "offer_close": False}
+    assert status(conn, cid) == "rejected_by_candidate"
+    assert "Отказ от оффера" in db.val(conn, "SELECT reject_reason FROM candidate WHERE id = %s", (cid,))
+
+
+def test_s7_other_needs_comment_from_setting(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    with pytest.raises(stages.Invalid):
+        stages.mark(conn, cid, vid, 1, "failed", people["rec"], NOW, reason="other", comment=OTHER_100[:99])
+    stages.mark(conn, cid, vid, 1, "failed", people["rec"], NOW, reason="other", comment=OTHER_100)
+    done = db.one(conn, "SELECT outcome, reason, comment FROM ops.candidate_stage WHERE candidate_id = %s", (cid,))
+    assert done == {"outcome": "failed", "reason": "other", "comment": OTHER_100}
+    assert status(conn, cid) == "rejected_by_us"
+    db.run(conn, "UPDATE settings SET value = '10' WHERE key = 'stage_fail_other_min'")
+    other = candidate(conn)
+    stages.enter(conn, other, vid, people["rec"], NOW)
+    stages.mark(conn, other, vid, 1, "refused", people["rec"], NOW, reason="other", comment="Уехал в Казань")
+    assert status(conn, other) == "rejected_by_candidate"
+
+
+def test_s7_refused_reasons_map_to_status(conn, vid, people):
+    for reason, expected in (("conditions", "rejected_by_candidate"), ("no_show", "no_show"),
+                             ("no_first_day", "no_show"), ("no_contact", "refused_contact")):
+        cid = candidate(conn)
+        stages.enter(conn, cid, vid, people["rec"], NOW)
+        stages.mark(conn, cid, vid, 1, "refused", people["rec"], NOW, reason=reason)
+        assert status(conn, cid) == expected, reason
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "failed", people["rec"], NOW, reason="security")
+    assert status(conn, cid) == "rejected_by_us"
+
+
+def test_s8_manager_resolution_is_recruiter_mark_with_comment(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 4)
+    assert open_mark(conn, cid, vid)["report_row"] == "meeting"
+    stages.mark(conn, cid, vid, 5, "passed", people["rec"], NOW, comment="Резолюция руководителя: берём")
+    done = db.one(conn, "SELECT decided_by, comment FROM ops.candidate_stage WHERE candidate_id = %s AND slot = 5",
+                  (cid,))
+    assert done == {"decided_by": people["rec"], "comment": "Резолюция руководителя: берём"}
+
+
+def test_s9_status_follows_stages_and_first_day_hires(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    seen = [status(conn, cid)]
+    for _ in range(7):
+        walk(conn, cid, vid, people["rec"], 1)
+        seen.append(status(conn, cid))
+    assert seen == ["picked_by_agent", "first_message_sent", "phone_interview", "phone_interview",
+                    "manager_interview", "security_check", "offer", "offer"]
+    res = stages.mark(conn, cid, vid, 8, "passed", people["rec"], NOW)
+    assert res == {"next_slot": None, "offer_close": True}                   # headcount 1 — вышли все ставки
+    assert status(conn, cid) == "hired" and history(conn, cid)[-1] == "hired"
+    assert db.val(conn, "SELECT state::text FROM vacancy WHERE id = %s", (vid,)) == "open"   # закрывает рекрутер
+
+
+def test_s9_offer_close_when_hired_reach_headcount(conn, vid, people):
+    db.run(conn, "UPDATE vacancy SET headcount = 2 WHERE id = %s", (vid,))
+    first, second = candidate(conn), candidate(conn)
+    for cid in (first, second):
+        stages.enter(conn, cid, vid, people["rec"], NOW)
+    assert walk(conn, first, vid, people["rec"], 8) == {"next_slot": None, "offer_close": False}
+    assert walk(conn, second, vid, people["rec"], 8) == {"next_slot": None, "offer_close": True}
+
+
+def test_s9_closed_vacancy_no_passed_but_failed_and_refused(conn, vid, people):
+    a, b = candidate(conn), candidate(conn)
+    for cid in (a, b):
+        stages.enter(conn, cid, vid, people["rec"], NOW)
+    db.run(conn, "UPDATE vacancy SET state = 'closed', close_comment = repeat('з', 200) WHERE id = %s", (vid,))
+    with pytest.raises(stages.Conflict) as e:
+        stages.mark(conn, a, vid, 1, "passed", people["rec"], NOW)
+    assert e.value.code == "vacancy_closed"
+    stages.mark(conn, a, vid, 1, "failed", people["rec"], NOW, reason="skills")
+    stages.mark(conn, b, vid, 1, "refused", people["rec"], NOW, reason="conditions")
+    assert db.val(conn, """SELECT count(*) FROM ops.candidate_stage WHERE vacancy_id = %s AND outcome IS NULL""",
+                  (vid,)) == 0
+
+
+def test_s14_marks_allowed_on_pause(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    db.run(conn, "UPDATE vacancy SET state = 'on_hold' WHERE id = %s", (vid,))
+    assert stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)["next_slot"] == 2
+
+
 # ------------------------------------------------------------------ журнал
 
 def test_journal_kind_title():

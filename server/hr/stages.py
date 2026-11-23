@@ -1,4 +1,5 @@
-"""Этапы вакансии (funnel-report, S1–S5): библиотека этапов, набор вакансии, предложение и утверждение набора.
+"""Этапы вакансии (funnel-report, S1–S10): библиотека этапов, набор вакансии, предложение и утверждение набора,
+движение кандидата по этапам (вход, «прошёл / не прошёл / отказался»).
 
 Каждый этап библиотеки относится к одной из 8 строк отчёта (ops.funnel_row). У вакансии действует последний
 утверждённый набор; рекрутер предлагает новый, руководитель ОП утверждает или отклоняет. slot — постоянный номер
@@ -11,9 +12,19 @@ from datetime import datetime
 
 import psycopg
 
-from .db import j, one, rows, run, val
+from .db import j, one, rows, run, setting, val
 
 FIXED_ROWS = ("selected", "first_day")        # S5: «Отобранные резюме» и «Пришедшие в 1 день» не убираются
+OUTCOMES = ("passed", "failed", "refused")
+
+# candidate.status — производный от отметок (для отката на v1.2.0, AD-8). Открытый этап — по строке отчёта;
+# «Интервью» — «Телефонное интервью», чтобы не приписывать непройденное (обратная карта ops.funnel_carry()
+# переносит его в «Собеседование»). На «Пришедших в 1 день» человек принял оффер, но ещё не вышел — «Оффер».
+ROW_STATUS = {"selected": "picked_by_agent", "contact": "first_message_sent", "screening": "phone_interview",
+              "interview": "phone_interview", "meeting": "manager_interview", "security": "security_check",
+              "offer": "offer", "first_day": "offer"}
+REFUSED_STATUS = {"no_contact": "refused_contact", "no_show": "no_show", "no_first_day": "no_show"}
+CONTACT_STATUS = {"first_message_sent", "phone_interview", "manager_interview", "security_check", "offer"}
 
 
 class NotFound(LookupError):
@@ -290,6 +301,141 @@ def decline(conn: psycopg.Connection, set_id: int, comment: str, user_id: int, n
              {"set_id": set_id, "version": s["version"], "state": "declined", "comment": comment}, user_id, now,
              f"отклонён набор этапов вакансии «{_vacancy_title(conn, s['vacancy_id'])}» (версия {s['version']})")
     return "declined"
+
+
+# ------------------------------------------------------------------ движение кандидата (S6–S10)
+
+def _status(conn, candidate_id: int, to_status: str, user_id: int, now: datetime, comment: str | None = None,
+            reject_reason: str | None = None) -> None:
+    """Производный candidate.status и строка status_history — только когда статус меняется."""
+    c = one(conn, "SELECT status::text AS status FROM candidate WHERE id = %s FOR UPDATE", (candidate_id,))
+    if c["status"] == to_status:
+        return
+    contact = to_status in CONTACT_STATUS
+    run(conn, """UPDATE candidate SET status = %s,
+                     last_contact_at = CASE WHEN %s THEN %s ELSE last_contact_at END,
+                     first_contact_at = CASE WHEN %s AND first_contact_at IS NULL THEN %s ELSE first_contact_at END,
+                     reject_reason = coalesce(%s, reject_reason)
+                 WHERE id = %s""", (to_status, contact, now, contact, now, reject_reason, candidate_id))
+    run(conn, """INSERT INTO status_history (candidate_id, from_status, to_status, changed_by, changed_at, comment)
+                 VALUES (%s, %s, %s, %s, %s, %s)""", (candidate_id, c["status"], to_status, user_id, now, comment))
+
+
+def _stage_title(conn, stage_id: int, set_id: int | None, slot: int) -> str:
+    label = val(conn, "SELECT label FROM ops.stage_set_item WHERE set_id = %s AND slot = %s", (set_id, slot)) \
+        if set_id else None
+    return label or val(conn, "SELECT title FROM ops.stage WHERE id = %s", (stage_id,))
+
+
+def _open(conn, candidate_id: int, vacancy_id: int) -> dict | None:
+    return one(conn, """SELECT id, slot, stage_id, report_row FROM ops.candidate_stage
+                        WHERE candidate_id = %s AND vacancy_id = %s AND outcome IS NULL AND cancelled_at IS NULL
+                        FOR UPDATE""", (candidate_id, vacancy_id))
+
+
+def _put(conn, candidate_id: int, vacancy_id: int, item: dict, user_id: int, now: datetime) -> None:
+    run(conn, """INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row, entered_by,
+                                                  entered_at)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (candidate_id, vacancy_id, item["slot"], item["stage_id"], item["report_row"], user_id, now))
+
+
+def enter(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: int, now: datetime) -> int | None:
+    """S10: взятый в работу — на первый этап набора вакансии («Отобранные резюме»). Набора нет (вакансия v1.2.0) —
+    стандартный v1 в той же транзакции. Новых людей берёт только открытая вакансия (на паузе и закрытая — нет).
+    Пара уже в воронке — ничего не меняется; возвращается slot открытого этапа (или None, если исход есть)."""
+    v = one(conn, "SELECT id, state FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
+    if not v or not val(conn, "SELECT 1 FROM candidate WHERE id = %s", (candidate_id,)):
+        raise NotFound
+    if val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
+                    AND cancelled_at IS NULL LIMIT 1""", (candidate_id, vacancy_id)):
+        cur = _open(conn, candidate_id, vacancy_id)
+        return cur["slot"] if cur else None
+    if v["state"] != "open":
+        raise Conflict("vacancy_not_open", "вакансия не открыта: новых людей в воронку не берут")
+    ensure_set(conn, vacancy_id)
+    item = current_set(conn, vacancy_id)["items"][0]
+    run(conn, """INSERT INTO ops.candidate_vacancy (candidate_id, vacancy_id, added_by, added_at)
+                 VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING""", (candidate_id, vacancy_id, user_id, now))
+    _put(conn, candidate_id, vacancy_id, item, user_id, now)
+    _status(conn, candidate_id, ROW_STATUS[item["report_row"]], user_id, now,
+            f"в воронку: этап «{item['label'] or item['title']}»")
+    return item["slot"]
+
+
+def _reason(conn, outcome: str, reason: str | None, comment: str | None, report_row: str) -> dict:
+    """S7: причина своего исхода и строки; «Другое» — с комментарием не короче stage_fail_other_min."""
+    if not reason:
+        raise Invalid("причина обязательна")
+    r = one(conn, "SELECT code, title, outcome, only_row, needs_comment FROM ops.fail_reason WHERE code = %s",
+            (reason,))
+    if not r or (r["outcome"] and r["outcome"] != outcome):
+        raise Invalid("причина не подходит к исходу")
+    if r["only_row"] and r["only_row"] != report_row:
+        title = val(conn, "SELECT title FROM ops.funnel_row WHERE code = %s", (r["only_row"],))
+        raise Invalid(f"причина «{r['title']}» — только на этапе «{title}»")
+    if r["needs_comment"]:
+        minimum = int(setting(conn, "stage_fail_other_min", 100))
+        if len((comment or "").strip()) < minimum:
+            raise Invalid(f"комментарий к причине «{r['title']}» не короче {minimum} знаков")
+    return r
+
+
+def _hired(conn, vacancy_id: int) -> int:
+    """Вышедшие: пары, у которых пройдены этапы «Пришедшие в 1 день» и нет ни открытого этапа, ни отказа."""
+    return val(conn, """
+        SELECT count(DISTINCT cs.candidate_id) FROM ops.candidate_stage cs
+        WHERE cs.vacancy_id = %s AND cs.cancelled_at IS NULL AND cs.report_row = 'first_day' AND cs.outcome = 'passed'
+          AND NOT EXISTS (SELECT 1 FROM ops.candidate_stage o
+                          WHERE o.candidate_id = cs.candidate_id AND o.vacancy_id = cs.vacancy_id
+                            AND o.cancelled_at IS NULL AND o.outcome IS DISTINCT FROM 'passed')""", (vacancy_id,))
+
+
+def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int, outcome: str, user_id: int,
+         now: datetime, *, reason: str | None = None, comment: str | None = None) -> dict:
+    """S6–S9: исход открытого этапа пары. «Прошёл» — на следующий этап действующего набора (назад и через этап —
+    409 stale), на последнем — «вышел» (hired) и offer_close, когда вышедших не меньше ставок: закрывает вакансию
+    рекрутер прежним close. «Не прошёл» / «Отказался» — с причиной. На закрытой вакансии «прошёл» нельзя, отказ
+    с причиной — можно; на паузе отмечать можно."""
+    if outcome not in OUTCOMES:
+        raise Invalid("исход этапа")
+    v = one(conn, "SELECT id, state, headcount FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
+    if not v or not val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
+                                 AND cancelled_at IS NULL LIMIT 1""", (candidate_id, vacancy_id)):
+        raise NotFound
+    cur = _open(conn, candidate_id, vacancy_id)
+    if not cur or cur["slot"] != slot:
+        raise Conflict("stale", "этап кандидата уже другой — обновите страницу")
+    closed = v["state"] in ("closed", "cancelled")
+    if outcome == "passed" and closed:
+        raise Conflict("vacancy_closed", "вакансия закрыта: «прошёл» отметить нельзя, отказ с причиной — можно")
+    comment = (comment or "").strip() or None
+    r = None if outcome == "passed" else _reason(conn, outcome, reason, comment, cur["report_row"])
+    run(conn, """UPDATE ops.candidate_stage SET outcome = %s, reason = %s, comment = %s, decided_by = %s,
+                     decided_at = %s WHERE id = %s""",
+        (outcome, r["code"] if r else None, comment, user_id, now, cur["id"]))
+    st = current_set(conn, vacancy_id)
+    title = _stage_title(conn, cur["stage_id"], st["id"] if st else None, slot)
+    if r:
+        why = r["title"] + (f": {comment}" if comment else "")
+        to = "rejected_by_us" if outcome == "failed" else REFUSED_STATUS.get(r["code"], "rejected_by_candidate")
+        _status(conn, candidate_id, to, user_id, now, f"этап «{title}»: {why}", reject_reason=why)
+        return {"next_slot": None, "offer_close": False}
+    items = st["items"] if st else []
+    pos = next((n for n, i in enumerate(items) if i["slot"] == slot), None)
+    if pos is None:
+        raise Conflict("stale", "этапа нет в действующем наборе — обновите страницу")
+    done = {m["slot"] for m in rows(conn, """SELECT slot FROM ops.candidate_stage WHERE candidate_id = %s
+                                            AND vacancy_id = %s AND cancelled_at IS NULL""",
+                                    (candidate_id, vacancy_id))}
+    nxt = next((i for i in items[pos + 1:] if i["slot"] not in done), None)
+    if nxt:
+        _put(conn, candidate_id, vacancy_id, nxt, user_id, now)
+        _status(conn, candidate_id, ROW_STATUS[nxt["report_row"]], user_id, now,
+                f"этап «{title}» пройден, дальше — «{nxt['label'] or nxt['title']}»")
+        return {"next_slot": nxt["slot"], "offer_close": False}
+    _status(conn, candidate_id, "hired", user_id, now, f"этап «{title}» пройден: вышел")
+    return {"next_slot": None, "offer_close": not closed and _hired(conn, vacancy_id) >= v["headcount"]}
 
 
 def _journal(conn, before: dict | None, after: dict | None, user_id: int, now: datetime, note: str) -> None:
