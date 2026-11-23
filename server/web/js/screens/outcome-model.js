@@ -19,19 +19,20 @@ export const meetingNext = (stage) => Boolean(stage) && MEETING_ROWS.has(stage.r
 
 /**
  * Что показать в окне по этапу slot: заголовок, варианты исхода, следующий этап, резолюция руководителя (строка «Собеседование»),
- * подставленная причина последнего этапа.
+ * подставленная причина последнего этапа. closed — вакансия закрыта: «Прошёл» не предлагается.
  */
-export function outcomeForm({ stages, slot, hiringManager = "" }) {
+export function outcomeForm({ stages, slot, hiringManager = "", closed = false }) {
   const stage = (stages || []).find((s) => s.slot === slot) || null;
   const next = nextStage(stages, slot);
   const last = Boolean(stage) && next === null;
-  const options = last
+  const all = last
     ? [{ value: "passed", label: "Вышел в первый день" }, { value: "refused", label: "Не вышел" }]
     : [{ value: "passed", label: `Прошёл — на этап «${next ? next.title : ""}»` },
       { value: "failed", label: "Не прошёл — отказали мы" }, { value: "refused", label: "Отказался" }];
+  const options = closed ? all.filter((o) => o.value !== "passed") : all;   // S9: на закрытой — только отказ с причиной
   return {
     stage, next, last, options,
-    askWhen: !last && meetingNext(next),
+    askWhen: !closed && !last && meetingNext(next),
     fixedReason: last ? "no_first_day" : "",
     resolution: stage && stage.report_row === "meeting" ? `резолюция руководителя${hiringManager ? ` (${hiringManager})` : ""}` : "",
   };

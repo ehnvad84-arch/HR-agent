@@ -40,6 +40,9 @@ export const canDropOn = (stages, fromSlot, toSlot) => {
   return Boolean(next) && next.slot === toSlot;
 };
 
+/** Закрытая или отменённая вакансия: «прошёл» и отмена отметки сервер отвергает — кнопок нет (S9, S16). */
+export const isClosedVacancy = (vacancy) => Boolean(vacancy) && (vacancy.state === "closed" || vacancy.state === "cancelled");
+
 // ------------------------------------------------------------------ отмена последней отметки (S16)
 
 /** День по Москве «2026-11-23»: отметка «в тот же день» считается по Москве, а не по часам браузера. */
@@ -52,8 +55,8 @@ export function moscowDay(value) {
  * Показывать ли «Отменить последнюю отметку»: автору — в тот же день, руководителю ОП (stage.approve) — всегда.
  * Решает сервер (403 undo_expired); здесь только прячем лишнюю кнопку.
  */
-export function canUndo({ last, userId, canApprove, now = new Date() }) {
-  if (!last) return false;
+export function canUndo({ last, userId, canApprove, now = new Date(), closed = false }) {
+  if (!last || closed) return false;   // закрытая вакансия: отметки не отменяются (409 vacancy_closed)
   if (canApprove) return true;
   return last.by === userId && moscowDay(last.at) !== "" && moscowDay(last.at) === moscowDay(now);
 }
@@ -74,7 +77,7 @@ const LEFT_WORD = { passed: "вышел на работу", failed: "не про
  * Блок «Выбыли (N)» под доской (S16): люди без открытого этапа — отказ или «вышел»; их последнюю отметку отменяют
  * по тем же правилам, что на доске. left — GET /api/vacancy/{id}/funnel → left; пусто — null (блока нет).
  */
-export function leftBlock(left, { userId, canApprove, canMove, now = new Date() }) {
+export function leftBlock(left, { userId, canApprove, canMove, now = new Date(), closed = false }) {
   if (!left || !left.length) return null;
   return {
     title: `Выбыли (${left.length})`,
@@ -82,7 +85,7 @@ export function leftBlock(left, { userId, canApprove, canMove, now = new Date() 
       const last = person.last_mark || null;
       const word = last ? (LEFT_WORD[last.outcome] || String(last.outcome ?? "")) : "";
       return { person, text: [word, person.stage ? `этап «${person.stage}»` : ""].filter(Boolean).join(" · "),
-        undo: Boolean(canMove) && canUndo({ last, userId, canApprove, now }) };
+        undo: Boolean(canMove) && canUndo({ last, userId, canApprove, now, closed }) };
     }),
   };
 }

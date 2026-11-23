@@ -10,8 +10,8 @@ import { buildMark, OTHER_MIN, otherCounter, outcomeForm, reasonGroups } from ".
  * Окно «Итог этапа». stages — колонки доски; reasons и min — GET /api/stages → reasons и other_min; preselect — «passed» при перетаскивании.
  * Возвращает Promise<{saved, outcome, name, nextTitle, offerClose}>.
  */
-export function outcomeSheet({ api, signal, vacancyId, person, slot, stages, reasons, min = OTHER_MIN, hiringManager = "", preselect = "" }) {
-  const form = outcomeForm({ stages, slot, hiringManager });
+export function outcomeSheet({ api, signal, vacancyId, person, slot, stages, reasons, min = OTHER_MIN, hiringManager = "", preselect = "", closed = false }) {
+  const form = outcomeForm({ stages, slot, hiringManager, closed });
   const name = personName(person);
   const win = sheet({ title: `Итог этапа: ${name}`, width: "480px" });
   let limit = min;

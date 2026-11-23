@@ -136,3 +136,11 @@ test("S7: порог «Другое» — из справочника серве
   assert.equal(otherMin({ other_min: "много" }), OTHER_MIN);
   assert.equal(otherMin(null), OTHER_MIN);
 });
+
+test("S9: закрытая вакансия — без «Прошёл»: только отказ с причиной (сервер «прошёл» отвергает)", () => {
+  const form = outcomeForm({ stages: STAGES, slot: 4, closed: true });
+  assert.deepEqual(form.options.map((o) => o.value), ["failed", "refused"]);
+  assert.equal(form.askWhen, false);
+  assert.deepEqual(outcomeForm({ stages: STAGES, slot: 8, closed: true }).options.map((o) => [o.value, o.label]), [["refused", "Не вышел"]]);
+  assert.deepEqual(outcomeForm({ stages: STAGES, slot: 4, closed: false }).options.map((o) => o.value), ["passed", "failed", "refused"]);
+});

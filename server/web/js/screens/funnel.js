@@ -8,7 +8,7 @@ import { chip, face, personHref, personName } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
 import {
-  VIEWS, canDropOn, canUndo, dayText, funnelTotals, lastMarkText, leftBlock, stageSummary, undoToast, viewOf,
+  VIEWS, canDropOn, canUndo, dayText, funnelTotals, isClosedVacancy, lastMarkText, leftBlock, stageSummary, undoToast, viewOf,
 } from "./funnel-model.js";
 import { hintText, periodText } from "./funnel-report-model.js";
 import { render as renderHome } from "./funnel-home.js";
@@ -110,7 +110,7 @@ export function render(box, ctx) {
     }
     const item = [...lists.open, ...lists.closed].find((v) => v.id === funnel.vacancy.id);
     const result = await outcomeSheet({ api, signal, vacancyId: funnel.vacancy.id, person, slot, stages: funnel.stages, reasons: lib.list, min: lib.min,
-      hiringManager: item && item.hiring_manager ? item.hiring_manager : "", preselect });
+      hiringManager: item && item.hiring_manager ? item.hiring_manager : "", preselect, closed: isClosedVacancy(funnel.vacancy) });
     if (!result.saved) return;
     const name = personName(person);
     const text = markToast({ name, outcome: result.outcome, nextTitle: result.nextTitle });
@@ -168,9 +168,10 @@ export function render(box, ctx) {
 
   function personCard(funnel, person, stage) {
     const last = person.last_mark;
-    const undo = canMove && canUndo({ last, userId, canApprove });
+    const closed = isClosedVacancy(funnel.vacancy);
+    const undo = canMove && canUndo({ last, userId, canApprove, closed });
     return h("div.mini", {
-      draggable: canMove ? "true" : null,
+      draggable: canMove && !closed ? "true" : null,   // перетаскивание — это «Прошёл», на закрытой его нет
       onDragstart: (event) => {
         dragged = { person, from: stage.slot };
         event.dataTransfer.effectAllowed = "move";
@@ -229,7 +230,7 @@ export function render(box, ctx) {
 
   /** «Выбыли (N)»: отказ и «вышел» ушли с доски, но их последнюю отметку можно отменить (S16). */
   function leftEl(funnel) {
-    const block = leftBlock(funnel.left, { userId, canApprove, canMove });
+    const block = leftBlock(funnel.left, { userId, canApprove, canMove, closed: isClosedVacancy(funnel.vacancy) });
     if (!block) return null;
     return h("details.agentblock", h("summary", block.title),
       h("div.cards", block.rows.map((row) => h("div.mini", { style: "cursor:default" },
@@ -246,7 +247,7 @@ export function render(box, ctx) {
     const { text, undo, close } = notice;
     return h("div.note", { role: "status" }, text,
       undo || close ? h("div.btns.tight",
-        undo && canMove ? h("button.b.sm", { type: "button", onClick: () => openUndo(funnel, undo) }, "Отменить последнюю отметку") : null,
+        undo && canMove && !isClosedVacancy(funnel.vacancy) ? h("button.b.sm", { type: "button", onClick: () => openUndo(funnel, undo) }, "Отменить последнюю отметку") : null,
         close ? h("span", { style: "margin-right:6px" }, closePrompt(close)) : null,
         close ? h("button.b.sm.fill", { type: "button", onClick: () => closeIt(funnel) }, "Закрыть вакансию") : null) : null);
   }

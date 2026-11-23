@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  canDropOn, canUndo, dayText, funnelTotals, isLastStage, lastMarkText, leftBlock, localIso, moscowDay, nextStage, personNote,
+  canDropOn, canUndo, dayText, funnelTotals, isClosedVacancy, isLastStage, lastMarkText, leftBlock, localIso, moscowDay, nextStage, personNote,
   pickVacancy, stageIndex, stageSummary, undoToast, VIEWS, viewOf,
 } from "../../web/js/screens/funnel-model.js";
 
@@ -126,4 +126,17 @@ test("вкладки вакансии: «Кандидаты / Отчёт / Эт�
   assert.equal(viewOf({ view: "<script>" }), "candidates");
   assert.equal(viewOf({}), "candidates");
   assert.equal(viewOf(undefined), "candidates");
+});
+
+test("S16: на закрытой вакансии «Отменить последнюю отметку» нет ни у кого (сервер отвечает vacancy_closed)", () => {
+  const now = new Date("2026-11-23T12:00:00+03:00");
+  const last = { by: 7, at: "2026-11-23T09:00:00+03:00", outcome: "refused", slot: 1, by_name: "Иванова А." };
+  assert.equal(canUndo({ last, userId: 7, canApprove: true, now, closed: true }), false);
+  assert.equal(canUndo({ last, userId: 7, canApprove: false, now, closed: false }), true);
+  const left = [person(11, { stage: "Отобранные резюме", last_mark: last })];
+  assert.deepEqual(leftBlock(left, { userId: 7, canApprove: true, canMove: true, now, closed: true }).rows.map((r) => r.undo), [false]);
+  assert.equal(isClosedVacancy({ state: "closed" }), true);
+  assert.equal(isClosedVacancy({ state: "cancelled" }), true);
+  assert.equal(isClosedVacancy({ state: "on_hold" }), false);
+  assert.equal(isClosedVacancy(null), false);
 });
