@@ -25,6 +25,7 @@ from .api import person as person_api
 from .api import profiles as profiles_api
 from .api import reports as reports_api
 from .api import session as session_api
+from .api import stages as stages_api
 from .api import today as today_api
 from .api import tweaks as tweaks_api
 from .api import vacancies as vacancies_api
@@ -40,7 +41,7 @@ for _r in (session_api.router, today_api.router, person_api.router, decisions_ap
            learning_api.router, reports_api.router,
            hh_collect_api.router, org_api.router, my_api.router,
            access_api.router, handoff_api.router, tweaks_api.router,
-           notify_api.router, version_api.router):
+           notify_api.router, version_api.router, stages_api.router):
     app.include_router(_r)
 
 

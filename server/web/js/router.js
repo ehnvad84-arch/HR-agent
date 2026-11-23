@@ -1,5 +1,5 @@
 // Адрес экрана хранится в хэше: «Назад» и F5 возвращают на тот же экран.
-//   #/today   #/person/<id>   #/base?vacancy=3   #/vacancy/<id>/funnel
+//   #/today   #/person/<id>   #/base?vacancy=3   #/vacancy/<id>/funnel   #/funnel/stages
 // Новый адрес — строка в ROUTES (и вкладка в screens/index.js).
 
 export const TAB_ORDER = ["today", "base", "vacancies", "profiles", "learn", "logs", "funnel", "arch"];
@@ -17,6 +17,7 @@ const ROUTES = [
   { name: "access", pattern: ["access"] },
   { name: "funnel", pattern: ["vacancy", ":id", "funnel"] },
   { name: "funnel", pattern: ["funnel"] },
+  { name: "stages", pattern: ["funnel", "stages"] },
   { name: "arch", pattern: ["arch"] },
 ];
 const SAFE_ID = /^[\w-]+$/;

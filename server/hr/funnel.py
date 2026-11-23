@@ -1,6 +1,7 @@
-"""Воронка вакансии (S24, S36, S37): переводы по этапам, резерв, закрытие, дата встречи.
+"""Воронка вакансии (S24, S36, S37; funnel-report S10): доска по этапам набора, резерв, дата встречи.
 
-Кандидат связан с вакансией через ops.candidate_vacancy; каждый перевод — строка status_history.
+Кандидат связан с вакансией через ops.candidate_vacancy и отметки этапов ops.candidate_stage (hr/stages.py);
+статус кандидата пишется в status_history. STAGES — прежние этапы-статусы: подписи статусов и откат на v1.2.0.
 """
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from datetime import datetime
 
 import psycopg
 
+from . import stages
 from .db import one, rows, run, val
 from .views import cards
 
@@ -32,16 +34,18 @@ class NotFound(LookupError):
 
 def move(conn: psycopg.Connection, candidate_id: int, to_status: str, user_id: int, now: datetime, *,
          vacancy_id: int | None = None, comment: str | None = None, scheduled_at: datetime | None = None) -> str:
+    """Статус кандидата. С вакансией — сначала вход в её воронку (funnel-report S10: «Отобранные резюме»); этапы
+    дальше отмечает stages.mark, статус здесь не двигает воронку."""
     if to_status not in ALL:
         raise BadStage(to_status)
-    c = one(conn, "SELECT id, status::text AS status FROM candidate WHERE id = %s FOR UPDATE", (candidate_id,))
-    if not c:
+    if not val(conn, "SELECT 1 FROM candidate WHERE id = %s FOR UPDATE", (candidate_id,)):
         raise NotFound
     if vacancy_id is not None:
-        if not val(conn, "SELECT 1 FROM vacancy WHERE id = %s", (vacancy_id,)):
-            raise NotFound
-        run(conn, """INSERT INTO ops.candidate_vacancy (candidate_id, vacancy_id, added_by, added_at)
-                     VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING""", (candidate_id, vacancy_id, user_id, now))
+        try:
+            stages.enter(conn, candidate_id, vacancy_id, user_id, now)
+        except stages.NotFound:
+            raise NotFound from None
+    c = one(conn, "SELECT status::text AS status FROM candidate WHERE id = %s", (candidate_id,))
     run(conn, """UPDATE candidate SET status = %s,
                      last_contact_at = CASE WHEN %s THEN %s ELSE last_contact_at END,
                      first_contact_at = CASE WHEN %s AND first_contact_at IS NULL THEN %s ELSE first_contact_at END,
@@ -57,32 +61,96 @@ def move(conn: psycopg.Connection, candidate_id: int, to_status: str, user_id: i
     return to_status
 
 
+def has_open_stage(conn: psycopg.Connection, candidate_id: int) -> bool:
+    """Кандидат стоит на этапе какой-нибудь вакансии без исхода."""
+    return bool(val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND outcome IS NULL
+                             AND cancelled_at IS NULL LIMIT 1""", (candidate_id,)))
+
+
+def _agent_picks(conn, vacancy_id: int, now: datetime) -> list[dict]:
+    """S10: отобранные агентом по должности вакансии (новые сигналы), ещё не взятые в работу. В воронку и в отчёт
+    они не входят — только «Взять в работу» рекрутера ставит человека на первый этап."""
+    picks = rows(conn, """
+        SELECT DISTINCT ON (a.person_id) a.person_id, a.id AS alert_id, a.reason::text AS reason, a.headline,
+               a.created_at, m.score
+        FROM alert a JOIN person p ON p.id = a.person_id AND p.candidate_id IS NULL
+        LEFT JOIN role_profile rp ON rp.id = a.role_profile_id
+        LEFT JOIN match m ON m.person_id = a.person_id AND m.role_profile_id = a.role_profile_id
+        WHERE a.state = 'new'
+          AND (a.vacancy_id = %(v)s OR rp.code = (SELECT x.code FROM vacancy vv JOIN role_profile x
+                                                   ON x.id = vv.role_profile_id WHERE vv.id = %(v)s))
+        ORDER BY a.person_id, a.created_at DESC""", {"v": vacancy_id})
+    info = cards(conn, [p["person_id"] for p in picks])
+    for p in picks:
+        card = info.get(p["person_id"]) or {}
+        p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")),
+                 days=(now - p["created_at"]).days)
+    return sorted(picks, key=lambda p: (p["score"] is None, -(p["score"] or 0), p["person_id"]))
+
+
 def funnel(conn: psycopg.Connection, vacancy_id: int, now: datetime) -> dict:
+    """Доска вакансии (funnel-report): колонки — этапы действующего набора по slot, люди — открытые отметки;
+    у человека — последняя отметка пары (кто и когда: «Отменить последнюю отметку»), заметки — комментарии
+    отметок. left — выбывшие (отказ, «вышел») с последней отметкой: её тоже отменяют (S16). Ниже — «Отобраны
+    агентом» (в отчёт не входят). Чтение ничего не пишет: у вакансии без набора
+    (заведена v1.2.0 и закрыта до выпуска) показываются 8 стандартных этапов."""
     v = one(conn, "SELECT id, title, state, opened_at, headcount FROM vacancy WHERE id = %s", (vacancy_id,))
     if not v:
         raise NotFound
+    st = stages.current_set(conn, vacancy_id)
+    items = st["items"] if st else stages.standard_items(conn)
+    row_title = {r["code"]: r["title"] for r in rows(conn, "SELECT code, title FROM ops.funnel_row")}
+    titles = {i["slot"]: i["label"] or i["title"] for i in items}
     people = rows(conn, """
-        SELECT c.id AS candidate_id, c.person_id, c.status::text AS status,
-               (SELECT max(h.changed_at) FROM status_history h WHERE h.candidate_id = c.id) AS since
-        FROM ops.candidate_vacancy cv JOIN candidate c ON c.id = cv.candidate_id
-        WHERE cv.vacancy_id = %s ORDER BY since""", (vacancy_id,))
-    info = cards(conn, [p["person_id"] for p in people])
+        SELECT cs.candidate_id, c.person_id, c.status::text AS status, cs.slot, cs.entered_at AS since, cs.carried
+        FROM ops.candidate_stage cs JOIN candidate c ON c.id = cs.candidate_id
+        WHERE cs.vacancy_id = %s AND cs.outcome IS NULL AND cs.cancelled_at IS NULL
+        ORDER BY cs.entered_at, cs.id""", (vacancy_id,))
+    last = {m.pop("candidate_id"): m for m in rows(conn, """
+        SELECT DISTINCT ON (cs.candidate_id) cs.candidate_id, cs.decided_by AS by, u.full_name AS by_name,
+               cs.decided_at AS at, cs.outcome, cs.slot, s.title AS stage
+        FROM ops.candidate_stage cs JOIN ops.stage s ON s.id = cs.stage_id
+        LEFT JOIN app_user u ON u.id = cs.decided_by
+        WHERE cs.vacancy_id = %s AND cs.cancelled_at IS NULL AND cs.outcome IS NOT NULL
+        ORDER BY cs.candidate_id, cs.decided_at DESC, cs.id DESC""", (vacancy_id,))}
+    # S16: выбывшие — пары без открытого этапа (отказ, «вышел»); их последнюю отметку тоже можно отменить
+    open_ids = {p["candidate_id"] for p in people}
+    left = rows(conn, "SELECT id AS candidate_id, person_id, status::text AS status FROM candidate WHERE id = ANY(%s)",
+                ([cid for cid in last if cid not in open_ids],))
+    for p in left:
+        p["last_mark"] = last[p["candidate_id"]]
+        p["stage"] = titles.get(p["last_mark"]["slot"]) or p["last_mark"]["stage"]
+    left.sort(key=lambda p: (p["last_mark"]["at"], p["candidate_id"]), reverse=True)
     notes: dict[int, list] = {}
-    for n in rows(conn, """SELECT h.candidate_id, h.comment, h.changed_at, h.to_status::text AS status,
-                                  u.full_name AS author
-                           FROM status_history h LEFT JOIN app_user u ON u.id = h.changed_by
-                           WHERE h.candidate_id = ANY(%s) AND coalesce(btrim(h.comment), '') <> ''
-                           ORDER BY h.changed_at DESC""", ([p["candidate_id"] for p in people],)):
+    for n in rows(conn, """SELECT cs.candidate_id, cs.comment, cs.decided_at AS changed_at, cs.outcome, cs.slot,
+                                  s.title AS stage, u.full_name AS author
+                           FROM ops.candidate_stage cs JOIN ops.stage s ON s.id = cs.stage_id
+                           LEFT JOIN app_user u ON u.id = cs.decided_by
+                           WHERE cs.vacancy_id = %s AND cs.cancelled_at IS NULL
+                             AND coalesce(btrim(cs.comment), '') <> ''
+                           ORDER BY cs.decided_at DESC, cs.id DESC""", (vacancy_id,)):
+        n["stage"] = titles.get(n["slot"]) or n["stage"]
         notes.setdefault(n.pop("candidate_id"), []).append(n)
-    stages = []
-    for code, title in STAGES:
-        here = [p for p in people if p["status"] == code]
+    info = cards(conn, [p["person_id"] for p in people + left])
+    for p in left:
+        card = info.get(p["person_id"]) or {}
+        p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")))
+    columns = []
+    for item in items:
+        here = [p for p in people if p["slot"] == item["slot"]]
         for p in here:
             p["days"] = (now - p["since"]).days if p["since"] else 0
             card = info.get(p["person_id"]) or {}
             p.update(name=card.get("name"), label=card.get("label"), photo=bool(card.get("photo")),
-                     notes=notes.get(p["candidate_id"], [])[:5])
+                     notes=notes.get(p["candidate_id"], [])[:5], last_mark=last.get(p["candidate_id"]))
         avg = round(sum(p["days"] for p in here) / len(here)) if here else None
-        stages.append({"status": code, "title": title, "people": here, "avg_days": avg})
-    closed = [p for p in people if p["status"] in CLOSED]
-    return {"vacancy": v, "stages": stages, "closed": len(closed)}
+        columns.append({"slot": item["slot"], "pos": item["pos"], "stage_id": item["stage_id"],
+                        "title": titles[item["slot"]], "stage": item["title"], "report_row": item["report_row"],
+                        "row_title": row_title[item["report_row"]], "people": here, "avg_days": avg})
+    closed = val(conn, """SELECT count(DISTINCT candidate_id) FROM ops.candidate_stage o
+                          WHERE o.vacancy_id = %s AND o.cancelled_at IS NULL
+                            AND NOT EXISTS (SELECT 1 FROM ops.candidate_stage x
+                                            WHERE x.candidate_id = o.candidate_id AND x.vacancy_id = o.vacancy_id
+                                              AND x.outcome IS NULL AND x.cancelled_at IS NULL)""", (vacancy_id,))
+    return {"vacancy": v, "set": {"id": st["id"], "version": st["version"]} if st else None, "stages": columns,
+            "agent": _agent_picks(conn, vacancy_id, now), "closed": closed, "left": left}

@@ -1,78 +1,27 @@
-// «Воронка» (S24, S36; П:466–484): этапы вакансии с людьми, перевод между этапами кнопкой и мышью, встреча и отказ.
-// Данные — GET /api/vacancy/{id}/funnel. Всё из API выводится только текстом (h(), textContent).
+// «Воронка» вакансии (S6–S10, S14, S16): вкладки «Кандидаты / Отчёт / Этапы», доска по этапам набора, окно «Итог этапа»,
+// отмена последней отметки, пауза. Данные — GET /api/vacancy/{id}/funnel, …/funnel-report, …/stage-sets.
+// Всё из API выводится только текстом (h(), textContent).
 import { h, mount, uid } from "../dom.js";
-import { dayLabel, timeLabel } from "../format.js";
+import { funnelTable } from "../funnel-table.js";
 import { isCabinet } from "../nav-model.js";
 import { chip, face, personHref, personName } from "../people.js";
-import { emptyCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
+import { hashFor } from "../router.js";
+import { emptyCard, errorLine, mountAsync, sheet, toast } from "../ui.js";
 import {
-  buildMove, dayText, defaultTarget, funnelTotals, meetingStage, moveOptions, needsWindow, pickVacancy, reasonMode, stageSummary,
-  statusLabel,
+  VIEWS, canDropOn, canUndo, dayText, funnelTotals, isClosedVacancy, lastMarkText, leftBlock, stageSummary, undoToast, viewOf,
 } from "./funnel-model.js";
+import { hintText, periodText } from "./funnel-report-model.js";
+import { render as renderHome } from "./funnel-home.js";
+import { render as renderOverview } from "./funnel-overview.js";
 import { renderPage as renderManagerPage } from "./manager-vacancies.js";
-import { closedText, openText } from "./vacancies-model.js";
+import { markToast, closePrompt, otherMin } from "./outcome-model.js";
+import { outcomeSheet, undoSheet } from "./outcome-sheet.js";
+import { pendingBadge } from "./stage-approvals-model.js";
+import { stagesTab } from "./stages-view.js";
+import { closeVacancy, togglePause } from "./vacancy-actions.js";
+import { closedText, openText, pauseLabel, stageChips } from "./vacancies-model.js";
 
-// ------------------------------------------------------------------ окно «Перевести»
-
-/**
- * Окно перевода кандидата: этап или итог, для встреч — дата и время, для отказов — причина.
- * Ошибка сервера (422 и др.) — под кнопкой, окно открыто. Возвращает Promise<{moved, status, when}>.
- */
-function moveSheet({ api, signal, vacancyId, person, current, stages, preselect }) {
-  const options = moveOptions(stages, current);
-  const win = sheet({ title: `Перевести: ${personName(person)}`, width: "480px",
-    hint: "Каждый перевод пишется в историю статусов с автором и временем." });
-  const selectId = uid("stage");
-  const select = h("select", { id: selectId },
-    h("optgroup", { label: "Этапы воронки" }, options.stages.map((o) => h("option", { value: o.value }, o.label))),
-    h("optgroup", { label: "Итог" }, options.final.map((o) => h("option", { value: o.value }, o.label))));
-  select.value = preselect || defaultTarget(stages, current);
-
-  const when = field({ label: "Дата и время встречи (необязательно)", kind: "datetime-local", name: "scheduled_at" });
-  const reason = field({ label: "Причина отказа", kind: "textarea", name: "reason" });
-  const whenBox = when.root;
-  const reasonBox = reason.root;
-  const status = errorLine();
-  const save = h("button.b.fill", { type: "submit" }, "Перевести");
-
-  const sync = () => {
-    const target = select.value;
-    whenBox.hidden = !meetingStage(target);
-    const mode = reasonMode(target);
-    reasonBox.hidden = mode === "none";
-    reason.root.querySelector("label").textContent = mode === "required" ? "Причина отказа" : "Комментарий (необязательно)";
-    reason.input.required = mode === "required";
-  };
-  select.addEventListener("change", sync);
-  sync();
-
-  const form = h("form", { novalidate: true }, h("div.form",
-    h("div.field", h("label", { for: selectId }, "Куда перевести"), select), whenBox, reasonBox),
-  status.el, h("div.sheetfoot.end", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"), save));
-  let outcome = { moved: false };
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    status.clear();
-    const built = buildMove({ vacancyId, toStatus: select.value, comment: reason.input.value, when: when.input.value });
-    if (!built.ok) {
-      status.show(built.error);
-      return;
-    }
-    save.disabled = true;
-    try {
-      await api.post(`/api/candidate/${encodeURIComponent(person.candidate_id)}/status`, built.payload, { signal });
-      outcome = { moved: true, status: select.value, when: built.payload.scheduled_at || "" };
-      win.close("moved");
-    } catch (error) {
-      if (error && error.name === "AbortError") { win.close("cancel"); return; }
-      status.show(error);   // 422 «Неизвестный этап воронки» и т. п. — в окне, введённое остаётся
-      save.disabled = false;
-    }
-  });
-  win.body.append(form);
-  win.show(select);
-  return win.closed.then((result) => (result === "moved" ? outcome : { moved: false }));
-}
+const PANEL_ID = "vacancy-panel";
 
 // ------------------------------------------------------------------ другая вакансия
 
@@ -88,7 +37,7 @@ function chooseVacancy({ open, current, onPick }) {
 
 // ------------------------------------------------------------------ экран
 
-function notFound(ctx) {
+function notFound() {
   return emptyCard("Вакансия не найдена", h("a.link", { href: "#/vacancies" }, "К «Вакансиям»"));
 }
 
@@ -96,11 +45,19 @@ export function render(box, ctx) {
   if (isCabinet(ctx.session.user)) return renderManagerPage(box, ctx);   // страница вакансии руководителя: подходящие и воронка только для чтения
   const { api, signal, session } = ctx;
   const id = ctx.params.id;
-  if (id && !/^\d+$/.test(id)) return mount(box, notFound(ctx));
+  if (id && !/^\d+$/.test(id)) return mount(box, notFound());
+  if (!id) return ctx.session.can("stage.approve") ? renderHome(box, ctx) : renderOverview(box, ctx);   // без вакансии — отчёт за год (T14); у руководителя ОП ещё «Ждут утверждения» (T13)
   const canMove = session.can("person.take");
-  let vacancyId = id;
+  const canEdit = session.can("vacancy.edit");
+  const canApprove = session.can("stage.approve");
+  const userId = session.user && session.user.id;
+  const vacancyId = id;
+  let view = viewOf(ctx.query);
   let lists = { open: [], closed: [] };
   let dragged = null;
+  let notice = null;   // {text, undo: person|null, close: bool}: итог последнего действия на доске
+  let reasonsPromise = null;
+  const carry = { items: null };   // отозванный набор: рекрутер может поправить его и предложить снова (S3)
   const status = errorLine();
 
   const loadFunnel = async () => {
@@ -113,63 +70,110 @@ export function render(box, ctx) {
   };
   const load = async () => {
     lists = await api.get("/api/vacancies", { signal });
-    if (!vacancyId) {
-      const first = pickVacancy(lists.open);
-      if (!first) return { none: true };
-      vacancyId = String(first.id);
-      ctx.go("funnel", { id: vacancyId }, {}, { replace: true });   // адрес показывает, какая вакансия открыта; экран перерисуется
-      return { redirect: true };
-    }
     return { funnel: await loadFunnel() };
   };
+  /** Причины исхода и порог «Другое» — из справочника (GET /api/stages), один раз за экран. */
+  const reasons = () => {
+    if (!reasonsPromise) {
+      reasonsPromise = api.get("/api/stages", { signal }).then((lib) => ({ list: lib.reasons || [], min: otherMin(lib) }))
+        .catch((error) => { reasonsPromise = null; throw error; });
+    }
+    return reasonsPromise;
+  };
 
+  /** Перерисовать экран после действия: заголовок и вкладка — по свежим данным, без «Загружаю…». */
   const refresh = async () => {
     try {
+      lists = await api.get("/api/vacancies", { signal });
+      if (canApprove) ctx.setBadge("funnel", pendingBadge(lists));   // решение по набору меняет счётчик на вкладке
       const funnel = await loadFunnel();
       if (signal.aborted) return;
-      mount(box, view(funnel));
+      mount(box, funnel ? screen(funnel) : notFound());
     } catch (error) {
       if (error && error.name === "AbortError") return;
       status.show(error);
     }
   };
 
-  /** Перевод: ошибка — в строке над воронкой; успех — уведомление и новая воронка. */
-  const afterMove = async (stages, person, result) => {
-    const label = statusLabel(stages, result.status);
-    toast(result.when ? `Переведён: ${label}. Встреча ${dayLabel(result.when)}, ${timeLabel(result.when)} — видна в «Сегодня и завтра»`
-      : `Переведён: ${label}`);
-    await refresh();
-  };
-  const openMove = async (stages, person, current, preselect) => {
+  // ---------------------------------------------------------------- действия на доске
+
+  const openOutcome = async (funnel, person, slot, preselect) => {
     status.clear();
-    const result = await moveSheet({ api, signal, vacancyId: Number(vacancyId), person, current, stages, preselect });
-    if (result.moved) await afterMove(stages, person, result);
-  };
-  const dropOn = async (stages, stage) => {
-    const drag = dragged;
-    dragged = null;
-    if (!drag || drag.from === stage.status) return;
-    if (needsWindow(stage.status)) {
-      await openMove(stages, drag.person, drag.from, stage.status);
+    notice = null;
+    let lib;
+    try {
+      lib = await reasons();
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      status.show(error);
       return;
     }
+    const item = [...lists.open, ...lists.closed].find((v) => v.id === funnel.vacancy.id);
+    const result = await outcomeSheet({ api, signal, vacancyId: funnel.vacancy.id, person, slot, stages: funnel.stages, reasons: lib.list, min: lib.min,
+      hiringManager: item && item.hiring_manager ? item.hiring_manager : "", preselect, closed: isClosedVacancy(funnel.vacancy) });
+    if (!result.saved) return;
+    const name = personName(person);
+    const text = markToast({ name, outcome: result.outcome, nextTitle: result.nextTitle });
+    toast(text);
+    notice = { text, undo: result.outcome !== "passed" || !result.nextTitle ? person : null,
+      close: result.offerClose && canEdit ? funnel.vacancy.headcount : 0 };
+    await refresh();
+  };
+
+  const openUndo = async (funnel, person) => {
     status.clear();
+    notice = null;
+    const result = await undoSheet({ api, signal, vacancyId: funnel.vacancy.id, person });
+    if (!result.saved) return;
+    const stage = funnel.stages.find((s) => s.slot === result.slot);
+    toast(undoToast(personName(person), stage ? stage.title : ""));
+    await refresh();
+  };
+
+  const takePick = async (funnel, pick, button) => {
+    status.clear();
+    notice = null;
+    button.disabled = true;
     try {
-      await api.post(`/api/candidate/${encodeURIComponent(drag.person.candidate_id)}/status`,
-        { vacancy_id: Number(vacancyId), to_status: stage.status }, { signal });
-      await afterMove(stages, drag.person, { status: stage.status, when: "" });
+      await api.post(`/api/person/${encodeURIComponent(pick.person_id)}/take`, { vacancy_id: funnel.vacancy.id }, { signal });
+      toast(`Взят в работу: ${personName(pick)}. Контакт не открыт — он откроется отдельно, с подтверждением`);
+      await refresh();
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      status.show(error);
+      button.disabled = false;
+    }
+  };
+
+  const closeIt = async (funnel) => {
+    status.clear();
+    const result = await closeVacancy({ api, signal, vacancy: funnel.vacancy });
+    if (!result.saved) return;
+    notice = { text: result.text, undo: null, close: 0 };
+    await refresh();
+  };
+
+  const pauseIt = async (funnel) => {
+    status.clear();
+    notice = null;
+    try {
+      if (await togglePause({ api, signal, vacancy: funnel.vacancy })) await refresh();
     } catch (error) {
       if (error && error.name === "AbortError") return;
       status.show(error);
     }
   };
 
-  function personCard(person, stage, stages) {
+  // ---------------------------------------------------------------- вкладка «Кандидаты»
+
+  function personCard(funnel, person, stage) {
+    const last = person.last_mark;
+    const closed = isClosedVacancy(funnel.vacancy);
+    const undo = canMove && canUndo({ last, userId, canApprove, closed });
     return h("div.mini", {
-      draggable: canMove ? "true" : null,
+      draggable: canMove && !closed ? "true" : null,   // перетаскивание — это «Прошёл», на закрытой его нет
       onDragstart: (event) => {
-        dragged = { person, from: stage.status };
+        dragged = { person, from: stage.slot };
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", String(person.candidate_id));
       },
@@ -178,15 +182,19 @@ export function render(box, ctx) {
     h("a.open", { href: personHref(person.person_id), title: "Открыть досье", "data-tip": "Открыть досье" },
       h("div.namewrap", face(person, { small: true }), h("b", personName(person))),
       h("span", dayText(person.days))),
-    canMove ? h("button.b.sm", { type: "button", onClick: () => openMove(stages, person, stage.status) }, "Перевести") : null);
+    last ? h("span.lastmark", lastMarkText(last)) : null,
+    canMove || undo ? h("div.btns.tight",
+      canMove ? h("button.b.sm", { type: "button", onClick: () => openOutcome(funnel, person, stage.slot) }, "Итог этапа") : null,
+      undo ? h("button.b.sm", { type: "button", "aria-label": `Отменить последнюю отметку: ${personName(person)}`,
+        onClick: () => openUndo(funnel, person) }, "Отменить последнюю отметку") : null) : null);
   }
 
-  function stageEl(stage, stages, total) {
+  function stageEl(funnel, stage, total) {
     const summary = stageSummary(stage, total);
     const headingId = uid("stage");
-    const el = h("section.stage", { class: summary.empty ? "empty" : null, "aria-labelledby": headingId, dataset: { status: stage.status },
+    const el = h("section.stage", { class: summary.empty ? "empty" : null, "aria-labelledby": headingId, dataset: { slot: stage.slot },
       onDragover: (event) => {
-        if (!dragged || dragged.from === stage.status) return;
+        if (!dragged || !canDropOn(funnel.stages, dragged.from, stage.slot)) return;   // только на следующий этап
         event.preventDefault();
         el.classList.add("droptarget");
       },
@@ -194,43 +202,165 @@ export function render(box, ctx) {
       onDrop: (event) => {
         event.preventDefault();
         el.classList.remove("droptarget");
-        dropOn(stages, stage);
+        const drag = dragged;
+        dragged = null;
+        if (drag && canDropOn(funnel.stages, drag.from, stage.slot)) openOutcome(funnel, drag.person, drag.from, "passed");
       } },
     h("div.top", h("h2.nm", { id: headingId }, stage.title), h("span.cnt", summary.countText),
       h("span.meter", { "aria-hidden": "true" }, h("i", { style: `width:${summary.pct}%` })), h("span.days", summary.avgText)),
-    stage.people.length ? h("div.cards", stage.people.map((p) => personCard(p, stage, stages))) : null);
+    stage.people.length ? h("div.cards", stage.people.map((p) => personCard(funnel, p, stage))) : null);
     return el;
   }
 
-  function view(funnel) {
-    if (!funnel) return notFound(ctx);
-    const { vacancy, stages } = funnel;
-    const total = funnelTotals(stages);
-    const item = [...lists.open, ...lists.closed].find((v) => v.id === vacancy.id);
-    const text = item ? (item.state === "closed" || item.state === "cancelled" ? closedText(item) : openText(item))
-      : `Ставок: ${vacancy.headcount} · в работе ${total}`;
+  function agentBlock(funnel) {
+    const picks = funnel.agent || [];
+    if (!picks.length) return null;
+    return h("details.agentblock", { open: true },
+      h("summary", `До воронки — отобраны агентом (${picks.length}), в отчёт не входят`),
+      h("div.cards", picks.map((p) => {
+        const take = h("button.b.sm.fill", { type: "button", "aria-label": `Взять в работу: ${personName(p)}`,
+          onClick: () => takePick(funnel, p, take) }, "Взять в работу");
+        return h("div.mini", { style: "cursor:default" },
+          h("a.open", { href: personHref(p.person_id), title: "Открыть досье" },
+            h("div.namewrap", face(p, { small: true }), h("b", personName(p))),
+            h("span", typeof p.days === "number" ? `сигнал ${p.days === 0 ? "сегодня" : `${p.days} дн. назад`}` : "")),
+          canMove ? take : null);
+      })));
+  }
+
+  /** «Выбыли (N)»: отказ и «вышел» ушли с доски, но их последнюю отметку можно отменить (S16). */
+  function leftEl(funnel) {
+    const block = leftBlock(funnel.left, { userId, canApprove, canMove, closed: isClosedVacancy(funnel.vacancy) });
+    if (!block) return null;
+    return h("details.agentblock", h("summary", block.title),
+      h("div.cards", block.rows.map((row) => h("div.mini", { style: "cursor:default" },
+        h("a.open", { href: personHref(row.person.person_id), title: "Открыть досье" },
+          h("div.namewrap", face(row.person, { small: true }), h("b", personName(row.person))),
+          h("span", row.text)),
+        row.person.last_mark ? h("span.lastmark", lastMarkText(row.person.last_mark)) : null,
+        row.undo ? h("div.btns.tight", h("button.b.sm", { type: "button", "aria-label": `Отменить последнюю отметку: ${personName(row.person)}`,
+          onClick: () => openUndo(funnel, row.person) }, "Отменить последнюю отметку")) : null))));
+  }
+
+  function noticeEl(funnel) {
+    if (!notice) return null;
+    const { text, undo, close } = notice;
+    return h("div.note", { role: "status" }, text,
+      undo || close ? h("div.btns.tight",
+        undo && canMove && !isClosedVacancy(funnel.vacancy) ? h("button.b.sm", { type: "button", onClick: () => openUndo(funnel, undo) }, "Отменить последнюю отметку") : null,
+        close ? h("span", { style: "margin-right:6px" }, closePrompt(close)) : null,
+        close ? h("button.b.sm.fill", { type: "button", onClick: () => closeIt(funnel) }, "Закрыть вакансию") : null) : null);
+  }
+
+  function board(funnel) {
+    const total = funnelTotals(funnel.stages);
     return [
-      h("div.card", { style: "margin-bottom:14px" }, h("div.row",
-        h("div.grow", h("h2.t1", vacancy.title), h("div.t2", text),
-          vacancy.state !== "open" ? h("div.chips", chip(vacancy.state === "closed" ? "закрыта" : vacancy.state === "on_hold" ? "на паузе" : String(vacancy.state))) : null),
-        h("div.btns", { style: "margin:0" },
-          h("button.b.tint", { type: "button", onClick: () => ctx.go("base", {}, { vacancy: vacancy.id }) }, "Показать подходящих"),
-          h("button.b", { type: "button", onClick: () => chooseVacancy({ open: lists.open, current: vacancy.id,
-            onPick: (pick) => ctx.go("funnel", { id: pick }) }) }, "Другая вакансия"))),
-      status.el),
-      h("div", stages.map((s) => stageEl(s, stages, total))),
-      total === 0 ? h("p.hint", { style: "margin:10px 6px" }, "В воронке пока никого: «Сохранить» на «Сегодня» или в «Досье» ставит людей на этап «Отобран агентом».") : null,
-      funnel.closed ? h("p.hint", { style: "margin:10px 6px" }, `Завершили путь по вакансии: ${funnel.closed} чел. (вышли на работу, отказ). В этапах они не показываются.`) : null,
+      noticeEl(funnel),
+      agentBlock(funnel),
+      h("div", funnel.stages.map((s) => stageEl(funnel, s, total))),
+      total === 0 ? h("p.hint", { style: "margin:10px 6px" },
+        "В воронке пока никого: «Взять в работу» на «Сегодня», в «Досье» или в блоке «Отобраны агентом» ставит человека на этап «Отобранные резюме».") : null,
+      leftEl(funnel),
       h("p.hint", { style: "margin:10px 6px" },
-        "Этапы идут сверху вниз, ширина полосы — доля людей на этапе. Карточку можно перетащить на другой этап или нажать «Перевести» (для встреч — с датой, для отказов — с причиной); каждое перемещение пишется в историю статусов с автором и временем."),
+        "Этапы идут сверху вниз, ширина полосы — доля людей на этапе. «Итог этапа» записывает, прошёл человек этап, не прошёл или отказался: "
+        + "назад и через этап перевести нельзя, карточку можно перетащить только на следующий этап. Ошибочную отметку отменяет её автор в тот же день "
+        + "или руководитель отдела персонала; каждая отметка пишется в историю с автором и временем."),
     ];
   }
 
-  return mountAsync(box, load, (data) => {
-    if (data.redirect) return null;
-    if (data.none) {
-      return emptyCard("Открытых вакансий нет", h("a.link", { href: "#/vacancies" }, "Перейти к «Вакансиям»"));
+  // ---------------------------------------------------------------- вкладки «Отчёт» и «Этапы»
+
+  const reportTab = (report) => [
+    h("div.card", { style: "margin-bottom:12px" }, h("div.t2", periodText(report))),
+    funnelTable(report, { expand: true, title: report.title }),
+    h("p.hint", { style: "margin:10px 6px" }, hintText(report.since)),
+  ];
+
+  /** Содержимое вкладки; Promise-загрузка и разметка. preloaded — уже загруженная доска. */
+  function panelFor(name, funnel, vacancy) {
+    if (name === "report") {
+      return { load: async () => {
+        try {
+          return await api.get(`/api/vacancy/${encodeURIComponent(vacancyId)}/funnel-report`, { signal });
+        } catch (error) {
+          if (error && error.status === 404) return null;
+          throw error;
+        }
+      },
+      render: (report) => (report ? reportTab(report)
+        : emptyCard("Отчёт этой вакансии видит ответственный рекрутер и руководитель отдела персонала")) };
     }
-    return view(data.funnel);
+    if (name === "stages") {
+      const stageEnv = { api, signal, vacancy, canEdit, canApprove, carry, refresh };
+      return { load: async () => {
+        const [sets, library] = await Promise.all([api.get(`/api/vacancy/${encodeURIComponent(vacancyId)}/stage-sets`, { signal }),
+          api.get("/api/stages", { signal })]);
+        return { sets, library };
+      }, render: (data) => stagesTab(data, stageEnv) };
+    }
+    return { load: async () => funnel || loadFunnel(), render: (data) => (data ? board(data) : notFound()) };
+  }
+
+  // ---------------------------------------------------------------- экран
+
+  function screen(funnel) {
+    const { vacancy } = funnel;
+    const total = funnelTotals(funnel.stages);
+    const item = [...lists.open, ...lists.closed].find((v) => v.id === vacancy.id);
+    const text = item ? (item.state === "closed" || item.state === "cancelled" ? closedText(item) : openText(item))
+      : `Ставок: ${vacancy.headcount} · в работе ${total}`;
+    const stateChip = vacancy.state === "closed" ? "закрыта" : vacancy.state === "on_hold" ? "на паузе" : vacancy.state !== "open" ? String(vacancy.state) : "";
+    const chips = [stateChip ? chip(stateChip) : null, ...stageChips(item || {}).map((c) => chip(c.text, c.tone))].filter(Boolean);
+    const pausable = canEdit && (vacancy.state === "open" || vacancy.state === "on_hold");
+
+    const panel = h("div", { id: PANEL_ID, role: "tabpanel" });
+    const tabs = new Map();
+    let preloaded = funnel;   // доска уже загружена: первая вкладка берёт её, дальше — свежий запрос
+    const select = (name, { focus = false } = {}) => {
+      view = name;
+      for (const [tab, button] of tabs) {
+        const on = tab === name;
+        button.setAttribute("aria-selected", String(on));
+        button.setAttribute("tabindex", on ? "0" : "-1");
+        button.classList.toggle("on", on);
+        if (on) panel.setAttribute("aria-labelledby", button.id);
+      }
+      if (focus) tabs.get(name).focus();
+      window.history.replaceState(null, "", hashFor("funnel", { id: vacancy.id }, name === "candidates" ? {} : { view: name }));   // адрес показывает вкладку
+      const content = panelFor(name, name === "candidates" ? preloaded : null, vacancy);
+      preloaded = null;
+      mountAsync(panel, content.load, content.render, { signal });
+    };
+    const tablist = h("div.seg", { role: "tablist", "aria-label": "Вакансия",
+      onKeydown: (event) => {
+        const names = VIEWS.map(([name]) => name);
+        const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+        if (!step && event.key !== "Home" && event.key !== "End") return;
+        event.preventDefault();
+        const at = names.indexOf(view);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? names.length - 1 : (at + step + names.length) % names.length;
+        select(names[next], { focus: true });
+      } },
+    VIEWS.map(([name, title]) => {
+      const button = h("button", { type: "button", role: "tab", id: uid("vtab"), "aria-controls": PANEL_ID, "aria-selected": "false",
+        tabindex: "-1", dataset: { view: name }, "data-tip": title, onClick: () => select(name) }, title);
+      tabs.set(name, button);
+      return button;
+    }));
+
+    const header = h("div.card", { style: "margin-bottom:4px" }, h("div.row",
+      h("div.grow", h("h2.t1", vacancy.title), h("div.t2", text), chips.length ? h("div.chips", chips) : null),
+      h("div.btns", { style: "margin:0" },
+        h("button.b.tint", { type: "button", onClick: () => ctx.go("base", {}, { vacancy: vacancy.id }) }, "Показать подходящих"),
+        h("button.b", { type: "button", onClick: () => chooseVacancy({ open: lists.open, current: vacancy.id,
+          onPick: (pick) => ctx.go("funnel", { id: pick }) }) }, "Другая вакансия"),
+        pausable ? h("button.b", { type: "button", "data-tip": pauseLabel(vacancy), onClick: () => pauseIt(funnel) }, pauseLabel(vacancy)) : null)),
+    status.el);
+    queueMicrotask(() => select(view));
+    return [header, tablist, panel];
+  }
+
+  return mountAsync(box, load, (data) => {
+    return data.funnel ? screen(data.funnel) : notFound();
   }, { signal });
 }

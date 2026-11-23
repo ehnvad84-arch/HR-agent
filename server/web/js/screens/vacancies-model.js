@@ -79,3 +79,19 @@ export function buildVacancy({ profileId, title, headcount, targetDate, recruite
   payload.hiring_manager_id = Number(hiringManagerId);
   return { ok: true, payload };
 }
+
+// ------------------------------------------------------------------ пауза и набор этапов (funnel-report S3, S4, S14)
+
+export const pauseLabel = (v) => (v.state === "on_hold" ? "Снять с паузы" : "Поставить на паузу");
+export const PAUSE_TITLE = "Поставить на паузу?";
+export const PAUSE_HINT = "Дни паузы не войдут в срок ведения. Отмечать итоги этапов на паузе можно, новых людей брать нельзя.";
+export const PAUSE_TOAST = "Вакансия на паузе";
+export const RESUME_TOAST = "Пауза снята";
+
+/** Плашки состояния набора этапов: ждёт утверждения у руководителя ОП или отклонён (комментарий — на вкладке «Этапы»). */
+export function stageChips(v) {
+  const chips = [];
+  if (v.stages_pending) chips.push({ text: "этапы ждут утверждения", tone: "o" });
+  if (v.stages_declined) chips.push({ text: "набор отклонён", tone: "r" });
+  return chips;
+}

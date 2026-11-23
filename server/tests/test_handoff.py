@@ -74,6 +74,20 @@ def test_already_candidate_only_linked(conn, clock, api):
     assert rc.post(f"/api/handoff/{hid}/take", headers=rh).json() == {"candidate_id": cid}
 
 
+def test_reserve_candidate_handed_off_enters_funnel(conn, clock, api):
+    """funnel-report S10: кандидат из резерва, переданный руководителем, — на первом этапе набора вакансии."""
+    o, vac, (mc, mh, _), (rc, rh, rid) = setup(conn, clock, api)
+    pid = person(conn, o["sales"])
+    db.run(conn, "UPDATE vacancy SET state = 'on_hold' WHERE id = %s", (vac,))
+    cid = rc.post(f"/api/person/{pid}/take", json={}, headers=rh).json()["candidate_id"]   # открытой нет — резерв
+    db.run(conn, "UPDATE vacancy SET state = 'open' WHERE id = %s", (vac,))
+    hid = mc.post("/api/handoff", json={"person_id": pid, "vacancy_id": vac, "comment": GOOD}, headers=mh).json()["id"]
+    assert rc.post(f"/api/handoff/{hid}/take", headers=rh).json() == {"candidate_id": cid}
+    assert db.rows(conn, "SELECT vacancy_id, report_row, entered_by FROM ops.candidate_stage WHERE candidate_id = %s",
+                   (cid,)) == [{"vacancy_id": vac, "report_row": "selected", "entered_by": rid}]
+    assert db.val(conn, "SELECT status::text FROM candidate WHERE id = %s", (cid,)) == "picked_by_agent"
+
+
 def test_out_of_scope_404_and_hr_cannot_send(conn, clock, api):
     o, vac, (mc, mh, _), (rc, rh, _) = setup(conn, clock, api)
     eng = person(conn, o["eng"], "Инженер")

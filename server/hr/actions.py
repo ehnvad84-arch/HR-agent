@@ -161,7 +161,8 @@ def approve(conn, action_id: int, user_id: int, now: datetime, text: str | None 
                      payload = %s WHERE id = %s""", (user_id, now, now, j(payload), action_id))
     if a["candidate_id"]:
         if a["kind_s"] == "first_message":
-            funnel.move(conn, a["candidate_id"], "first_message_sent", user_id, now, vacancy_id=a["vacancy_id"],
+            # только статус: в воронку и по этапам ставит человек окном «Итог этапа» (funnel-report S10)
+            funnel.move(conn, a["candidate_id"], "first_message_sent", user_id, now,
                         comment="письмо одобрено и скопировано")
         else:
             run(conn, "UPDATE candidate SET last_contact_at = %s WHERE id = %s", (now, a["candidate_id"]))

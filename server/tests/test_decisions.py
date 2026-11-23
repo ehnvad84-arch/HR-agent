@@ -37,6 +37,8 @@ def test_s11_take_into_open_vacancy(conn, api, strong):
     cand = db.one(conn, "SELECT * FROM candidate WHERE id = %s", (cid,))
     assert cand["status"] == "picked_by_agent" and cand["fio"] == "Петров Пётр" and cand["owner_id"] == uid
     assert db.val(conn, "SELECT vacancy_id FROM ops.candidate_vacancy WHERE candidate_id = %s", (cid,)) == vid
+    assert db.rows(conn, "SELECT vacancy_id, report_row, outcome FROM ops.candidate_stage WHERE candidate_id = %s",
+                   (cid,)) == [{"vacancy_id": vid, "report_row": "selected", "outcome": None}], "funnel-report S10"
     cons = db.one(conn, "SELECT basis::text AS basis, channel FROM consent WHERE candidate_id = %s", (cid,))
     assert cons["basis"] == "candidate_initiated" and "hh" in cons["channel"]
     hist = db.val(conn, "SELECT to_status::text FROM status_history WHERE candidate_id = %s", (cid,))
@@ -52,6 +54,7 @@ def test_s11_take_without_vacancy_goes_to_reserve(conn, api, strong):
     cid = c.post(f"/api/person/{pid}/take", json={}, headers=h).json()["candidate_id"]
     assert db.val(conn, "SELECT status::text FROM candidate WHERE id = %s", (cid,)) == "reserve"
     assert db.val(conn, "SELECT count(*) FROM ops.candidate_vacancy WHERE candidate_id = %s", (cid,)) == 0
+    assert db.val(conn, "SELECT count(*) FROM ops.candidate_stage WHERE candidate_id = %s", (cid,)) == 0
 
 
 def test_take_twice_409(conn, api, strong):

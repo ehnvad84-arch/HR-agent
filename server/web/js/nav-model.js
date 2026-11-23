@@ -37,8 +37,14 @@ export function activeTab(routeName, nav) {
   if (nav.tabs.includes(routeName)) return routeName;
   if (routeName === "person") return nav.tabs.includes("base") ? "base" : null;
   if (nav.kind === "cabinet") return { funnel: "vacancies" }[routeName] || null;
-  return null;
+  return { stages: "funnel" }[routeName] || null;   // справочник этапов — внутри «Воронки»
 }
+
+/**
+ * Помнит ли вкладка последний открытый объект: «Досье» возвращает на прошлого человека. «Воронка» — нет: без вакансии она показывает
+ * отчёт рекрутера за год (у руководителя ОП — ещё «Ждут утверждения»), к вакансии ведёт «Открыть» в отчёте (funnel-report T14).
+ */
+export const remembersObject = (name) => name === "person";
 
 /** Подпись в шапке: подразделение руководителя («… и вложенные») или «Вся компания» у директора; у специалиста подписи нет. */
 export function headerLine(user, scope) {

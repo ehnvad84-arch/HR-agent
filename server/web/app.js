@@ -5,9 +5,10 @@ import { $, h, mount } from "./js/dom.js";
 import { loadStatus } from "./js/load-status.js";
 import { notify } from "./js/notify.js";
 import { renderLoginPage, requestLogin } from "./js/login.js";
-import { NO_ACCESS_TEXT, NO_UNIT_TEXT, activeTab, headerLine, navFor, noUnit } from "./js/nav-model.js";
+import { NO_ACCESS_TEXT, NO_UNIT_TEXT, activeTab, headerLine, navFor, noUnit, remembersObject } from "./js/nav-model.js";
 import { startRouter } from "./js/router.js";
 import { SCREENS } from "./js/screens/index.js";
+import { pendingBadge } from "./js/screens/stage-approvals-model.js";
 import { session } from "./js/session.js";
 import { buildTabs, renderUser } from "./js/shell.js";
 import { initTheme } from "./js/theme.js";
@@ -32,7 +33,7 @@ function buildNav() {
   nav = navFor(session.user, (permission) => session.can(permission));
   tabs = buildTabs($("#tabs"), { ...titles, ...nav.titles }, {
     order: nav.tabs,
-    onSelect: (name) => router && router.go(name, lastParams[name] || {}),
+    onSelect: (name) => router && router.go(name, (remembersObject(name) && lastParams[name]) || {}),
   });
   const line = headerLine(session.user, session.scope);
   el.unit.textContent = line;
@@ -51,7 +52,7 @@ function renderRoute(route) {
 
   tabs.setActive(activeTab(route.name, nav));
   document.title = `${nav.titles[route.name] || screen.title} — Подбор`;
-  el.view.setAttribute("aria-labelledby", `tab_${route.name}`);
+  el.view.setAttribute("aria-labelledby", `tab_${activeTab(route.name, nav) || route.name}`);
   const hadFocus = el.view.contains(document.activeElement);
   mount(el.view);
   el.view.removeAttribute("aria-busy");
@@ -93,9 +94,19 @@ function enterApp() {
   renderUser(session.user, { whoEl: el.who, avaEl: el.ava });
   loadStatus.attach({ api, session, box: $("#loadstatus") });   // полоса хода загрузки резюме — только с правом collect.run
   notify.attach({ api, session, slot: $("#bell"), alarmSlot: $("#alarm") });   // колокольчик и красная полоса тревоги — только отделу персонала
+  showStageBadge();
   if (router) router.refresh();
   else router = startRouter(renderRoute);
   el.view.focus({ preventScroll: true });
+}
+
+/** Руководителю ОП: счётчик наборов этапов, которые ждут утверждения, на вкладке «Воронка» — с первого экрана, не после захода на неё. */
+function showStageBadge() {
+  if (!session.can("stage.approve") || !nav.tabs.includes("funnel")) return;
+  const owner = session.user && session.user.id;
+  api.get("/api/vacancies").then((lists) => {
+    if (session.user && session.user.id === owner) tabs.setBadge("funnel", pendingBadge(lists));
+  }).catch(() => { /* счётчик не критичен: экран «Воронка» покажет его сам */ });
 }
 
 /** S4: роли нет или человек уволен — «Доступ не выдан»; данных на экране нет. */
@@ -163,6 +174,7 @@ session.subscribe((user, previous) => {
   renderUser(user, { whoEl: el.who, avaEl: el.ava });
   if (previous && previous.id !== user.id) {
     buildNav();   // роль другого человека — другие вкладки
+    showStageBadge();
     loadStatus.attach({ api, session, box: $("#loadstatus") });   // права другого человека могут отличаться
     notify.attach({ api, session, slot: $("#bell"), alarmSlot: $("#alarm") });
     if (router) router.refresh();

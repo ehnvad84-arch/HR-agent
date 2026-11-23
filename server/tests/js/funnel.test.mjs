@@ -1,34 +1,24 @@
-// «Воронка»: этапы, перевод кандидата, встречи и отказы (S24, S36)
+// «Воронка» вакансии: доска по этапам набора, перетаскивание вперёд, отмена последней отметки (S6, S10, S16)
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  TERMINAL, buildMove, dayText, defaultTarget, funnelTotals, localIso, meetingStage, moveOptions, needsWindow, pickVacancy,
-  reasonMode, stageSummary, statusLabel,
+  canDropOn, canUndo, dayText, funnelTotals, isClosedVacancy, isLastStage, lastMarkText, leftBlock, localIso, moscowDay, nextStage, personNote,
+  pickVacancy, stageIndex, stageSummary, undoToast, VIEWS, viewOf,
 } from "../../web/js/screens/funnel-model.js";
 
+const person = (id, extra = {}) => ({ candidate_id: id, person_id: id + 100, name: `Человек ${id}`, days: 2, ...extra });
 const STAGES = [
-  { status: "picked_by_agent", title: "Отобран агентом", people: [{ candidate_id: 1 }, { candidate_id: 2 }, { candidate_id: 3 }], avg_days: 4 },
-  { status: "first_message_sent", title: "Написали", people: [{ candidate_id: 4 }], avg_days: 6 },
-  { status: "replied", title: "Ответил", people: [], avg_days: null },
-  { status: "phone_interview", title: "Телефонное интервью", people: [{ candidate_id: 5 }], avg_days: 1 },
-  { status: "manager_interview", title: "Встреча с руководителем", people: [], avg_days: null },
-  { status: "test_task", title: "Тестовое задание", people: [], avg_days: null },
-  { status: "security_check", title: "Проверка СБ", people: [], avg_days: null },
-  { status: "offer", title: "Оффер", people: [], avg_days: null },
-  { status: "reserve", title: "Резерв", people: [{ candidate_id: 6 }], avg_days: 10 },
+  { slot: 1, pos: 1, title: "Отобранные резюме", report_row: "selected", people: [person(1), person(2), person(3)], avg_days: 4 },
+  { slot: 2, pos: 2, title: "Первичный контакт", report_row: "contact", people: [person(4)], avg_days: 6 },
+  { slot: 5, pos: 3, title: "Собеседование с руководителем отдела", report_row: "meeting", people: [], avg_days: null },
+  { slot: 8, pos: 4, title: "Пришедшие в 1 день", report_row: "first_day", people: [person(5)], avg_days: 1 },
 ];
 
-test("итоговые статусы — как в задаче, русскими словами", () => {
-  assert.deepEqual(TERMINAL, [["hired", "Вышел на работу"], ["rejected_by_us", "Отказали мы"],
-    ["rejected_by_candidate", "Отказался"], ["no_show", "Не пришёл"]]);
-});
-
 test("S24: этап — сколько человек, доля от всех в воронке, среднее время на этапе", () => {
-  assert.equal(funnelTotals(STAGES), 6);
-  assert.deepEqual(stageSummary(STAGES[0], 6), { count: 3, countText: "3 чел.", pct: 50, avgText: "в среднем 4 дн. на этапе", empty: false });
-  assert.deepEqual(stageSummary(STAGES[2], 6), { count: 0, countText: "0 чел.", pct: 0, avgText: "никого", empty: true });
-  assert.equal(stageSummary(STAGES[1], 6).pct, 17);
+  assert.equal(funnelTotals(STAGES), 5);
+  assert.deepEqual(stageSummary(STAGES[0], 5), { count: 3, countText: "3 чел.", pct: 60, avgText: "в среднем 4 дн. на этапе", empty: false });
+  assert.deepEqual(stageSummary(STAGES[2], 5), { count: 0, countText: "0 чел.", pct: 0, avgText: "никого", empty: true });
   assert.equal(stageSummary({ people: [{ candidate_id: 1 }], avg_days: 0 }, 1).avgText, "в среднем меньше суток на этапе");
   assert.equal(stageSummary({ people: [], avg_days: null }, 0).pct, 0);   // пустая воронка: без деления на ноль
 });
@@ -39,41 +29,87 @@ test("сколько дней человек на этапе", () => {
   assert.equal(dayText(null), "");
 });
 
-test("встреча назначается на этапах интервью и тестового задания", () => {
-  for (const s of ["phone_interview", "manager_interview", "test_task"]) assert.equal(meetingStage(s), true);
-  for (const s of ["replied", "offer", "hired", "rejected_by_us"]) assert.equal(meetingStage(s), false);
+test("S6: следующий этап набора — по порядку колонок, у последнего следующего нет", () => {
+  assert.equal(stageIndex(STAGES, 5), 2);
+  assert.equal(stageIndex(STAGES, 99), -1);
+  assert.equal(nextStage(STAGES, 1).slot, 2);
+  assert.equal(nextStage(STAGES, 2).slot, 5);   // slot не равен порядку: ориентир — pos колонки
+  assert.equal(nextStage(STAGES, 8), null);
+  assert.equal(nextStage(STAGES, 99), null);
+  assert.equal(isLastStage(STAGES, 8), true);
+  assert.equal(isLastStage(STAGES, 5), false);
 });
 
-test("причина: обязательна для отказов, по желанию — у «не пришёл», остальным не нужна", () => {
-  assert.equal(reasonMode("rejected_by_us"), "required");
-  assert.equal(reasonMode("rejected_by_candidate"), "required");
-  assert.equal(reasonMode("no_show"), "optional");
-  assert.equal(reasonMode("hired"), "none");
-  assert.equal(reasonMode("replied"), "none");
+test("S6: перетащить можно только на следующий этап — не назад, не через этап, не на тот же", () => {
+  assert.equal(canDropOn(STAGES, 1, 2), true);
+  assert.equal(canDropOn(STAGES, 1, 5), false);
+  assert.equal(canDropOn(STAGES, 5, 2), false);
+  assert.equal(canDropOn(STAGES, 2, 2), false);
+  assert.equal(canDropOn(STAGES, 8, 1), false);
 });
 
-test("перетаскивание: сразу переводим, если не нужны дата и причина; иначе открываем окно", () => {
-  assert.equal(needsWindow("replied"), false);
-  assert.equal(needsWindow("offer"), false);
-  assert.equal(needsWindow("phone_interview"), true);
-  assert.equal(needsWindow("rejected_by_candidate"), true);
-  assert.equal(needsWindow("no_show"), true);
+test("S16: день отметки — по Москве, а не по часовому поясу браузера", () => {
+  assert.equal(moscowDay("2026-11-23T21:30:00+00:00"), "2026-11-24");   // 00:30 в Москве
+  assert.equal(moscowDay("2026-11-23T20:59:00+00:00"), "2026-11-23");
+  assert.equal(moscowDay("не дата"), "");
 });
 
-test("S24: куда можно перевести — этапы воронки и итоги, без текущего этапа", () => {
-  const options = moveOptions(STAGES, "first_message_sent");
-  assert.equal(options.stages.length, 8);
-  assert.ok(!options.stages.some((o) => o.value === "first_message_sent"));
-  assert.deepEqual(options.stages[0], { value: "picked_by_agent", label: "Отобран агентом" });
-  assert.deepEqual(options.final.map((o) => o.value), ["hired", "rejected_by_us", "rejected_by_candidate", "no_show"]);
-  assert.deepEqual(options.final[0], { value: "hired", label: "Вышел на работу" });
+test("S16: «Отменить последнюю отметку» — автору в тот же день, руководителю ОП всегда", () => {
+  const now = new Date("2026-11-23T12:00:00+03:00");
+  const mark = (by, at) => ({ by, at, outcome: "passed", slot: 1, by_name: "Иванова А." });
+  assert.equal(canUndo({ last: mark(7, "2026-11-23T09:00:00+03:00"), userId: 7, canApprove: false, now }), true);
+  assert.equal(canUndo({ last: mark(7, "2026-11-22T18:00:00+03:00"), userId: 7, canApprove: false, now }), false);   // вчерашняя
+  assert.equal(canUndo({ last: mark(8, "2026-11-23T09:00:00+03:00"), userId: 7, canApprove: false, now }), false);   // чужая
+  assert.equal(canUndo({ last: mark(8, "2026-11-20T09:00:00+03:00"), userId: 7, canApprove: true, now }), true);
+  assert.equal(canUndo({ last: null, userId: 7, canApprove: true, now }), false);   // отметок ещё не было
 });
 
-test("выбор по умолчанию — следующий этап", () => {
-  assert.equal(defaultTarget(STAGES, "first_message_sent"), "replied");
-  assert.equal(defaultTarget(STAGES, "picked_by_agent"), "first_message_sent");
-  assert.equal(defaultTarget(STAGES, "reserve"), "hired");   // после последнего этапа — итог
-  assert.equal(defaultTarget(STAGES, "mystery"), "picked_by_agent");
+test("S16: подпись последней отметки — исход, кто, когда", () => {
+  const now = new Date("2026-11-23T12:00:00+03:00");
+  assert.match(lastMarkText({ by_name: "Иванова А.", at: "2026-11-23T09:05:00+03:00", outcome: "passed" }, now),
+    /^Последняя отметка: прошёл · Иванова А. · (сегодня|вчера), \d{2}:\d{2}$/);   // «сегодня» или «вчера» — по часовому поясу машины
+  assert.equal(lastMarkText({ by_name: null, at: "2026-11-20T09:05:00+03:00", outcome: "failed" }, now).startsWith("Последняя отметка: не прошёл"), true);
+  assert.equal(lastMarkText(null, now), "");
+});
+
+test("S16: выбывшие с доски — блок «Выбыли (N)», исход и этап, отмена по тем же правилам", () => {
+  const now = new Date("2026-11-24T12:00:00+03:00");
+  const left = [
+    person(11, { stage: "Первичный контакт", last_mark: { by: 7, at: "2026-11-24T09:00:00+03:00", outcome: "refused", slot: 2, by_name: "Иванова А." } }),
+    person(12, { stage: "Пришедшие в 1 день", last_mark: { by: 7, at: "2026-11-23T09:00:00+03:00", outcome: "passed", slot: 8, by_name: "Иванова А." } }),
+  ];
+  const own = leftBlock(left, { userId: 7, canApprove: false, canMove: true, now });
+  assert.equal(own.title, "Выбыли (2)");
+  assert.deepEqual(own.rows.map((r) => [r.person.candidate_id, r.text, r.undo]),
+    [[11, "отказался · этап «Первичный контакт»", true], [12, "вышел на работу · этап «Пришедшие в 1 день»", false]]);   // вчерашняя — не своя
+  const head = leftBlock(left, { userId: 99, canApprove: true, canMove: true, now });
+  assert.deepEqual(head.rows.map((r) => r.undo), [true, true]);   // руководитель ОП — всегда
+  assert.deepEqual(leftBlock(left, { userId: 7, canApprove: true, canMove: false, now }).rows.map((r) => r.undo), [false, false]);   // без права отмечать — только чтение
+  assert.equal(leftBlock([], { userId: 7, canApprove: true, canMove: true, now }), null);
+  assert.equal(leftBlock(undefined, { userId: 7, canApprove: true, canMove: true, now }), null);
+});
+
+test("S16: руководитель ОП на следующий день отменяет отказ у выбывшего, автор — уже нет", () => {
+  const nextDay = new Date("2026-11-25T10:00:00+03:00");
+  const left = [person(21, { stage: "Первичный контакт", last_mark: { by: 7, at: "2026-11-24T18:00:00+03:00", outcome: "failed", slot: 2, by_name: "Иванова А." } })];
+  const author = leftBlock(left, { userId: 7, canApprove: false, canMove: true, now: nextDay });
+  assert.deepEqual(author.rows.map((r) => [r.text, r.undo]), [["не прошёл · этап «Первичный контакт»", false]]);
+  const head = leftBlock(left, { userId: 99, canApprove: true, canMove: true, now: nextDay });
+  assert.equal(head.title, "Выбыли (1)");
+  assert.deepEqual(head.rows.map((r) => [r.person.candidate_id, r.undo]), [[21, true]]);
+  assert.deepEqual(leftBlock(left, { userId: 99, canApprove: true, canMove: true, now: nextDay, closed: true }).rows.map((r) => r.undo), [false]);   // закрытая вакансия
+});
+
+test("S16: после отмены — уведомление с названием этапа", () => {
+  assert.equal(undoToast("Анна С.", "Интервью"), "Отметка отменена: Анна С. — снова на этапе «Интервью»");
+  assert.equal(undoToast("Анна С.", ""), "Отметка отменена: Анна С.");
+});
+
+test("кабинет руководителя: заметка человека — последний комментарий отметки, без него пусто", () => {
+  assert.equal(personNote({ notes: [{ comment: "Хорошо ответил" }, { comment: "Старый" }] }), "Хорошо ответил");
+  assert.equal(personNote({ notes: [] }), "");
+  assert.equal(personNote({}), "");
+  assert.equal(personNote({ note: "прежняя форма" }), "прежняя форма");
 });
 
 test("время встречи — ISO с часовым поясом браузера", () => {
@@ -85,27 +121,6 @@ test("время встречи — ISO с часовым поясом брау�
   assert.equal(localIso("не дата", -180), "");
 });
 
-test("S36: перевод с назначенной встречей уходит с scheduled_at", () => {
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "phone_interview", when: "2026-10-30T11:00", offsetMinutes: -180 }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "phone_interview", scheduled_at: "2026-10-30T11:00:00+03:00" } });
-  // время для этапа без встречи не отправляется, даже если поле осталось заполненным
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "replied", when: "2026-10-30T11:00", offsetMinutes: -180 }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "replied" } });
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "test_task", when: "", offsetMinutes: -180 }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "test_task" } });
-});
-
-test("отказ: причина обязательна и уходит комментарием", () => {
-  assert.equal(buildMove({ vacancyId: 7, toStatus: "rejected_by_us", comment: "   " }).error, "Опишите причину отказа");
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "rejected_by_candidate", comment: " Принял другое предложение " }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "rejected_by_candidate", comment: "Принял другое предложение" } });
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "no_show", comment: "" }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "no_show" } });
-  assert.deepEqual(buildMove({ vacancyId: 7, toStatus: "no_show", comment: "Не пришёл на звонок" }),
-    { ok: true, payload: { vacancy_id: 7, to_status: "no_show", comment: "Не пришёл на звонок" } });
-  assert.equal(buildMove({ vacancyId: 7, toStatus: "" }).error, "Выберите этап");
-});
-
 test("без номера вакансии — первая открытая (на паузе — только если других нет)", () => {
   const open = [{ id: 3, state: "on_hold" }, { id: 2, state: "open" }, { id: 1, state: "open" }];
   assert.equal(pickVacancy(open).id, 2);
@@ -114,9 +129,25 @@ test("без номера вакансии — первая открытая (н
   assert.equal(pickVacancy(null), null);
 });
 
-test("название этапа или итога по коду", () => {
-  assert.equal(statusLabel(STAGES, "phone_interview"), "Телефонное интервью");
-  assert.equal(statusLabel(STAGES, "hired"), "Вышел на работу");
-  assert.equal(statusLabel(STAGES, "rejected_by_candidate"), "Отказался");
-  assert.equal(statusLabel(STAGES, "mystery"), "mystery");
+test("вкладки вакансии: «Кандидаты / Отчёт / Этапы», адрес ?view=; неизвестное значение — «Кандидаты»", () => {
+  assert.deepEqual(VIEWS.map(([, title]) => title), ["Кандидаты", "Отчёт", "Этапы"]);
+  assert.equal(viewOf({ view: "report" }), "report");
+  assert.equal(viewOf({ view: "stages" }), "stages");
+  assert.equal(viewOf({ view: "candidates" }), "candidates");
+  assert.equal(viewOf({ view: "<script>" }), "candidates");
+  assert.equal(viewOf({}), "candidates");
+  assert.equal(viewOf(undefined), "candidates");
+});
+
+test("S16: на закрытой вакансии «Отменить последнюю отметку» нет ни у кого (сервер отвечает vacancy_closed)", () => {
+  const now = new Date("2026-11-23T12:00:00+03:00");
+  const last = { by: 7, at: "2026-11-23T09:00:00+03:00", outcome: "refused", slot: 1, by_name: "Иванова А." };
+  assert.equal(canUndo({ last, userId: 7, canApprove: true, now, closed: true }), false);
+  assert.equal(canUndo({ last, userId: 7, canApprove: false, now, closed: false }), true);
+  const left = [person(11, { stage: "Отобранные резюме", last_mark: last })];
+  assert.deepEqual(leftBlock(left, { userId: 7, canApprove: true, canMove: true, now, closed: true }).rows.map((r) => r.undo), [false]);
+  assert.equal(isClosedVacancy({ state: "closed" }), true);
+  assert.equal(isClosedVacancy({ state: "cancelled" }), true);
+  assert.equal(isClosedVacancy({ state: "on_hold" }), false);
+  assert.equal(isClosedVacancy(null), false);
 });

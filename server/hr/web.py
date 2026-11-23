@@ -43,7 +43,8 @@ class DropQuery(logging.Filter):
 def _error(status: int, detail) -> JSONResponse:
     if isinstance(detail, dict) and "error" in detail:
         message = detail.get("message") or MESSAGES.get(status, "Ошибка")
-        return JSONResponse({"error": detail["error"], "message": message}, status_code=status)
+        # подробности рядом с кодом (stage_busy: slot и число людей) отдаются как есть
+        return JSONResponse({**detail, "message": message}, status_code=status)
     # строковый detail — только наш русский текст; служебные английские фразы Starlette заменяем
     own = isinstance(detail, str) and status < 500 and detail not in ("Not Found", "Method Not Allowed")
     return JSONResponse({"error": f"http_{status}", "message": detail if own else MESSAGES.get(status, "Ошибка")},
