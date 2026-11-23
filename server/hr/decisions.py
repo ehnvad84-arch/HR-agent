@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 import psycopg
 
+from . import stages
 from .db import one, run, setting, val
 from .views import cards
 
@@ -75,9 +76,8 @@ def take(conn: psycopg.Connection, person_id: int, user_id: int, now: datetime,
     run(conn, """INSERT INTO status_history (candidate_id, from_status, to_status, changed_by, changed_at, comment)
                  VALUES (%s, NULL, %s, %s, %s, %s)""",
         (cid, status, user_id, now, "в работу" + ("" if vacancy_id else ": открытой вакансии нет, в резерве")))
-    if vacancy_id:
-        run(conn, """INSERT INTO ops.candidate_vacancy (candidate_id, vacancy_id, added_by, added_at)
-                     VALUES (%s, %s, %s, %s)""", (cid, vacancy_id, user_id, now))
+    if vacancy_id:   # funnel-report S10: в воронку — на первый этап набора вакансии («Отобранные резюме»)
+        stages.enter(conn, cid, vacancy_id, user_id, now)
     run(conn, "UPDATE person SET candidate_id = %s WHERE id = %s", (cid, person_id))
     run(conn, """UPDATE alert SET state = 'taken', decided_by = %s, decided_at = %s
                  WHERE person_id = %s AND state = 'new'""", (user_id, now, person_id))

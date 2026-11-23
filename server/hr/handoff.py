@@ -11,7 +11,7 @@ from datetime import datetime
 
 import psycopg
 
-from . import decisions, learning, scope
+from . import decisions, learning, scope, stages
 from .db import one, rows, run, setting, val
 from .funnel import CLOSED, STAGES
 from .views import _card, cards
@@ -132,9 +132,11 @@ def _get(conn, handoff_id: int, user, see_all: bool) -> dict:
 def take(conn: psycopg.Connection, handoff_id: int, user_id: int, see_all: bool, now: datetime) -> dict:
     h = _get(conn, handoff_id, user_id, see_all)
     cid = val(conn, "SELECT candidate_id FROM person WHERE id = %s", (h["person_id"],))
-    if cid:   # уже кандидат — только в воронку этой вакансии
-        run(conn, """INSERT INTO ops.candidate_vacancy (candidate_id, vacancy_id, added_by, added_at)
-                     VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING""", (cid, h["vacancy_id"], user_id, now))
+    if cid:   # уже кандидат — только в воронку этой вакансии, на первый этап набора (funnel-report S10)
+        try:
+            stages.enter(conn, cid, h["vacancy_id"], user_id, now)
+        except stages.Conflict as e:
+            raise Conflict(str(e)) from None
     else:
         try:
             cid = decisions.take(conn, h["person_id"], user_id, now, h["vacancy_id"])

@@ -94,6 +94,23 @@ def test_s18_approve_saves_edited_text_and_moves_status(conn, api, cand):
     assert c.post(f"/api/action/{aid}/approve", json={}, headers=h).status_code == 409, "дважды не исполняется"
 
 
+def test_approve_letter_changes_status_only(conn, api, clock):
+    """funnel-report: одобренное письмо агента меняет статус, но в воронку вакансии не ставит и этап не отмечает."""
+    prof = profile(conn)
+    vid = db.val(conn, "INSERT INTO vacancy (role_profile_id, title, state) VALUES (%s, %s, 'on_hold') RETURNING id",
+                 (prof["id"], prof["title"]))
+    it = hh_item(last_name="Секретов", first_name="Иван")
+    pid = process(conn, source(conn, "hh"), normalize("hh", it), it, clock.now()).person_id
+    c, h, uid = api()
+    cid = decisions.take(conn, pid, uid, clock.now())                    # открытой вакансии нет — резерв
+    db.run(conn, "UPDATE vacancy SET state = 'open' WHERE id = %s", (vid,))
+    aid = c.post(f"/api/candidate/{cid}/draft", json={"vacancy_id": vid, "kind": "first_message"},
+                 headers=h).json()["action_id"]
+    assert c.post(f"/api/action/{aid}/approve", json={}, headers=h).status_code == 200
+    assert db.val(conn, "SELECT status::text FROM candidate WHERE id = %s", (cid,)) == "first_message_sent"
+    assert db.val(conn, "SELECT count(*) FROM ops.candidate_stage WHERE candidate_id = %s", (cid,)) == 0
+
+
 def test_decline_with_reason(conn, api, cand):
     cid, vid = cand
     c, h, _ = api()

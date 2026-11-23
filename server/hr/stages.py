@@ -151,6 +151,14 @@ def ensure_set(conn: psycopg.Connection, vacancy_id: int) -> int:
     return sid
 
 
+def standard_items(conn: psycopg.Connection) -> list[dict]:
+    """8 стандартных этапов как набор v1 (pos = slot = порядок строки) — без записи в базу."""
+    return rows(conn, """
+        SELECT r.ord AS pos, r.ord AS slot, s.id AS stage_id, NULL::text AS label, s.title, s.report_row,
+               s.is_standard, s.is_active
+        FROM ops.funnel_row r JOIN ops.stage s ON s.report_row = r.code AND s.is_standard ORDER BY r.ord""")
+
+
 def _people_on(conn, vacancy_id: int) -> dict[int, int]:
     """Люди на этапах вакансии: открытые неотменённые отметки по slot."""
     return {r["slot"]: r["n"] for r in rows(conn, """

@@ -25,15 +25,24 @@ class StatusIn(BaseModel):
     scheduled_at: datetime | None = None
 
 
+USE_STAGES = HTTPException(409, {"error": "use_stages",
+                                  "message": "Этапы отмечаются в окне «Итог этапа» на доске вакансии"})
+
+
 @router.post("/api/candidate/{candidate_id}/status")
 def move(candidate_id: int, body: StatusIn, user: Annotated[auth.User, Depends(auth.require("person.take"))],
          conn_factory: Conn, clock: Now):
+    """funnel-report: здесь только «в резерв», и только без открытого этапа — переводы по воронке и отказы
+    отмечает stages.mark. Резерв — вне вакансии: vacancy_id не учитывается."""
+    if body.to_status not in funnel.ALL:
+        raise HTTPException(422, {"error": "bad_stage", "message": "Неизвестный этап воронки"})
+    if body.to_status != "reserve":
+        raise USE_STAGES
     try:
         with conn_factory() as conn:
-            st = funnel.move(conn, candidate_id, body.to_status, user.id, clock.now(), vacancy_id=body.vacancy_id,
-                             comment=body.comment, scheduled_at=body.scheduled_at)
-    except funnel.BadStage:
-        raise HTTPException(422, {"error": "bad_stage", "message": "Неизвестный этап воронки"}) from None
+            if funnel.has_open_stage(conn, candidate_id):
+                raise USE_STAGES
+            st = funnel.move(conn, candidate_id, "reserve", user.id, clock.now(), comment=body.comment)
     except funnel.NotFound:
         raise NOT_FOUND from None
     return {"status": st}
