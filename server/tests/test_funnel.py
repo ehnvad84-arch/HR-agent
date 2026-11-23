@@ -146,6 +146,35 @@ def test_s16_board_lists_left_people_with_last_mark(conn, api, clock):
     assert refused in [p["candidate_id"] for p in f["stages"][0]["people"]]
 
 
+def test_s16_head_next_day_undoes_refusal_of_left_person(conn, api, clock):
+    """S16: рекрутер отметил отказ, человек ушёл с доски в «Выбыли». На следующий день рекрутер отменить не может,
+    руководитель ОП видит человека в «Выбыли» и отменяет — человек снова на этапе отказа."""
+    prof = profile(conn)
+    c, h, uid = api("recruiter")
+    vid = new_vacancy(conn, prof, uid)
+    cid = db.val(conn, """INSERT INTO candidate (fio, retention_until)
+                          VALUES ('Вымышленный В. В.', current_date + 100) RETURNING id""")
+    stages.enter(conn, cid, vid, uid, clock.now())
+    stages.mark(conn, cid, vid, 1, "passed", uid, clock.now())
+    r = c.post(f"/api/vacancy/{vid}/candidate/{cid}/mark",
+               json={"slot": 2, "outcome": "failed", "reason": "skills"}, headers=h)
+    assert r.status_code == 200
+    clock.advance(days=1)
+    url = f"/api/vacancy/{vid}/candidate/{cid}/undo"
+    c, h, _ = api("recruiter")                       # сессия за сутки истекла — входит заново
+    assert c.post(url, json={"comment": "вчерашняя"}, headers=h).json()["error"] == "undo_expired"
+    head, hh, head_id = api("head_recruiter")
+    left = head.get(f"/api/vacancy/{vid}/funnel").json()["left"]
+    assert [(p["candidate_id"], p["last_mark"]["outcome"], p["last_mark"]["by"], p["stage"]) for p in left] == \
+        [(cid, "failed", uid, "Первичный контакт")]
+    assert head.post(url, json={"comment": "ошибка рекрутера, разговор был хороший"}, headers=hh).json() == {"slot": 2}
+    f = head.get(f"/api/vacancy/{vid}/funnel").json()
+    assert f["left"] == [] and cid in [p["candidate_id"] for p in f["stages"][1]["people"]]
+    assert db.val(conn, """SELECT user_id FROM audit_log WHERE object_type = 'candidate_stage'
+                           AND (detail->>'candidate_id')::bigint = %s AND detail->>'undo' = 'true'""",
+                  (cid,)) == head_id
+
+
 def test_board_without_set_shows_standard_stages(conn, api):
     prof = profile(conn)
     vid = db.val(conn, "INSERT INTO vacancy (role_profile_id, title) VALUES (%s, 'В') RETURNING id",   # как v1.2.0

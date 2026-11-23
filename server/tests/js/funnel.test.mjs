@@ -89,6 +89,17 @@ test("S16: выбывшие с доски — блок «Выбыли (N)», и�
   assert.equal(leftBlock(undefined, { userId: 7, canApprove: true, canMove: true, now }), null);
 });
 
+test("S16: руководитель ОП на следующий день отменяет отказ у выбывшего, автор — уже нет", () => {
+  const nextDay = new Date("2026-11-25T10:00:00+03:00");
+  const left = [person(21, { stage: "Первичный контакт", last_mark: { by: 7, at: "2026-11-24T18:00:00+03:00", outcome: "failed", slot: 2, by_name: "Иванова А." } })];
+  const author = leftBlock(left, { userId: 7, canApprove: false, canMove: true, now: nextDay });
+  assert.deepEqual(author.rows.map((r) => [r.text, r.undo]), [["не прошёл · этап «Первичный контакт»", false]]);
+  const head = leftBlock(left, { userId: 99, canApprove: true, canMove: true, now: nextDay });
+  assert.equal(head.title, "Выбыли (1)");
+  assert.deepEqual(head.rows.map((r) => [r.person.candidate_id, r.undo]), [[21, true]]);
+  assert.deepEqual(leftBlock(left, { userId: 99, canApprove: true, canMove: true, now: nextDay, closed: true }).rows.map((r) => r.undo), [false]);   // закрытая вакансия
+});
+
 test("S16: после отмены — уведомление с названием этапа", () => {
   assert.equal(undoToast("Анна С.", "Интервью"), "Отметка отменена: Анна С. — снова на этапе «Интервью»");
   assert.equal(undoToast("Анна С.", ""), "Отметка отменена: Анна С.");
