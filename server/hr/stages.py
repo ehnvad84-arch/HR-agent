@@ -346,16 +346,16 @@ def _stage_title(conn, stage_id: int, set_id: int | None, slot: int) -> str:
 
 
 def _open(conn, candidate_id: int, vacancy_id: int) -> dict | None:
-    return one(conn, """SELECT id, slot, stage_id, report_row FROM ops.candidate_stage
+    return one(conn, """SELECT id, slot, stage_id, report_row, interview_id FROM ops.candidate_stage
                         WHERE candidate_id = %s AND vacancy_id = %s AND outcome IS NULL AND cancelled_at IS NULL
                         FOR UPDATE""", (candidate_id, vacancy_id))
 
 
-def _put(conn, candidate_id: int, vacancy_id: int, item: dict, user_id: int, now: datetime) -> None:
-    run(conn, """INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row, entered_by,
-                                                  entered_at)
-                 VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (candidate_id, vacancy_id, item["slot"], item["stage_id"], item["report_row"], user_id, now))
+def _put(conn, candidate_id: int, vacancy_id: int, item: dict, user_id: int, now: datetime) -> int:
+    return val(conn, """INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row,
+                                                         entered_by, entered_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+               (candidate_id, vacancy_id, item["slot"], item["stage_id"], item["report_row"], user_id, now))
 
 
 def enter(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: int, now: datetime) -> int | None:
@@ -451,12 +451,15 @@ def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int
                                     (candidate_id, vacancy_id))}
     nxt = next((i for i in items[pos + 1:] if i["slot"] not in done), None)
     if nxt:
-        _put(conn, candidate_id, vacancy_id, nxt, user_id, now)
+        opened = _put(conn, candidate_id, vacancy_id, nxt, user_id, now)
         _status(conn, candidate_id, ROW_STATUS[nxt["report_row"]], user_id, now,
                 f"этап «{title}» пройден, дальше — «{nxt['label'] or nxt['title']}»")
         if scheduled_at:   # встреча видна в «Сегодня и завтра»; вид — по строке отчёта следующего этапа
-            run(conn, "INSERT INTO interview (candidate_id, vacancy_id, kind, scheduled_at) VALUES (%s, %s, %s, %s)",
-                (candidate_id, vacancy_id, "manager" if nxt["report_row"] == "meeting" else "phone", scheduled_at))
+            meeting = val(conn, """INSERT INTO interview (candidate_id, vacancy_id, kind, scheduled_at)
+                                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                          (candidate_id, vacancy_id, "manager" if nxt["report_row"] == "meeting" else "phone",
+                           scheduled_at))
+            run(conn, "UPDATE ops.candidate_stage SET interview_id = %s WHERE id = %s", (meeting, opened))
         return {"next_slot": nxt["slot"], "offer_close": False}
     if scheduled_at:
         raise Invalid("дата встречи — на последнем этапе встречи нет")
@@ -473,8 +476,9 @@ def undo(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: 
          comment: str) -> dict:
     """S16: отмена последней по decided_at отметки пары. Свою — в тот же день по Москве; чужую и позже — только
     с правом stage.approve (руководитель ОП). Отметка и открытая после неё помечаются отменёнными (не удаляются),
-    этап снова открыт копией с прежним входом (этап убран из набора — первый непройденный той же строки, строки нет —
-    409 stage_removed), статус пересчитан, отмена — в audit_log."""
+    встреча, назначенная отменённой отметкой, — result 'cancelled'; этап снова открыт копией с прежним входом
+    (этап убран из набора — первый непройденный той же строки, строки нет — 409 stage_removed), статус пересчитан,
+    отмена — в audit_log."""
     comment = (comment or "").strip()
     v = one(conn, "SELECT id, state FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
     if not v or not val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
@@ -507,13 +511,16 @@ def undo(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: 
                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (candidate_id, vacancy_id, back["slot"], back["stage_id"], back["report_row"], last["entered_by"],
          last["entered_at"], last["carried"]))
+    meeting = opened["interview_id"] if opened else None
+    if meeting:   # встреча, назначенная отменённой отметкой, уходит из «Сегодня и завтра»; строка остаётся
+        run(conn, "UPDATE interview SET result = 'cancelled' WHERE id = %s AND result IS NULL", (meeting,))
     _status(conn, candidate_id, ROW_STATUS[last["report_row"]], user_id, now,
             f"отменена отметка этапа «{title}»: {comment}")
     run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
                  VALUES (%s, 'edit', 'candidate_stage', %s, %s, %s)""",
         (user_id, last["id"], j({"undo": True, "candidate_id": candidate_id, "vacancy_id": vacancy_id,
                                  "slot": last["slot"], "outcome": last["outcome"], "cancelled": ids,
-                                 "reopened": back["slot"], "comment": comment}), now))
+                                 "reopened": back["slot"], "interview": meeting, "comment": comment}), now))
     return {"slot": back["slot"]}
 
 

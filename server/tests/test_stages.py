@@ -666,3 +666,21 @@ def test_s16_undo_after_row_removed_is_stage_removed(conn, vid, people):
         stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
     assert e.value.code == "stage_removed" and "убран из набора" in str(e.value)
     assert open_mark(conn, cid, vid)["slot"] == 6 and audit(conn, cid) == []         # ничего не изменилось
+
+
+def test_s16_undo_passed_cancels_meeting_set_by_this_mark(conn, vid, people):
+    """Отмена «прошёл» снимает встречу, назначенную этой отметкой; встреча прежнего этапа остаётся."""
+    from datetime import timedelta
+
+    from hr import views
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    stages.mark(conn, cid, vid, 2, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=3))   # на slot 3
+    stages.mark(conn, cid, vid, 3, "passed", people["rec"], NOW, scheduled_at=NOW + timedelta(hours=5))   # на slot 4
+    assert len([m for m in views.today(conn, NOW)["meetings"] if m["candidate_id"] == cid]) == 2
+    stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    left = [m for m in views.today(conn, NOW)["meetings"] if m["candidate_id"] == cid]
+    assert [m["scheduled_at"] for m in left] == [NOW + timedelta(hours=3)], "встреча отменённой отметки снята"
+    assert db.val(conn, "SELECT count(*) FROM interview WHERE candidate_id = %s", (cid,)) == 2, "не удаляется"
+    assert audit(conn, cid)[0]["detail"]["interview"] is not None
