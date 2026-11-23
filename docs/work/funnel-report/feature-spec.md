@@ -3,7 +3,7 @@
 <!-- Единственный источник правды о поведении фичи (.workflow/WORKFLOW.md, принцип 1).
 У каждого раздела один автор — он указан в заголовке. -->
 
-Статус: черновик <!-- → утверждена (Гейт 1) -->
+Статус: утверждена (Гейт 1, 2026-11-23)
 PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/work/hr-wishes` (ветка docs/hr-wishes), `разбор_ответов_2026-11-23.md`
 
 ## Зачем — главная сессия
@@ -40,7 +40,8 @@ PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/
   «Отказался»: не подходят условия труда, отказ от оффера (только на строке «Оффер»), не вышел на связь, не пришёл на
   встречу, не вышел в первый день. У обоих — «другое» с комментарием от 100 знаков.
 - **S8: решение руководителя.** Исход «Собеседования» ставит рекрутер со слов руководителя — «резолюция руководителя».
-- **S9: вышел в первый день.** Когда: рекрутер отмечает выход. Тогда: вакансия закрывается по запросу рекрутера.
+- **S9: вышел в первый день.** Когда: рекрутер отмечает выход. Тогда: вакансия закрывается по запросу рекрутера. На
+  закрытой вакансии «прошёл» отметить нельзя, «не прошёл» и «отказался» с причиной — можно (без «зависших»).
 - **S10: кандидат из сбора.** Отобранный агентом попадает в воронку («Отобранные резюме»), только когда рекрутер взял
   его в работу; «Отобран агентом» в отчёт не входит.
 - **S16: отмена ошибочной отметки.** Когда: рекрутер отменяет свою последнюю отметку по кандидату в вакансии в тот же
@@ -54,8 +55,8 @@ PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/
   воронками. Рекрутер видит только свой отчёт и свои вакансии.
 - **S13: воронка отдела.** Руководитель ОП видит сумму, сравнение конверсии по рекрутерам и любой отчёт; рекрутер — нет.
 - **S14: пауза вакансии.** Дни паузы не входят в срок ведения; итоги этапов на паузе отмечать можно.
-- **S15: прежние кандидаты.** Дано: кандидаты в старых статусах портала. Тогда: учёт с чистого листа с даты выпуска;
-  открытые кандидаты переносятся на ближайший этап набора без истории «вошли/прошли» до выпуска.
+- **S15: прежние кандидаты.** Учёт с чистого листа с даты выпуска: открытые — на ближайший этап набора без истории; в
+  нескольких вакансиях — статус в вакансию с последней связью, в остальные — «Отобранные резюме»; повтор ничего не меняет.
 
 ## Вне рамок — главная сессия
 
@@ -69,7 +70,7 @@ PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/
 
 Макеты — `ui/screens.txt` (A–F). Экран повторяет их Excel: 8 строк, 3 столбца, «Конверсия воронки» внизу; без графиков,
 оценок и подсветки «хорошо/плохо» (опасение ОП). Под таблицей: «Считает портал по вашим отметкам „прошёл / не прошёл“.
-Учёт с 30.11.2026» (S15).
+Учёт с <дата>» — дата применения `012` (`ops.schema_migration.applied_at`, поле `since`), не константа (S15).
 
 **Путь.** `#/vacancy/<id>/funnel` — `.seg` (app.css:89) «Кандидаты» (прежняя доска) · «Отчёт» · «Этапы», `?view=`.
 «Воронка» без вакансии (вместо funnel.js:114–121) — `#/funnel?year=&recruiter=`; справочник — `#/funnel/stages`. Карточка
@@ -84,10 +85,10 @@ PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/
   отметку» в карточке (автору в тот же день, руководителю ОП всегда): `confirmSheet` с причиной, `toast` (S16).
 - **Окно «Итог этапа» (S6–S9, C)** — `sheet` (ui.js:156), как `moveSheet` (funnel.js:21): «Прошёл — на этап „…“» (дата
   встречи, если следующий — встреча) · «Не прошёл» · «Отказался»; причина — `select` своего исхода (S7), «Отказ от
-  оффера» — только на «Оффере»; «Другое» — счётчик «0 из 100 знаков» (`.counter`, `canSave` decisions.js:21). На
+  оффера» — только на «Оффере»; «Другое» — счётчик «0 из 100 знаков» (`.counter`, `canSave` decisions-model.js:22). На
   «Собеседовании» — «Резолюция руководителя: <заказчик>» (S8). Последний этап — «Вышел в первый день» / «Не вышел»; после
   «Вышел» при закрытых ставках — `.note` «Вышли все ставки — закрыть вакансию?» с окном закрытия (vacancies.js:125, S9).
-- **Этапы вакансии (S2–S5, D).** `.split` (app.css:298): «Действует» (у новой — chip «стандартный») и «Предлагаю» по
+- **Этапы вакансии (S2–S5, D).** `.split` (app.css:297): «Действует» (у новой — chip «стандартный») и «Предлагаю» по
   строкам (`sechead`), у этапа ↑ ↓ ✕ и «N чел.»; ↑/↓ — внутри строки; «+ Добавить этап» — `select`, в конец строки. ✕ у
   этапа с людьми неактивен: «На этапе 3 человека — сначала переведите их» (тот же 409 — `errorLine`); ✕ у последнего
   этапа строки — «в отчёте — „нет в наборе“», у «Отобранные резюме» и «Пришедшие в 1 день» неактивен. «Зачем меняете»,
@@ -113,7 +114,7 @@ PRD: docs/PRD.md → `workplace`, воронка; решения ОП — `docs/
 
 **Компоненты.** Существующие: `card`, `seg`, `tablewrap`/`table`, `list`/`li`, `chip`, `note`, `sheet`, `confirmSheet`,
 `actionCard`, `zone`, `errorLine`, `counter`, `split`, `stage`/`mini`. Новые: `funnelTable` (A, с раскрытием и без),
-`outcomeSheet` (C), `stageSetEditor` (D), `compareTable` (E). Токены — существующие (app.css:7–17, тёмная 22–31); CSS
+`outcomeSheet` (C), `stageSetEditor` (D), `compareTable` (E). Токены — существующие (app.css:7–17, тёмные :20 и :35); CSS
 `table.funnel`: числа вправо, `tabular-nums`, подстроки `--muted` с отступом, итог жирным, первый столбец закреплён.
 **Доступность.** `caption.sr-only`, `th scope`; раскрытие — `button aria-expanded aria-controls`; цифры текстом, цвет
 дублирует (chip «+/−» несёт знак). Окно C — `fieldset`+`legend`, `label`, счётчик — `aria-describedby`. ↑/↓/✕ —
@@ -132,14 +133,13 @@ app.css:83); до 920 px `split` в столбец («Предлагаю» пе�
 отметкам пары кандидат×вакансия; `candidate.status`/`status_history` — производные (`failed` → `rejected_by_us`, `refused`
 → `rejected_by_candidate`/`refused_contact`/`no_show`, вышел → `hired`) для отката, vacancies.py:35, handoff.py:83, funnel.py:71.
 
-**Компоненты.** `hr/stages.py` — библиотека, наборы, `enter`, `mark`, `undo`, перенос (S1–S10, S15, S16);
-`hr/funnel_report.py` — счёт и срок (S11–S13); `hr/vacancies.py` — набор v1 в `create`, `pause`/`resume`, `close`
-закрывает паузу, `reopen` пишет паузу на время закрытия (S2, S14). `decisions.take` (:79), `handoff.py:136`,
-`funnel.move(vacancy_id)` → `stages.enter` (S10); `actions.py:164` — только статус. `funnel.funnel()` — колонки по набору;
-`POST /api/candidate/{id}/status` — только `reserve` без открытой отметки, иначе 409 `use_stages` (today.js:151 → `mark`).
+**Компоненты.** `hr/stages.py` — библиотека, наборы, `enter`/`mark`/`undo` (S1–S10, S16); `hr/funnel_report.py` — счёт и
+срок (S11–S13); `hr/vacancies.py` — набор v1 в `create`, `pause`/`resume`, `close` закрывает паузу, `reopen` пишет паузу на
+время закрытия (S2, S14). `decisions.take` (decisions.py:50, связь — :79), `handoff.py:136`, `funnel.move(vacancy_id)` →
+`stages.enter` (S10); `actions.py:164` — только статус. `funnel.funnel()` — колонки по набору; перенос — `ops.funnel_carry()`
+(S15); `POST /api/candidate/{id}/status` — только `reserve` без открытой отметки, иначе 409 `use_stages` (today.js:151 → `mark`).
 
-**Данные — `012_funnel_stages.sql`**, только добавляет; уникальность — внутри новых `CREATE TABLE` (`CREATE UNIQUE INDEX`
-ловит линтер, tests/test_release.py:271).
+**Данные — `012_funnel_stages.sql`**, только добавляет; уникальность — в `CREATE TABLE` (индексы ловит test_release.py:271).
 - `ops.funnel_row(code PK, ord UNIQUE, title)` — `selected contact screening interview meeting security offer first_day`;
   `ops.fail_reason(code PK, title, outcome failed|refused, only_row, needs_comment, ord)` — 9 причин S7 (`other` — у обоих
   исходов, `offer_declined` — `only_row = offer`).
@@ -153,28 +153,27 @@ app.css:83); до 920 px `split` в столбец («Предлагаю» пе�
   btree` на `(candidate_id, vacancy_id, slot)` и на `(candidate_id, vacancy_id) WHERE outcome IS NULL`, оба — среди
   `cancelled_at IS NULL`; не `passed` ⇒ `reason`. Отменённые не удаляются и в счёт не входят.
 - `ops.vacancy_pause(id, vacancy_id, from_date, to_date, kind pause|closed_gap, by, comment)`, одна открытая — `EXCLUDE`.
-  `stage.approve` → `head_recruiter` + `agent_change` (как 002_workplace.sql:79–89); `ops.change_default('012',
-  'stage_fail_other_min', NULL, '100')`.
-- S15: вакансиям `open|on_hold` — набор v1 `approved` из 8 стандартных; открытым парам — отметка `carried`: `picked_by_agent
-  →selected`, `first_message_sent|replied→contact`, `phone_interview→screening`, `manager_interview|test_task→meeting`,
-  `security_check→security`, `offer→offer`; `new`, `reserve`, закрытые — нет.
+  `stage.approve` → `head_recruiter` + `agent_change` (как 002_workplace.sql:79–89); `ops.change_default`: `stage_fail_other_min` = 100.
+- S15 — `ops.funnel_carry()`, её вызывает `012`, повтор ничего не меняет. Вакансиям `open|on_hold` — набор v1 `approved`
+  из 8 стандартных; открытым парам — `carried`: `picked_by_agent→selected`, `first_message_sent|replied→contact`,
+  `phone_interview→screening`, `manager_interview|test_task→meeting`, `security_check→security`, `offer→offer`; `new`,
+  `reserve`, закрытые — нет; в нескольких вакансиях — статус в последней по `added_at` в `ops.candidate_vacancy`, прочим — `selected`.
 
-**Счёт — SQL по неотменённым `ops.candidate_stage`, без модели (AD-2).** Строка R: вошли — пары с отметкой строки R
-(если R нет в наборе — и пары с отметкой строки старше R); прошли — из них пары с отметкой строки старше R (`first_day` —
-`passed`). Отсюда «вошёл на первом этапе строки, прошёл последний», «вошли R+1 = прошли R», вне набора вошли = прошли
-(`in_set: false`). % = прошли / вошли (0 → «—»); конверсия = прошли `first_day` / вошли `selected`; раскрытие — по `slot`;
-`carried` — со своей строки. Срок = `coalesce(closed_at, сегодня) − opened_at − дни пауз`; год — `opened_at`, рекрутер —
-`vacancy.recruiter_id`.
+**Счёт — SQL по неотменённым `ops.candidate_stage`, без модели (AD-2).** Строка R: вошли — пары с отметкой строки R (если
+R нет в наборе — и пары с отметкой строки старше R); прошли — из них пары с отметкой старше R (`first_day` — `passed`).
+Отсюда «вошёл на первом этапе строки, прошёл последний», «вошли R+1 = прошли R», вне набора вошли = прошли (`in_set: false`).
+% = прошли / вошли (0 → «—»); конверсия = прошли `first_day` / вошли `selected`; раскрытие — по `slot`; `carried` — со своей
+строки. Срок = `coalesce(closed_at, сегодня) − opened_at` − паузы; год — `opened_at`, рекрутер — `recruiter_id`.
 
-**Запись.** `enter` — первый этап набора; набора нет (вакансия от v1.2.0) — v1 в той же транзакции. `mark` — `FOR UPDATE`,
+**Запись.** `enter` — первый этап набора; набора нет (вакансия v1.2.0) — v1 в той же транзакции. `mark` — `FOR UPDATE`,
 `slot` ≠ открытому → 409 `stale`; `passed` → следующий этап набора, на последнем — `hired` и `offer_close` при вышедших ≥
-`headcount` (закрытие — прежний `close`, 200 знаков, S9); `failed`/`refused` — причина своего исхода и строки, «другое» —
-≥ `stage_fail_other_min`; закрытая вакансия → 409, на паузе отметки можно, новых людей нет (decisions.py:56). `undo` —
-последняя по `decided_at` отметка пары: своя и сегодня по Москве, иначе нужно `stage.approve`; она и открытая следующая
-получают `cancelled_*`, вставляется открытая копия этапа с прежними `entered_*`; статус пересчитан; `audit_log` `edit`
-`candidate_stage`. Набор: строки по `ord` не убывают, `selected` и `first_day` есть, этапы активны; второй `proposed` →
-409 `pending_exists`; убираемый `slot` с людьми → 409 `stage_busy {slot, count}` при предложении и утверждении (S5).
-Библиотека и наборы → `agent_change` kind `stages` (reports.py:10).
+`headcount` (закрытие — прежний `close`, S9); `failed`/`refused` — причина своего исхода и строки, «другое» — ≥
+`stage_fail_other_min`; на закрытой вакансии `passed` → 409, `failed`/`refused` можно; на паузе отметки можно, новых людей
+нет (decisions.py:56). `undo` — последняя по `decided_at` отметка пары: своя и сегодня по Москве, иначе нужно
+`stage.approve`; она и открытая следующая получают `cancelled_*`, вставляется открытая копия с прежними `entered_*`;
+статус пересчитан; `audit_log` `edit` `candidate_stage`. Набор: строки по `ord` не убывают, `selected` и `first_day` есть,
+этапы активны; второй `proposed` → 409 `pending_exists`; убираемый `slot` с людьми → 409 `stage_busy {slot, count}` при
+предложении и утверждении (S5). Библиотека и наборы → `agent_change` kind `stages` (reports.py:10).
 
 **API** — ошибки `{error, message}` (api/vacancies.py:21–29); чужое и вне скоупа — 404 (AD-7). Сторонних API нет.
 
@@ -188,12 +187,12 @@ app.css:83); до 920 px `split` в столбец («Предлагаю» пе�
 | `POST /api/vacancy/{v}/candidate/{c}/mark` | `person.take` | `{slot, outcome, reason?, comment?}` → `{next_slot, offer_close}` | 404, 409 `stale`, 422 |
 | `POST /api/vacancy/{v}/candidate/{c}/undo` | `person.take`; чужая или не сегодня — `stage.approve` | `{comment}` → `{slot}` | 404, 403 `undo_expired`, 409 `nothing_to_undo`/закрыта |
 | `POST /api/vacancy/{id}/pause` · `/resume` | `vacancy.edit` | → `{state}` | 404, 409 |
-| `GET /api/vacancy/{id}/funnel-report` | scoped `base.read`: рекрутер — своя (`recruiter_id`); `report.read` + `scope.all` — любая; прочие — `vacancy_ok` | → даты, `days`, `paused_days`, `carried`, `rows[8]{entered, passed, pct, in_set, stages[]}`, `conversion` | 404 |
+| `GET /api/vacancy/{id}/funnel-report` | scoped `base.read`: рекрутер — своя (`recruiter_id`); `report.read` + `scope.all` — любая; прочие — `vacancy_ok` | → даты, `since`, `days`, `paused_days`, `carried`, `rows[8]{entered, passed, pct, in_set, stages[]}`, `conversion` | 404 |
 | `GET /api/funnel/recruiter/{uid}?year=` · `/department?year=` | сам · `report.read` + `scope.all` | → `years`, `total`, `vacancies[]` · `recruiters[]` | 404 |
 
 **Совместимость (AD-8).** v1.2.0 на новой базе пишет `candidate.status` как раньше, новых таблиц не видит; тесты, знающие
-число прав, — в `compat_skip.txt` (как :7). После отката статусы верны; отметки, сделанные v1.2.0, при возврате
-переносятся как в S15 — строка в «Откат» CHANGELOG. Сужение (`/status`, `STAGES`) — не здесь.
+число прав, — в `compat_skip.txt` (как :7). После отката статусы верны; при возврате на v1.3.0 статусы, изменённые v1.2.0,
+переносит `python -m hr.cli funnel-carry` (как S15) — строка в «Откат» CHANGELOG. Сужение (`/status`, `STAGES`) — не здесь.
 
 ## Безопасность — backend-architect
 
@@ -224,6 +223,7 @@ app.css:83); до 920 px `split` в столбец («Предлагаю» пе�
 | Оповещение и пауза | без колокольчика: плашка на вакансии и блок «Ждут утверждения»; на паузе итоги отмечать можно | умолчание главной сессии | колокольчик |
 | Объём к 30.11 | v1.3.0 — этапы, исходы, причины, воронка на экране; v1.3.1 — Excel и графики | срок неделя; «обязательно — этапы под вакансию» (ОП) | всё одним выпуском |
 | Период отчёта | год (вакансия — по дате открытия), рекрутер, вакансия; без месяцев | ответ ОП и образец; год — человек, 23.11 | месяц по дате этапа |
+| Закрытая вакансия | запрещён только исход `passed`; `failed`/`refused` с причиной можно | без «зависших» кандидатов; решено главной сессией 23.11, сообщить человеку | 409 на любую отметку |
 | Нормы срока | нет в этой фиче; «дольше нормы» не трогаем | норм нет (ОП) | норма у вакансии |
 | Источник воронки → architecture.md | отметки `ops.candidate_stage` по паре кандидат×вакансия; `candidate.status` — производный до сужения | счёт воспроизводим, откат на v1.2.0 работает (AD-8) | новые значения enum `candidate_status` (одни на человека, правка схемы) |
 | Право утверждения этапов | новое `stage.approve` у `head_recruiter` | в матрице прав и справке видно отдельно от профилей | `profile.approve` (смешивает смыслы) |
