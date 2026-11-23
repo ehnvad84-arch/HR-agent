@@ -1,5 +1,5 @@
-"""Этапы вакансии (funnel-report, S1–S10): библиотека этапов, набор вакансии, предложение и утверждение набора,
-движение кандидата по этапам (вход, «прошёл / не прошёл / отказался»).
+"""Этапы вакансии (funnel-report, S1–S10, S16): библиотека этапов, набор вакансии, предложение и утверждение набора,
+движение кандидата по этапам (вход, «прошёл / не прошёл / отказался», отмена ошибочной отметки).
 
 Каждый этап библиотеки относится к одной из 8 строк отчёта (ops.funnel_row). У вакансии действует последний
 утверждённый набор; рекрутер предлагает новый, руководитель ОП утверждает или отклоняет. slot — постоянный номер
@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import psycopg
 
@@ -24,6 +25,7 @@ ROW_STATUS = {"selected": "picked_by_agent", "contact": "first_message_sent", "s
               "interview": "phone_interview", "meeting": "manager_interview", "security": "security_check",
               "offer": "offer", "first_day": "offer"}
 REFUSED_STATUS = {"no_contact": "refused_contact", "no_show": "no_show", "no_first_day": "no_show"}
+MSK = ZoneInfo("Europe/Moscow")
 CONTACT_STATUS = {"first_message_sent", "phone_interview", "manager_interview", "security_check", "offer"}
 
 
@@ -33,6 +35,14 @@ class NotFound(LookupError):
 
 class Invalid(ValueError):
     pass
+
+
+class Forbidden(PermissionError):
+    """code — для ответа API (403 {error: code})."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 class Conflict(RuntimeError):
@@ -436,6 +446,57 @@ def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int
         return {"next_slot": nxt["slot"], "offer_close": False}
     _status(conn, candidate_id, "hired", user_id, now, f"этап «{title}» пройден: вышел")
     return {"next_slot": None, "offer_close": not closed and _hired(conn, vacancy_id) >= v["headcount"]}
+
+
+def _can_approve(conn, user_id: int) -> bool:
+    return bool(val(conn, """SELECT 1 FROM app_user u JOIN role_permission rp ON rp.role = u.role
+                             WHERE u.id = %s AND rp.permission = 'stage.approve'""", (user_id,)))
+
+
+def undo(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, user_id: int, now: datetime, *,
+         comment: str) -> dict:
+    """S16: отмена последней по decided_at отметки пары. Свою — в тот же день по Москве; чужую и позже — только
+    с правом stage.approve (руководитель ОП). Отметка и открытая после неё помечаются отменёнными (не удаляются),
+    этап снова открыт копией с прежним входом, статус пересчитан, отмена — в audit_log."""
+    comment = (comment or "").strip()
+    v = one(conn, "SELECT id, state FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
+    if not v or not val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
+                                 AND cancelled_at IS NULL LIMIT 1""", (candidate_id, vacancy_id)):
+        raise NotFound
+    if not comment:
+        raise Invalid("причина отмены")
+    if v["state"] in ("closed", "cancelled"):
+        raise Conflict("vacancy_closed", "вакансия закрыта: отметки не отменяются")
+    last = one(conn, """SELECT id, slot, stage_id, report_row, entered_by, entered_at, carried, outcome, decided_by,
+                               decided_at
+                        FROM ops.candidate_stage
+                        WHERE candidate_id = %s AND vacancy_id = %s AND cancelled_at IS NULL AND outcome IS NOT NULL
+                        ORDER BY decided_at DESC, id DESC LIMIT 1 FOR UPDATE""", (candidate_id, vacancy_id))
+    if not last:
+        raise Conflict("nothing_to_undo", "у кандидата нет отметок, которые можно отменить")
+    own_today = last["decided_by"] == user_id and \
+        last["decided_at"].astimezone(MSK).date() == now.astimezone(MSK).date()
+    if not own_today and not _can_approve(conn, user_id):
+        raise Forbidden("undo_expired", "Отменить может руководитель ОП")
+    opened = _open(conn, candidate_id, vacancy_id)
+    ids = [last["id"]] + ([opened["id"]] if opened else [])
+    run(conn, """UPDATE ops.candidate_stage SET cancelled_by = %s, cancelled_at = %s, cancel_comment = %s
+                 WHERE id = ANY(%s)""", (user_id, now, comment, ids))
+    run(conn, """INSERT INTO ops.candidate_stage (candidate_id, vacancy_id, slot, stage_id, report_row, entered_by,
+                                                  entered_at, carried)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (candidate_id, vacancy_id, last["slot"], last["stage_id"], last["report_row"], last["entered_by"],
+         last["entered_at"], last["carried"]))
+    st = current_set(conn, vacancy_id)
+    title = _stage_title(conn, last["stage_id"], st["id"] if st else None, last["slot"])
+    _status(conn, candidate_id, ROW_STATUS[last["report_row"]], user_id, now,
+            f"отменена отметка этапа «{title}»: {comment}")
+    run(conn, """INSERT INTO audit_log (user_id, action, object_type, object_id, detail, at)
+                 VALUES (%s, 'edit', 'candidate_stage', %s, %s, %s)""",
+        (user_id, last["id"], j({"undo": True, "candidate_id": candidate_id, "vacancy_id": vacancy_id,
+                                 "slot": last["slot"], "outcome": last["outcome"], "cancelled": ids,
+                                 "comment": comment}), now))
+    return {"slot": last["slot"]}
 
 
 def _journal(conn, before: dict | None, after: dict | None, user_id: int, now: datetime, note: str) -> None:

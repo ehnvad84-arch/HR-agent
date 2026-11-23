@@ -508,3 +508,124 @@ def test_s14_marks_allowed_on_pause(conn, vid, people):
 
 def test_journal_kind_title():
     assert reports.KIND_TITLE["stages"] == "Этапы вакансий"
+
+
+# ------------------------------------------------------------------ S16: отмена ошибочной отметки
+
+UNDO = "ошиблась кандидатом"
+
+
+def marks(conn, cid, vacancy_id):
+    return db.rows(conn, """SELECT slot, outcome, entered_by, entered_at, carried, cancelled_by, cancelled_at,
+                                   cancel_comment
+                            FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s ORDER BY id""",
+                   (cid, vacancy_id))
+
+
+def audit(conn, cid):
+    return db.rows(conn, """SELECT user_id, action, object_type, detail FROM audit_log
+                            WHERE object_type = 'candidate_stage' AND (detail->>'candidate_id')::bigint = %s
+                            ORDER BY id""", (cid,))
+
+
+def test_s16_own_mark_same_day_undone(conn, vid, people):
+    cid = candidate(conn)
+    entered = datetime(2026, 11, 24, 7, 0, tzinfo=UTC)
+    stages.enter(conn, cid, vid, people["rec"], entered)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    later = datetime(2026, 11, 24, 15, 0, tzinfo=UTC)
+    assert stages.undo(conn, cid, vid, people["rec"], later, comment=UNDO) == {"slot": 1}
+    got = marks(conn, cid, vid)
+    assert [(m["slot"], m["outcome"], m["cancelled_at"] is not None) for m in got] == \
+        [(1, "passed", True), (2, None, True), (1, None, False)]
+    for m in got[:2]:
+        assert (m["cancelled_by"], m["cancelled_at"], m["cancel_comment"]) == (people["rec"], later, UNDO)
+    assert (got[2]["entered_by"], got[2]["entered_at"]) == (people["rec"], entered)     # прежний вход
+    assert open_mark(conn, cid, vid)["slot"] == 1
+    assert status(conn, cid) == "picked_by_agent"
+    assert history(conn, cid) == ["picked_by_agent", "first_message_sent", "picked_by_agent"]
+    log = audit(conn, cid)
+    assert len(log) == 1 and log[0]["user_id"] == people["rec"] and log[0]["action"] == "edit"
+    assert log[0]["detail"]["slot"] == 1 and log[0]["detail"]["outcome"] == "passed"
+    assert log[0]["detail"]["vacancy_id"] == vid and log[0]["detail"]["comment"] == UNDO
+    assert stages.mark(conn, cid, vid, 1, "passed", people["rec"], later)["next_slot"] == 2   # снова по набору
+
+
+def test_s16_undo_refusal_returns_to_stage(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 2)
+    stages.mark(conn, cid, vid, 3, "refused", people["rec"], NOW, reason="no_contact")
+    assert status(conn, cid) == "refused_contact"
+    assert stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO) == {"slot": 3}
+    assert open_mark(conn, cid, vid)["slot"] == 3 and status(conn, cid) == "phone_interview"
+    assert stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO) == {"slot": 2}    # и предыдущую — своя
+    assert open_mark(conn, cid, vid)["slot"] == 2 and status(conn, cid) == "first_message_sent"
+
+
+def test_s16_undo_hired_back_to_first_day(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    walk(conn, cid, vid, people["rec"], 8)
+    assert status(conn, cid) == "hired"
+    assert stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO) == {"slot": 8}
+    assert open_mark(conn, cid, vid)["report_row"] == "first_day" and status(conn, cid) == "offer"
+
+
+def test_s16_yesterday_by_moscow_only_head(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    evening = datetime(2026, 11, 24, 20, 30, tzinfo=UTC)             # 23:30 по Москве
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], evening)
+    after_midnight = datetime(2026, 11, 24, 21, 30, tzinfo=UTC)      # 00:30 следующего дня по Москве
+    with pytest.raises(stages.Forbidden) as e:
+        stages.undo(conn, cid, vid, people["rec"], after_midnight, comment=UNDO)
+    assert e.value.code == "undo_expired" and "руководитель ОП" in str(e.value)
+    assert open_mark(conn, cid, vid)["slot"] == 2                             # ничего не изменилось
+    assert stages.undo(conn, cid, vid, people["head"], after_midnight, comment=UNDO) == {"slot": 1}
+    assert audit(conn, cid)[0]["user_id"] == people["head"]
+
+
+def test_s16_same_moscow_day_across_utc_midnight(conn, vid, people):
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], datetime(2026, 11, 24, 21, 30, tzinfo=UTC))
+    assert stages.undo(conn, cid, vid, people["rec"], datetime(2026, 11, 25, 9, 0, tzinfo=UTC),
+                       comment=UNDO) == {"slot": 1}                          # оба — 25.11 по Москве
+
+
+def test_s16_other_recruiters_mark_only_head(conn, vid, people):
+    other = user(conn, "rec2", "recruiter")
+    cid = candidate(conn)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    with pytest.raises(stages.Forbidden) as e:
+        stages.undo(conn, cid, vid, other, NOW, comment=UNDO)
+    assert e.value.code == "undo_expired"
+    assert stages.undo(conn, cid, vid, people["head"], NOW, comment=UNDO) == {"slot": 1}
+
+
+def test_s16_nothing_to_undo_comment_closed_and_missing(conn, vid, people):
+    cid = candidate(conn)
+    with pytest.raises(stages.NotFound):
+        stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    stages.enter(conn, cid, vid, people["rec"], NOW)
+    with pytest.raises(stages.Conflict) as e:
+        stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    assert e.value.code == "nothing_to_undo"
+    stages.mark(conn, cid, vid, 1, "passed", people["rec"], NOW)
+    with pytest.raises(stages.Invalid):
+        stages.undo(conn, cid, vid, people["rec"], NOW, comment="  ")
+    db.run(conn, "UPDATE vacancy SET state = 'closed', close_comment = repeat('з', 200) WHERE id = %s", (vid,))
+    with pytest.raises(stages.Conflict) as e:
+        stages.undo(conn, cid, vid, people["head"], NOW, comment=UNDO)
+    assert e.value.code == "vacancy_closed"
+    assert audit(conn, cid) == []
+
+
+def test_s16_carried_mark_keeps_carried_after_undo(conn, vid, people):
+    cid = enter_open(conn, vid, 3)
+    db.run(conn, "UPDATE ops.candidate_stage SET carried = true WHERE candidate_id = %s", (cid,))
+    stages.mark(conn, cid, vid, 3, "passed", people["rec"], NOW)
+    stages.undo(conn, cid, vid, people["rec"], NOW, comment=UNDO)
+    assert [(m["slot"], m["carried"]) for m in marks(conn, cid, vid) if m["cancelled_at"] is None] == [(3, True)]
