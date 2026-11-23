@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from factories import hh_item, profile, source
 
-from hr import db
+from hr import db, stages
 from hr.normalize import normalize
 from hr.pipeline import process
 
@@ -79,6 +79,21 @@ def test_s37_stalled(conn, clock, api):
     c, _, _ = api()
     st = c.get("/api/today").json()["stalled"]
     assert [s["candidate_id"] for s in st] == [cid] and st[0]["days_silent"] >= 5
+
+
+def test_stalled_rows_carry_open_stages(conn, clock, api):
+    """funnel-report T12: у зависшего — открытые этапы по вакансиям: «Закрыть» отмечает отказ через stages.mark."""
+    prof = profile(conn)
+    cid = candidate(conn, person(conn, clock), silent_days=6)
+    vid = db.val(conn, """INSERT INTO vacancy (role_profile_id, title, headcount, state, opened_at)
+                          VALUES (%s, 'Вымышленная вакансия', 1, 'open', current_date) RETURNING id""", (prof["id"],))
+    c, _, uid = api()
+    assert c.get("/api/today").json()["stalled"][0]["stages"] == []
+    stages.enter(conn, cid, vid, uid, clock.now())
+    db.run(conn, "UPDATE candidate SET status = 'replied' WHERE id = %s", (cid,))   # статус «зависшего»
+    got = c.get("/api/today").json()["stalled"][0]["stages"]
+    assert got == [{"vacancy_id": vid, "vacancy_title": "Вымышленная вакансия", "slot": 1,
+                    "report_row": "selected", "stage": "Отобранные резюме"}]
 
 
 def test_s36_meetings_today_and_tomorrow(conn, clock, api):

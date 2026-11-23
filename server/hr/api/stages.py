@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -153,6 +153,7 @@ class MarkIn(BaseModel):
     outcome: str
     reason: str | None = None
     comment: str | None = None
+    scheduled_at: datetime | None = None
 
 
 @router.post("/api/vacancy/{vacancy_id}/candidate/{candidate_id}/mark")
@@ -160,7 +161,7 @@ def mark(vacancy_id: int, candidate_id: int, body: MarkIn, user: Taker, conn_fac
     def go():
         with conn_factory() as conn:
             return stages.mark(conn, candidate_id, vacancy_id, body.slot, body.outcome, user.id, clock.now(),
-                               reason=body.reason, comment=body.comment)
+                               reason=body.reason, comment=body.comment, scheduled_at=body.scheduled_at)
     return _errors(go)
 
 

@@ -1,12 +1,12 @@
 // «Сегодня» (S4, S5, S36, S37; П:305–320): четыре зоны — сигналы, ждут подтверждения, зависли, сегодня и завтра.
 // Данные — GET /api/today. Всё из ответа выводится только текстом (h(), textContent).
 import { actBtn, actionCard, perform } from "../cards.js";
-import { h, mount } from "../dom.js";
+import { h, mount, uid } from "../dom.js";
 import { actionTitle, alertReason, dayLabel, capitalize, interviewTitle, silentText, timeLabel, whenLabel } from "../format.js";
 import { blockedSheet, contactSheet, quietDecline, startContact } from "../contact-ui.js";
 import { loadResumesButton } from "../hh-load.js";
 import { actionOutcome, contactPlan, isLetter } from "../contacts-model.js";
-import { TOASTS, resultText, takenText } from "../decisions-model.js";
+import { TOASTS, countChars, resultText, takenText } from "../decisions-model.js";
 import { openCommentSheet, openDecisionSheet, takePerson } from "../decisions.js";
 import { declineSheet, draftSheet } from "../letter-ui.js";
 import { handoffControl, statusBadge } from "../handoff.js";
@@ -15,7 +15,8 @@ import { isCabinet } from "../nav-model.js";
 import { chip, face, myScoreChip, personHref, personName, scoreBadge, summaryBlock } from "../people.js";
 import { hashFor } from "../router.js";
 import { emptyCard, errorLine, errorText, field, mountAsync, sheet, toast } from "../ui.js";
-import { normalizeToday } from "./today-model.js";
+import { OTHER_MIN, otherCounter, reasonGroups } from "./outcome-model.js";
+import { buildStalledClose, closeTargets, normalizeToday } from "./today-model.js";
 import {
   EMPTY_SIGNALS, EMPTY_VACANCIES, NO_HANDOFFS, customerLine, hrLine, managerBadge, matchingLabel, normalizeManagerToday, vacancyMeta, zoneTitles,
 } from "./manager-model.js";
@@ -133,32 +134,76 @@ function approvalCard(row, env) {
   return card.el;
 }
 
-function closeSheet(row, card, env) {
-  const win = sheet({ title: "Закрыть: отказ кандидата", hint: "Опишите причину — она сохранится в истории кандидата.", width: "480px" });
-  const reason = field({ label: "Причина", kind: "textarea", name: "reason", required: true });
+/**
+ * «Закрыть» зависшего: отказ кандидата отмечается итогом открытого этапа (stages.mark, исход «Отказался» с причиной),
+ * а не прямой сменой статуса. Вакансий с открытым этапом несколько — выбирают, в какой закрыть.
+ */
+async function closeSheet(row, card, env) {
+  const targets = closeTargets(row);
+  card.status.clear();
+  if (!targets.length) {
+    card.status.show("У человека нет открытого этапа в вакансии: закрывать нечего");
+    return;
+  }
+  let library;
+  try {
+    library = await env.api.get("/api/stages", { signal: env.signal });
+  } catch (error) {
+    if (error && error.name === "AbortError") return;
+    card.status.show(error);
+    return;
+  }
+  const win = sheet({ title: "Закрыть: отказ кандидата", hint: "Отметьте причину — она сохранится в истории кандидата и попадёт в отчёт воронки.", width: "480px" });
+  const targetId = uid("target");
+  const target = h("select", { id: targetId }, targets.map((t) => h("option", { value: t.value }, t.label)));
+  const reasonId = uid("reason");
+  const reason = h("select", { id: reasonId });
+  const comment = field({ label: "Комментарий (необязательно)", kind: "textarea", name: "comment" });
+  const counter = h("span.counter.bad", { hidden: true }, otherCounter("", OTHER_MIN));
   const status = errorLine();
-  const save = h("button.b.danger", { type: "submit", disabled: true }, "Закрыть кандидатство");
-  const form = h("form", { novalidate: true }, reason.root, status.el,
-    h("div.sheetfoot", h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"), save));
-  reason.input.addEventListener("input", () => { save.disabled = !reason.input.value.trim(); });
+  const save = h("button.b.danger", { type: "submit" }, "Закрыть кандидатство");
+  const picked = () => targets.find((t) => t.value === target.value) || null;
+  const fill = () => {
+    const { groups, other } = reasonGroups(library.reasons || [], "refused", picked() ? picked().reportRow : "");
+    reason.replaceChildren(...groups.map((g) => h("optgroup", { label: g.label }, g.items.map((i) => h("option", { value: i.code }, i.title)))),
+      other ? h("option", { value: other.code }, other.title) : null);
+    reason.value = "no_contact";   // зависший — чаще всего «не вышел на связь»
+    if (!reason.value && reason.options.length) reason.selectedIndex = 0;
+  };
+  const sync = () => {
+    const other = reason.value === "other";
+    counter.hidden = !other;
+    counter.textContent = otherCounter(comment.input.value, OTHER_MIN);
+    counter.classList.toggle("bad", countChars(comment.input.value) < OTHER_MIN);
+    comment.root.querySelector("label").textContent = other ? `Комментарий (обязательно, от ${OTHER_MIN} знаков)` : "Комментарий (необязательно)";
+  };
+  target.addEventListener("change", () => { fill(); sync(); });
+  reason.addEventListener("change", sync);
+  comment.input.addEventListener("input", sync);
+  fill();
+  sync();
+  const form = h("form", { novalidate: true }, h("div.form",
+    targets.length > 1 ? h("div.field", h("label", { for: targetId }, "В какой вакансии"), target) : h("div.t2", targets[0].label),
+    h("div.field", h("label", { for: reasonId }, "Причина"), reason), comment.root), status.el,
+  h("div.sheetfoot", counter, h("button.b", { type: "button", onClick: () => win.close("cancel") }, "Отмена"), save));
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const comment = reason.input.value.trim();
-    if (!comment) return;
     status.clear();
+    const built = buildStalledClose({ target: picked(), reason: reason.value, comment: comment.input.value });
+    if (!built.ok) { status.show(built.error); return; }
     save.disabled = true;
     try {
-      await env.api.post(`/api/candidate/${encodeURIComponent(row.candidate_id)}/status`,
-        { to_status: "rejected_by_candidate", comment }, { signal: env.signal });
+      await env.api.post(`/api/vacancy/${encodeURIComponent(built.vacancyId)}/candidate/${encodeURIComponent(row.candidate_id)}/mark`,
+        built.payload, { signal: env.signal });
       win.close("saved");
     } catch (error) {
       if (error && error.name === "AbortError") return;
-      status.show(error);   // окно остаётся, текст причины не теряется
+      status.show(error);   // окно остаётся, введённое не теряется
       save.disabled = false;
     }
   });
   win.body.append(form);
-  win.show(reason.input);
+  win.show(reason);
   win.closed.then((outcome) => {
     if (outcome !== "saved") return;
     card.finish("Закрыт: отказ кандидата, причина записана");

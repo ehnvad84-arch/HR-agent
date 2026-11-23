@@ -2,18 +2,16 @@
 // «Открыть заново», «Новая вакансия». Данные — GET /api/vacancies. Всё из API выводится только текстом.
 // Блоки «Заявка из 1С» и «Публикация на hh» из прототипа не показываются: заявки и публикация — отдельные фичи.
 import { actBtn, actionCard, perform } from "../cards.js";
-import { openCommentSheet } from "../decisions.js";
 import { h, mount, uid } from "../dom.js";
 import { isCabinet } from "../nav-model.js";
 import { chip } from "../people.js";
 import { emptyCard, errorLine, field, mountAsync, sheet, toast } from "../ui.js";
 import { renderList as renderManagerList } from "./manager-vacancies.js";
 import {
-  CLOSE_HINT, CLOSE_REASONS, CLOSE_TOAST, REOPEN_TOAST, buildVacancy, closeResult, closedText, isStarving, openText,
-  MANAGER_HINT, profileChoices, staffChoices, vacancyTitle,
+  REOPEN_TOAST, buildVacancy, closedText, isStarving, openText, MANAGER_HINT, profileChoices, staffChoices, stageChips,
+  vacancyTitle,
 } from "./vacancies-model.js";
-
-const CLOSE_PLACEHOLDER = "Чем закрыта потребность, кто вышел на работу, что стоит учесть агенту в следующий раз по этой должности.";
+import { closeVacancy, togglePause } from "./vacancy-actions.js";
 
 // ------------------------------------------------------------------ новая вакансия (S21)
 
@@ -121,23 +119,29 @@ function newVacancySheet({ api, signal, session }) {
 
 function openCard(v, env) {
   const go = (name, params, query) => () => env.go(name, params, query);
+  const onHold = v.state === "on_hold";
   const close = async () => {
-    const result = await openCommentSheet({
-      title: `Закрыть вакансию: ${v.title}`, hint: CLOSE_HINT, reasons: CLOSE_REASONS, saveLabel: "Закрыть вакансию",
-      placeholder: CLOSE_PLACEHOLDER,
-      send: (text) => env.api.post(`/api/vacancy/${encodeURIComponent(v.id)}/close`, { comment: text }, { signal: env.signal }),
-    });
+    const result = await closeVacancy({ api: env.api, signal: env.signal, vacancy: v });
     if (!result.saved) return;
-    env.notes.set(v.id, closeResult(result.length));
-    toast(CLOSE_TOAST);
+    env.notes.set(v.id, result.text);
     await env.refresh();
   };
-  const chips = [isStarving(v) ? chip("дольше нормы", "o") : null, v.state === "on_hold" ? chip("на паузе") : null].filter(Boolean);
+  // пауза (S14): ставит с подтверждением, снимает сразу; отмена окна карточку не меняет
+  const pause = () => perform(card, () => togglePause({ api: env.api, signal: env.signal, vacancy: v }), async (changed) => {
+    if (!changed) { card.busy(false); return; }
+    env.notes.set(v.id, onHold ? "Пауза снята: дни паузы в срок ведения не входят" : "Вакансия на паузе: дни паузы в срок ведения не входят");
+    await env.refresh();
+  });
+  const chips = [isStarving(v) ? chip("дольше нормы", "o") : null, onHold ? chip("на паузе") : null,
+    ...stageChips(v).map((c) => chip(c.text, c.tone))].filter(Boolean);
   const people = [v.recruiter ? `Ответственный HR: ${v.recruiter}` : null, v.hiring_manager ? `Заказчик: ${v.hiring_manager}` : null].filter(Boolean).join(" · ");
   const card = actionCard(({ btns, status }) => [h("div.t1", vacancyTitle(v)), h("div.t2", openText(v)), people ? h("div.t2", people) : null,
     chips.length ? h("div.chips", chips) : null, btns, status], [
     h("button.b.fill", { type: "button", onClick: go("base", {}, { vacancy: v.id }) }, "Показать подходящих"),
     h("button.b.tint", { type: "button", onClick: go("funnel", { id: v.id }) }, "Воронка"),
+    h("button.b", { type: "button", onClick: go("funnel", { id: v.id }, { view: "stages" }) }, "Этапы"),
+    env.canEdit && onHold ? actBtn("", "Снять с паузы", pause) : null,
+    env.canEdit && !onHold ? actBtn("", "Поставить на паузу", pause) : null,
     env.canEdit ? actBtn("danger", "Закрыть вакансию", close) : null,
   ]);
   return card.el;

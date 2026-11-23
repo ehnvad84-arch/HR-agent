@@ -2,7 +2,7 @@
 // Создать, изменить или закрыть вакансию руководитель не может; контактов, перетаскивания и «Перевести» здесь нет.
 // Всё из API выводится только текстом (h(), textContent).
 import { h, mount } from "../dom.js";
-import { dayText, funnelTotals, stageSummary } from "./funnel-model.js";
+import { dayText, funnelTotals, personNote, stageSummary } from "./funnel-model.js";
 import { handoffControl, loadHandoffMap } from "../handoff.js";
 import { chip, face, myScoreChip, personHref, personName, scoreBadge } from "../people.js";
 import { hashFor } from "../router.js";
@@ -48,7 +48,7 @@ function stageColumn(stage, total) {
       h("span.meter", { "aria-hidden": "true" }, h("i", { style: `width:${summary.pct}%` })), h("span.days", summary.avgText)),
     stage.people.length ? h("div.cards", stage.people.map((p) => h("div.mini",
       h("a.open", { href: personHref(p.person_id), "data-tip": "Открыть досье" }, h("div.namewrap", face(p, { small: true }), h("b", personName(p))), h("span", dayText(p.days))),
-      p.note ? h("div.t2", { style: "margin-top:4px" }, p.note) : null))) : null);
+      personNote(p) ? h("div.t2", { style: "margin-top:4px" }, personNote(p)) : null))) : null);
 }
 
 export function renderPage(box, ctx) {

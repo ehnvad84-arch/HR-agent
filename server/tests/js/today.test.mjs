@@ -102,3 +102,27 @@ test("S11: передачи руководителей — на бейдже в�
   assert.equal(data.empty, false);
   assert.deepEqual(normalizeToday({}).handoffs, []);
 });
+
+// ------------------------------------------------------------------ funnel-report T12: «Закрыть» зависшего — через итог этапа
+
+import { buildStalledClose, closeTargets } from "../../web/js/screens/today-model.js";
+
+const STALLED = { candidate_id: 5, stages: [
+  { vacancy_id: 3, vacancy_title: "Инженер-электронщик", slot: 4, report_row: "interview", stage: "Интервью" },
+  { vacancy_id: 9, vacancy_title: "Монтажник", slot: 1, report_row: "selected", stage: "Отобранные резюме" }] };
+
+test("S7: «Закрыть» зависшего — по каждому открытому этапу своя вакансия; без этапов — закрывать нечем", () => {
+  assert.deepEqual(closeTargets(STALLED).map((t) => [t.value, t.label]), [
+    ["3:4", "Инженер-электронщик — «Интервью»"], ["9:1", "Монтажник — «Отобранные резюме»"]]);
+  assert.deepEqual(closeTargets({ candidate_id: 5, stages: [] }), []);
+  assert.deepEqual(closeTargets({ candidate_id: 5 }), []);
+});
+
+test("S7: «Закрыть» — отказ кандидата с причиной своего исхода; «Другое» — комментарий от порога", () => {
+  const targets = closeTargets(STALLED);
+  assert.deepEqual(buildStalledClose({ target: targets[0], reason: "no_contact", comment: "" }),
+    { ok: true, vacancyId: 3, payload: { slot: 4, outcome: "refused", reason: "no_contact" } });
+  assert.equal(buildStalledClose({ target: targets[0], reason: "", comment: "" }).error, "Выберите причину");
+  assert.equal(buildStalledClose({ target: targets[0], reason: "other", comment: "коротко" }).ok, false);
+  assert.equal(buildStalledClose({ target: null, reason: "no_contact" }).error, "У человека нет открытого этапа");
+});

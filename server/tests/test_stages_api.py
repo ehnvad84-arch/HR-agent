@@ -1,5 +1,7 @@
 """T9–T10 funnel-report: API библиотеки этапов и наборов (S1–S5), движения кандидата и отчётов (S6–S9, S11–S14, S16);
 права и граница видимости (AD-7)."""
+from datetime import timedelta
+
 import pytest
 from factories import own_unit, profile, user
 
@@ -251,6 +253,22 @@ def test_s6_mark_passed_moves_forward_only(conn, api, prof, boss, clock):
     stranger = db.val(conn, """INSERT INTO candidate (fio, retention_until) VALUES ('Другой Д. Д.', current_date + 1)
                                RETURNING id""")
     assert mark(r, h, vid, stranger, slot=1, outcome="passed").status_code == 404
+
+
+def test_s36_mark_passed_with_meeting_date(conn, api, prof, boss, clock):
+    """T12: «Прошёл» с датой встречи — встреча попадает в «Сегодня и завтра»; при отказе дата не нужна (422)."""
+    r, h, uid = api("recruiter")
+    vid = new_vacancy(r, h, prof, boss)
+    cid = taken(conn, clock, vid, uid)
+    when = (clock.now() + timedelta(hours=3)).isoformat()
+    bad = mark(r, h, vid, cid, slot=1, outcome="refused", reason="conditions", scheduled_at=when)
+    assert bad.status_code == 422 and bad.json()["error"] == "validation"
+    assert open_slot(conn, cid, vid) == 1
+    ok = mark(r, h, vid, cid, slot=1, outcome="passed", scheduled_at=when)
+    assert ok.status_code == 200 and ok.json()["next_slot"] == 2
+    assert db.one(conn, "SELECT kind, vacancy_id FROM interview WHERE candidate_id = %s", (cid,)) == \
+        {"kind": "phone", "vacancy_id": vid}
+    assert len(r.get("/api/today").json()["meetings"]) == 1
 
 
 def test_s7_failed_and_refused_need_reason(conn, api, prof, boss, clock):

@@ -1,20 +1,6 @@
-// «Воронка» без DOM (S24, S36): сводка по этапам, куда можно перевести, тело запроса перевода.
-// Тексты — из прототипа (BOARD, stage, meter); итоговые статусы — как в задаче.
-
-export const TERMINAL = [["hired", "Вышел на работу"], ["rejected_by_us", "Отказали мы"],
-  ["rejected_by_candidate", "Отказался"], ["no_show", "Не пришёл"]];
-const MEETING = new Set(["phone_interview", "manager_interview", "test_task"]);
-
-export const meetingStage = (status) => MEETING.has(status);
-
-/** Причина: у отказов обязательна, у «не пришёл» по желанию, у остальных этапов не нужна. */
-export function reasonMode(status) {
-  if (status === "rejected_by_us" || status === "rejected_by_candidate") return "required";
-  return status === "no_show" ? "optional" : "none";
-}
-
-/** Перетаскивание сразу переводит, пока не нужны дата встречи и причина; иначе открывается окно. */
-export const needsWindow = (status) => meetingStage(status) || reasonMode(status) !== "none";
+// «Воронка» вакансии без DOM (S6, S10, S16): сводка по этапам набора, следующий этап, отмена последней отметки.
+// Этап — колонка по slot действующего набора (GET /api/vacancy/{id}/funnel); перевод — «Итог этапа» (outcome-model.js).
+import { dayLabel, timeLabel } from "../format.js";
 
 export const funnelTotals = (stages) => (stages || []).reduce((sum, s) => sum + s.people.length, 0);
 
@@ -36,20 +22,61 @@ export function dayText(days) {
   return days === 0 ? "на этапе меньше суток" : `${days} дн. на этапе`;
 }
 
-/** Куда можно перевести: остальные этапы воронки и итоги. */
-export function moveOptions(stages, current) {
-  return {
-    stages: (stages || []).filter((s) => s.status !== current).map((s) => ({ value: s.status, label: s.title })),
-    final: TERMINAL.filter(([value]) => value !== current).map(([value, label]) => ({ value, label })),
-  };
+// ------------------------------------------------------------------ порядок этапов (S6: только вперёд)
+
+export const stageIndex = (stages, slot) => (stages || []).findIndex((s) => s.slot === slot);
+
+/** Следующий этап набора по порядку колонок; у последнего и у неизвестного slot — null. */
+export function nextStage(stages, slot) {
+  const index = stageIndex(stages, slot);
+  return index < 0 ? null : (stages[index + 1] || null);
 }
 
-/** Выбор в окне по умолчанию: следующий этап; после последнего — первый итог. */
-export function defaultTarget(stages, current) {
-  const list = stages || [];
-  const index = list.findIndex((s) => s.status === current);
-  if (index < 0) return list.length ? list[0].status : TERMINAL[0][0];
-  return index + 1 < list.length ? list[index + 1].status : TERMINAL[0][0];
+export const isLastStage = (stages, slot) => stageIndex(stages, slot) >= 0 && nextStage(stages, slot) === null;
+
+/** Перетащить карточку можно только на следующий этап: назад и через этап — нельзя (S6). */
+export const canDropOn = (stages, fromSlot, toSlot) => {
+  const next = nextStage(stages, fromSlot);
+  return Boolean(next) && next.slot === toSlot;
+};
+
+// ------------------------------------------------------------------ отмена последней отметки (S16)
+
+/** День по Москве «2026-11-23»: отметка «в тот же день» считается по Москве, а не по часам браузера. */
+export function moscowDay(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("sv-SE", { timeZone: "Europe/Moscow" });
+}
+
+/**
+ * Показывать ли «Отменить последнюю отметку»: автору — в тот же день, руководителю ОП (stage.approve) — всегда.
+ * Решает сервер (403 undo_expired); здесь только прячем лишнюю кнопку.
+ */
+export function canUndo({ last, userId, canApprove, now = new Date() }) {
+  if (!last) return false;
+  if (canApprove) return true;
+  return last.by === userId && moscowDay(last.at) !== "" && moscowDay(last.at) === moscowDay(now);
+}
+
+const OUTCOME_WORD = { passed: "прошёл", failed: "не прошёл", refused: "отказался" };
+
+/** «Последняя отметка: прошёл · Иванова А. · сегодня». */
+export function lastMarkText(last, now = new Date()) {
+  if (!last) return "";
+  const day = dayLabel(last.at, now);
+  const when = day ? `${day}, ${timeLabel(last.at)}` : "";
+  return ["Последняя отметка: " + (OUTCOME_WORD[last.outcome] || String(last.outcome ?? "")), last.by_name, when].filter(Boolean).join(" · ");
+}
+
+export const undoToast = (name, stageTitle) =>
+  `Отметка отменена: ${name}${stageTitle ? ` — снова на этапе «${stageTitle}»` : ""}`;
+
+// ------------------------------------------------------------------ прочее
+
+/** Заметка человека в кабинете руководителя: последний комментарий отметки (контактов в нём нет — чистит сервер). */
+export function personNote(person) {
+  const notes = person.notes || [];
+  return notes.length ? String(notes[0].comment || "") : String(person.note || "");
 }
 
 /** «2026-10-30T11:00» (поле datetime-local) → «2026-10-30T11:00:00+03:00»: время встречи с часовым поясом браузера. */
@@ -63,31 +90,18 @@ export function localIso(value, offsetMinutes) {
   return `${match[1]}T${match[2]}:${match[3] || "00"}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
-/** Поля окна → тело POST /api/candidate/{id}/status; ошибка заполнения — текстом. */
-export function buildMove({ vacancyId, toStatus, comment = "", when = "", offsetMinutes }) {
-  if (!toStatus) return { ok: false, error: "Выберите этап" };
-  const text = String(comment ?? "").trim();
-  const mode = reasonMode(toStatus);
-  if (mode === "required" && !text) return { ok: false, error: "Опишите причину отказа" };
-  const payload = { vacancy_id: vacancyId, to_status: toStatus };
-  if (mode !== "none" && text) payload.comment = text;
-  if (meetingStage(toStatus) && when) {
-    const at = localIso(when, offsetMinutes);
-    if (at) payload.scheduled_at = at;
-  }
-  return { ok: true, payload };
-}
-
 /** Без номера вакансии открываем первую открытую (на паузе — только если других нет). */
 export function pickVacancy(open) {
   const list = open || [];
   return list.find((v) => v.state === "open") || list[0] || null;
 }
 
-/** Название этапа или итога по коду: «Телефонное интервью», «Вышел на работу». */
-export function statusLabel(stages, status) {
-  const stage = (stages || []).find((s) => s.status === status);
-  if (stage) return stage.title;
-  const final = TERMINAL.find(([code]) => code === status);
-  return final ? final[1] : String(status ?? "");
+// ------------------------------------------------------------------ вкладки экрана вакансии (#/vacancy/<id>/funnel?view=)
+
+export const VIEWS = [["candidates", "Кандидаты"], ["report", "Отчёт"], ["stages", "Этапы"]];
+
+/** Вкладка из ?view=: «report», «stages»; всё остальное — «Кандидаты» (прежняя доска). */
+export function viewOf(query) {
+  const value = query && query.view;
+  return VIEWS.some(([name]) => name === value) ? value : "candidates";
 }

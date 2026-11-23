@@ -410,13 +410,16 @@ def _hired(conn, vacancy_id: int) -> int:
 
 
 def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int, outcome: str, user_id: int,
-         now: datetime, *, reason: str | None = None, comment: str | None = None) -> dict:
+         now: datetime, *, reason: str | None = None, comment: str | None = None,
+         scheduled_at: datetime | None = None) -> dict:
     """S6–S9: исход открытого этапа пары. «Прошёл» — на следующий этап действующего набора (назад и через этап —
     409 stale), на последнем — «вышел» (hired) и offer_close, когда вышедших не меньше ставок: закрывает вакансию
     рекрутер прежним close. «Не прошёл» / «Отказался» — с причиной. На закрытой вакансии «прошёл» нельзя, отказ
     с причиной — можно; на паузе отмечать можно."""
     if outcome not in OUTCOMES:
         raise Invalid("исход этапа")
+    if scheduled_at and outcome != "passed":
+        raise Invalid("дата встречи — только когда кандидат прошёл на следующий этап")
     v = one(conn, "SELECT id, state, headcount FROM vacancy WHERE id = %s FOR UPDATE", (vacancy_id,))
     if not v or not val(conn, """SELECT 1 FROM ops.candidate_stage WHERE candidate_id = %s AND vacancy_id = %s
                                  AND cancelled_at IS NULL LIMIT 1""", (candidate_id, vacancy_id)):
@@ -451,7 +454,12 @@ def mark(conn: psycopg.Connection, candidate_id: int, vacancy_id: int, slot: int
         _put(conn, candidate_id, vacancy_id, nxt, user_id, now)
         _status(conn, candidate_id, ROW_STATUS[nxt["report_row"]], user_id, now,
                 f"этап «{title}» пройден, дальше — «{nxt['label'] or nxt['title']}»")
+        if scheduled_at:   # встреча видна в «Сегодня и завтра»; вид — по строке отчёта следующего этапа
+            run(conn, "INSERT INTO interview (candidate_id, vacancy_id, kind, scheduled_at) VALUES (%s, %s, %s, %s)",
+                (candidate_id, vacancy_id, "manager" if nxt["report_row"] == "meeting" else "phone", scheduled_at))
         return {"next_slot": nxt["slot"], "offer_close": False}
+    if scheduled_at:
+        raise Invalid("дата встречи — на последнем этапе встречи нет")
     _status(conn, candidate_id, "hired", user_id, now, f"этап «{title}» пройден: вышел")
     return {"next_slot": None, "offer_close": not closed and _hired(conn, vacancy_id) >= v["headcount"]}
 

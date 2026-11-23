@@ -74,6 +74,18 @@ def today(conn: psycopg.Connection, now: datetime) -> dict:
     stalled = rows(conn, """
         SELECT s.id AS candidate_id, c.person_id, s.status::text AS status, s.days_silent, s.last_contact_at
         FROM v_stalled s JOIN candidate c ON c.id = s.id ORDER BY s.days_silent DESC""")
+    open_stages = rows(conn, """
+        SELECT cs.candidate_id, cs.vacancy_id, v.title AS vacancy_title, cs.slot, cs.report_row,
+               coalesce(i.label, s.title) AS stage
+        FROM ops.candidate_stage cs JOIN vacancy v ON v.id = cs.vacancy_id JOIN ops.stage s ON s.id = cs.stage_id
+        LEFT JOIN LATERAL (SELECT si.label FROM ops.stage_set_item si JOIN ops.stage_set ss ON ss.id = si.set_id
+                           WHERE ss.vacancy_id = cs.vacancy_id AND ss.state = 'approved' AND si.slot = cs.slot
+                           ORDER BY ss.version DESC LIMIT 1) i ON true
+        WHERE cs.candidate_id = ANY(%s) AND cs.outcome IS NULL AND cs.cancelled_at IS NULL
+        ORDER BY cs.entered_at, cs.id""", ([r["candidate_id"] for r in stalled],))
+    for r in stalled:   # «Закрыть» на «Сегодня» отмечает отказ на открытом этапе: нужны вакансия и slot
+        r["stages"] = [{k: o[k] for k in ("vacancy_id", "vacancy_title", "slot", "report_row", "stage")}
+                       for o in open_stages if o["candidate_id"] == r["candidate_id"]]
     day0 = rows(conn, "SELECT date_trunc('day', %s AT TIME ZONE %s) AS d", (now, TZ))[0]["d"]
     meetings = rows(conn, """
         SELECT i.id AS interview_id, i.candidate_id, c.person_id, i.kind, i.scheduled_at, v.title AS vacancy_title

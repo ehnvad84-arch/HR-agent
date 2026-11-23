@@ -108,3 +108,22 @@ test("S12: списки сотрудников для формы — подпи�
   assert.deepEqual(staffChoices(null, 8), { options: [], selected: null });
   assert.equal(MANAGER_HINT, "Выберите вручную");
 });
+
+// ------------------------------------------------------------------ funnel-report T12: пауза и плашки набора
+
+import { PAUSE_HINT, PAUSE_TOAST, RESUME_TOAST, pauseLabel, stageChips } from "../../web/js/screens/vacancies-model.js";
+
+test("S14: пауза — кнопка по состоянию вакансии, подтверждение объясняет про срок ведения", () => {
+  assert.equal(pauseLabel({ state: "open" }), "Поставить на паузу");
+  assert.equal(pauseLabel({ state: "on_hold" }), "Снять с паузы");
+  assert.equal(PAUSE_HINT, "Дни паузы не войдут в срок ведения. Отмечать итоги этапов на паузе можно, новых людей брать нельзя.");
+  assert.equal(PAUSE_TOAST, "Вакансия на паузе");
+  assert.equal(RESUME_TOAST, "Пауза снята");
+});
+
+test("S3, S4: плашки набора на карточке — «этапы ждут утверждения» (o), «набор отклонён» (r)", () => {
+  assert.deepEqual(stageChips({ stages_pending: true, stages_declined: false }), [{ text: "этапы ждут утверждения", tone: "o" }]);
+  assert.deepEqual(stageChips({ stages_pending: false, stages_declined: true }), [{ text: "набор отклонён", tone: "r" }]);
+  assert.deepEqual(stageChips({ stages_pending: false, stages_declined: false }), []);
+  assert.deepEqual(stageChips({}), []);
+});
